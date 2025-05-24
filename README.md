@@ -14,3 +14,7 @@ This code solves and simulates a finite-horizon $(T)$-period consumption-saving 
 
 This notebook implements a dynamic programming model of **college and labor supply decisions** over the life cycle. The agent chooses between attending college or entering the labor market at age 18, and then makes optimal consumption, saving, and labor supply decisions based on their human capital accumulation, wages, and preferences.
 
+
+#### `family.ipynb`
+
+Implements a T-period dynamic family model with endogenous human capital investment. The family chooses consumption, labor supply, child care time, and education expenditure each period to maximize lifetime utility, which depends on consumption, leisure, and the child’s human capital.
