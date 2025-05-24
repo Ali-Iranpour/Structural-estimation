@@ -18,3 +18,8 @@ This notebook implements a dynamic programming model of **college and labor supp
 #### `family.ipynb`
 
 Implements a T-period dynamic family model with endogenous human capital investment. The family chooses consumption, labor supply, child care time, and education expenditure each period to maximize lifetime utility, which depends on consumption, leisure, and the child’s human capital.
+
+
+#### `ConSavLabor_college_SE.ipynb`
+
+Implements a dynamic college-labor model where agents differ in beliefs about college returns. Solves for optimal policies and simulates life-cycle choices and outcomes for each belief type.
