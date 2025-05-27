@@ -10,7 +10,8 @@
 │   └── ConSavLabor_college_SE.ipynb        # Model with heterogeneous beliefs about college returns
 │
 ├── FamilyModel/                            # Family decision-making and child human capital investment
-│   └── family.ipynb                         # Dynamic family model with education and care decisions
+│   ├── family.ipynb                        # Dynamic family model with education and care decisions
+│   └── parent_child_model.ipynb            # Dynamic family model with parent and child interaction
 │
 ├── README.md                                # Project documentation
 ├── .gitignore                               # Ignore list (e.g., .DS_Store, temp files)
@@ -48,3 +49,7 @@ Extends the college model to allow **heterogeneous beliefs about college returns
 **`family.ipynb`**
 
 Implements a **T-period dynamic family model** with endogenous investment in child human capital. Each period, the family chooses consumption, labor supply, child care time, and education expenditure to maximize lifetime utility, balancing adult well-being and child development.
+
+**`parent_child_model.ipynb`**
+
+Implements a **T-period dynamic family model** where a parent and child jointly decide on parental consumption, labor supply, child care time, child's study time, and education expenditure. These choices maximize lifetime utility, balancing parental well-being and child development through a cooperative interaction weighted by the child's bargaining parameter.
