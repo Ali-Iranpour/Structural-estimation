@@ -33,7 +33,7 @@ Implements a dynamic **consumption-saving-labor model** with endogenous human ca
 
 **`ConSavLabor_stochastic.ipynb`**
 
-Solves and simulates a finite-horizon $T$-period consumption-saving model with endogenous labor supply and **i.i.d. transitory wage shocks**. At each period $t = 1, \dots, T$, the agent chooses consumption $c_t$ and labor supply $\ell_t \in [0,1] $ to maximize lifetime utility. Wages depend on a transitory shock $ \varepsilon_t $, modifying the budget constraint.
+Solves and simulates a finite-horizon, $T$-period consumption-saving model with endogenous labor supply and i.i.d. transitory wage shocks. At each period $t = 1, \ldots, T$, the agent chooses consumption $c_t$ and labor supply $\ell_t \in [0,1]$ to maximize lifetime utility. The wage in each period depends on a transitory shock $\varepsilon_t$, which enters the budget constraint.
 
 ---
 
