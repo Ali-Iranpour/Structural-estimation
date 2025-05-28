@@ -62,7 +62,9 @@ q(d) = f(x^{(k)}) + \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d
 $$
 
 
-$$d = x - x^{(k)}$$.
+$$
+\text{where} \quad d = x - x^{(k)}
+$$
 
 
 ---
