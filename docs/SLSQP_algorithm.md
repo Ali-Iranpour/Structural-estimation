@@ -22,21 +22,16 @@ Given an optimization problem:
 
 ## **Algorithm Description**
 
-**SLSQP** is a powerful method for constrained nonlinear optimization. At each iteration, it approximates the objective function by a quadratic model and the constraints by linear models, solving a quadratic programming (QP) subproblem to propose a search direction.
-
-SLSQP is especially useful when your problem includes both equality and inequality constraints and the functions involved are smooth (continuously differentiable).
+**SLSQP** is a powerful method for constrained nonlinear optimization. At each iteration, it approximates the objective function by a quadratic model and the constraints by linear models, solving a quadratic programming (QP) subproblem to propose a search direction. This algorithm is especially useful when your problem includes both equality and inequality constraints and the functions involved are smooth (continuously differentiable).
 
 ---
 
 ## **Algorithm Steps**
 
 ### **1. Initialization**
-- **Start with an initial guess:**  
-  $x^{(0)}$
-- **Set iteration counter:**  
-  $k = 0$
-- **Choose an initial Hessian approximation:**  
-  $B^{(0)}$ (usually the identity matrix)
+- **Start with an initial guess:**   $x^{(0)}$
+- **Set iteration counter:**   $k = 0$
+- **Choose an initial Hessian approximation:**  $B^{(0)}$ (usually the identity matrix)
 
 ---
 
@@ -47,24 +42,29 @@ At the current iterate $x^{(k)}$, approximate the constraints using a first-orde
 
 - **Equality constraints:**  
 
-$
-  h_j(x) \approx h_j(x^{(k)}) + \nabla h_j(x^{(k)})^T (x - x^{(k)}) = 0
-$
+$$
+h_j(x) \approx h_j(x^{(k)}) + \nabla h_j(x^{(k)})^T (x - x^{(k)}) = 0
+$$
 
 - **Inequality constraints:**  
 
-$
-  g_k(x) \approx g_k(x^{(k)}) + \nabla g_k(x^{(k)})^T (x - x^{(k)}) \geq 0
-$
+$$
+g_k(x) \approx g_k(x^{(k)}) + \nabla g_k(x^{(k)})^T (x - x^{(k)}) \geq 0
+$$
 
 ---
 
 #### **2.2. Quadratic Approximation to Objective**
 Approximate the objective function $f(x)$ near $x^{(k)}$ by a quadratic model:
 
-$
-q(d) = f(x^{(k)}) + \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d$
-where $d = x - x^{(k)}$.
+$$
+q(d) = f(x^{(k)}) + \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d
+$$
+<div align="center">
+
+where  $d = x - x^{(k)}$.
+
+</div>
 
 ---
 
@@ -72,10 +72,13 @@ where $d = x - x^{(k)}$.
 Solve the following QP to find the search direction $d^{(k)}$:
 
 $$
+\begin{align*}
 \min_{d} \quad & \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d \\
-\text{subject to:} \quad & h_j(x^{(k)}) + \nabla h_j(x^{(k)})^T d = 0 \\
-                        & g_k(x^{(k)}) + \nabla g_k(x^{(k)})^T d \geq 0 \\
-                        & l_i \leq x_i^{(k)} + d_i \leq u_i
+\text{subject to:}\quad
+    & h_j(x^{(k)}) + \nabla h_j(x^{(k)})^T d = 0 \\
+    & g_k(x^{(k)}) + \nabla g_k(x^{(k)})^T d \geq 0 \\
+    & l_i \leq x_i^{(k)} + d_i \leq u_i
+\end{align*}
 $$
 
 ---
@@ -83,9 +86,9 @@ $$
 #### **2.4. Line Search**
 - Select a step size $\alpha^{(k)}$ to ensure a sufficient decrease in the objective and feasibility:
 
-$
-  x^{(k+1)} = x^{(k)} + \alpha^{(k)} d^{(k)}
-$
+$$
+x^{(k+1)} = x^{(k)} + \alpha^{(k)} d^{(k)}
+$$
 - Ensure that the new iterate $x^{(k+1)}$ satisfies all constraints and bounds.
 
 ---
