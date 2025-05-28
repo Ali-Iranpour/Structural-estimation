@@ -46,23 +46,24 @@ SLSQP is especially useful when your problem includes both equality and inequali
 At the current iterate $x^{(k)}$, approximate the constraints using a first-order Taylor expansion:
 
 - **Equality constraints:**  
-  \[
+
+$
   h_j(x) \approx h_j(x^{(k)}) + \nabla h_j(x^{(k)})^T (x - x^{(k)}) = 0
-  \]
+$
 
 - **Inequality constraints:**  
-  \[
+
+$
   g_k(x) \approx g_k(x^{(k)}) + \nabla g_k(x^{(k)})^T (x - x^{(k)}) \geq 0
-  \]
+$
 
 ---
 
 #### **2.2. Quadratic Approximation to Objective**
 Approximate the objective function $f(x)$ near $x^{(k)}$ by a quadratic model:
 
-\[
-q(d) = f(x^{(k)}) + \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d
-\]
+$
+q(d) = f(x^{(k)}) + \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d$
 where $d = x - x^{(k)}$.
 
 ---
@@ -70,22 +71,21 @@ where $d = x - x^{(k)}$.
 #### **2.3. Quadratic Programming (QP) Subproblem**
 Solve the following QP to find the search direction $d^{(k)}$:
 
-\[
-\begin{align*}
+$$
 \min_{d} \quad & \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d \\
 \text{subject to:} \quad & h_j(x^{(k)}) + \nabla h_j(x^{(k)})^T d = 0 \\
                         & g_k(x^{(k)}) + \nabla g_k(x^{(k)})^T d \geq 0 \\
                         & l_i \leq x_i^{(k)} + d_i \leq u_i
-\end{align*}
-\]
+$$
 
 ---
 
 #### **2.4. Line Search**
 - Select a step size $\alpha^{(k)}$ to ensure a sufficient decrease in the objective and feasibility:
-  \[
+
+$
   x^{(k+1)} = x^{(k)} + \alpha^{(k)} d^{(k)}
-  \]
+$
 - Ensure that the new iterate $x^{(k+1)}$ satisfies all constraints and bounds.
 
 ---
