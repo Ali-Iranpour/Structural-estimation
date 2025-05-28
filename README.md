@@ -17,10 +17,6 @@
 ├── .gitignore                               # Ignore list (e.g., .DS_Store, temp files)
 ```
 ---
-## Optimization Library
-
-This project implements several optimization algorithms. For details about the SLSQP algorithm, including the pseudocode and math, see [docs/SLSQP_algorithm.md](docs/SLSQP_algorithm.md).
----
 
 ## Model Descriptions
 
@@ -61,3 +57,9 @@ Implements a **T-period dynamic family model** with endogenous investment in chi
 **`parent_child_model.ipynb`**
 
 Implements a **T-period dynamic family model** where a parent and child jointly decide on parental consumption, labor supply, child care time, child's study time, and education expenditure. These choices maximize lifetime utility, balancing parental well-being and child development through a cooperative interaction weighted by the child's bargaining parameter.
+
+---
+## Optimization Library
+
+
+This project implements several optimization algorithms. For details about the SLSQP algorithm, including the pseudocode and math, see [docs/SLSQP_algorithm.md](docs/SLSQP_algorithm.md).
