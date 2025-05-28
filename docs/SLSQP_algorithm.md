@@ -9,14 +9,14 @@ This document explains the **Sequential Least Squares Quadratic Programming (SLS
 Given an optimization problem:
 
 - **Objective:**  
-  Minimize \( f(x) \)
+  Minimize $f(x)$
 - **Subject to:**
   - **Equality constraints:**  
-    \( h_j(x) = 0 \), for \( j = 1, \ldots, m \)
+    $h_j(x) = 0$, for $j = 1, \ldots, m$
   - **Inequality constraints:**  
-    \( g_k(x) \geq 0 \), for \( k = 1, \ldots, p \)
+    $g_k(x) \geq 0$, for $k = 1, \ldots, p$
   - **Bounds:**  
-    \( l_i \leq x_i \leq u_i \)
+    $l_i \leq x_i \leq u_i$
 
 ---
 
@@ -32,18 +32,18 @@ SLSQP is especially useful when your problem includes both equality and inequali
 
 ### **1. Initialization**
 - **Start with an initial guess:**  
-  \( x^{(0)} \)
+  $x^{(0)}$
 - **Set iteration counter:**  
-  \( k = 0 \)
+  $k = 0$
 - **Choose an initial Hessian approximation:**  
-  \( B^{(0)} \) (usually the identity matrix)
+  $B^{(0)}$ (usually the identity matrix)
 
 ---
 
 ### **2. Repeat Until Convergence**
 
 #### **2.1. Linearize Constraints**
-At the current iterate \( x^{(k)} \), approximate the constraints using a first-order Taylor expansion:
+At the current iterate $x^{(k)}$, approximate the constraints using a first-order Taylor expansion:
 
 - **Equality constraints:**  
   \[
@@ -58,17 +58,17 @@ At the current iterate \( x^{(k)} \), approximate the constraints using a first-
 ---
 
 #### **2.2. Quadratic Approximation to Objective**
-Approximate the objective function \( f(x) \) near \( x^{(k)} \) by a quadratic model:
+Approximate the objective function $f(x)$ near $x^{(k)}$ by a quadratic model:
 
 \[
 q(d) = f(x^{(k)}) + \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d
 \]
-where \( d = x - x^{(k)} \).
+where $d = x - x^{(k)}$.
 
 ---
 
 #### **2.3. Quadratic Programming (QP) Subproblem**
-Solve the following QP to find the search direction \( d^{(k)} \):
+Solve the following QP to find the search direction $d^{(k)}$:
 
 \[
 \begin{align*}
@@ -82,24 +82,24 @@ Solve the following QP to find the search direction \( d^{(k)} \):
 ---
 
 #### **2.4. Line Search**
-- Select a step size \( \alpha^{(k)} \) to ensure a sufficient decrease in the objective and feasibility:
+- Select a step size $\alpha^{(k)}$ to ensure a sufficient decrease in the objective and feasibility:
   \[
   x^{(k+1)} = x^{(k)} + \alpha^{(k)} d^{(k)}
   \]
-- Ensure that the new iterate \( x^{(k+1)} \) satisfies all constraints and bounds.
+- Ensure that the new iterate $x^{(k+1)}$ satisfies all constraints and bounds.
 
 ---
 
 #### **2.5. Update Hessian Approximation**
-- Update the Hessian approximation \( B^{(k)} \) (e.g., using the BFGS quasi-Newton update).
+- Update the Hessian approximation $B^{(k)}$ (e.g., using the BFGS quasi-Newton update).
 
 ---
 
 #### **2.6. Convergence Check**
 - Check whether:
-  - The gradient norm \( \|\nabla f(x^{(k+1)})\| \) is below a chosen tolerance
+  - The gradient norm $\|\nabla f(x^{(k+1)})\|$ is below a chosen tolerance
   - All constraint violations are below tolerance
-- If not converged, set \( k = k+1 \) and repeat.
+- If not converged, set $k = k+1$ and repeat.
 
 ---
 
