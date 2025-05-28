@@ -13,8 +13,11 @@
 │   ├── family.ipynb                        # Dynamic family model with education and care decisions
 │   └── parent_child_model.ipynb            # Dynamic family model with parent and child interaction
 │
-├── README.md                                # Project documentation
-├── .gitignore                               # Ignore list (e.g., .DS_Store, temp files)
+├── docs/                                   # Documentation
+│   └── SLSQP_algorithm.md                  # SLSQP algorithm math and pseudocode
+│
+├── README.md                               # Project documentation
+├── .gitignore                              # Ignore list (e.g., .DS_Store, temp files)
 ```
 ---
 
