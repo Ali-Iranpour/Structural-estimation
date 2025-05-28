@@ -16,7 +16,10 @@
 ├── README.md                                # Project documentation
 ├── .gitignore                               # Ignore list (e.g., .DS_Store, temp files)
 ```
+---
+## Optimization Library
 
+This project implements several optimization algorithms. For details about the SLSQP algorithm, including the pseudocode and math, see [docs/SLSQP_algorithm.md](docs/SLSQP_algorithm.md).
 ---
 
 ## Model Descriptions
@@ -33,7 +36,7 @@ Implements a dynamic **consumption-saving-labor model** with endogenous human ca
 
 **`ConSavLabor_stochastic.ipynb`**
 
-Solves and simulates a finite-horizon, $T$-period consumption-saving model with endogenous labor supply and i.i.d. transitory wage shocks. At each period $t = 1, \ldots, T$, the agent chooses consumption $c_t$ and labor supply $\ell_t \in [0,1]$ to maximize lifetime utility. The wage in each period depends on a transitory shock $\varepsilon_t$, which enters the budget constraint.
+Solves and simulates a finite-horizon, $T$-period consumption-saving model with endogenous labor supply and i.i.d. transitory wage shocks. At each period $t = 1, \ldots, T$, the agent chooses consumption $c_t$ and labor supply $\ell_t$ to maximize lifetime utility. The wage in each period depends on a transitory shock $\varepsilon_t$, which enters the budget constraint.
 
 ---
 
