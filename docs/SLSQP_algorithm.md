@@ -60,11 +60,10 @@ Approximate the objective function $f(x)$ near $x^{(k)}$ by a quadratic model:
 $$
 q(d) = f(x^{(k)}) + \nabla f(x^{(k)})^T d + \frac{1}{2} d^T B^{(k)} d
 $$
-<div align="center">
 
-where  $d = x - x^{(k)}$.
 
-</div>
+$$d = x - x^{(k)}$$.
+
 
 ---
 
