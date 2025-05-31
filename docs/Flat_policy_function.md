@@ -9,7 +9,7 @@ In this dynamic optimization problem, we aim to determine why the policy functio
 The value function is:
 
 $$
-V_t(a_t, k_t, hc_t) = \max_{c_t, e_t, h_t} \left\{ \phi_1 \log c_t + \phi_2 \log (1 - h_t) + \phi_3 \log hc_t + \beta V_{t+1}(a_{t+1}, k_{t+1}, hc_{t+1}) \right\}
+V_t(a_t, k_t, hc_t) = \max_{c_t, e_t, h_t} \{ \phi_1 \log c_t + \phi_2 \log (1 - h_t) + \phi_3 \log hc_t + \beta V_{t+1}(a_{t+1}, k_{t+1}, hc_{t+1}) \}
 $$
 
 **Budget constraint:**
@@ -39,7 +39,7 @@ $$
 Plug back into the value function:
 
 $$
-V_t(a_t, k_t, hc_t) = \max_{e_t, h_t} \left\{ \phi_1 \log \left[ (1 - \text{TR}) w_t h_t - e_t \right] + \phi_2 \log (1 - h_t) + \phi_3 \log hc_t + \beta V_{t+1}\left(a_{t+1}, k_{t+1}, R\, e_t^{\sigma_2} hc_t^{\sigma_3}\right) \right\}
+V_t(a_t, k_t, hc_t) = \max_{e_t, h_t} \{ \phi_1 \log [ (1 - \text{TR}) w_t h_t - e_t ] + \phi_2 \log (1 - h_t) + \phi_3 \log hc_t + \beta V_{t+1}(a_{t+1}, k_{t+1}, R\, e_t^{\sigma_2} hc_t^{\sigma_3}) \}
 $$
 
 
