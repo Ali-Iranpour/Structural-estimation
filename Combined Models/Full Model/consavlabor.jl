@@ -68,19 +68,20 @@ end
 # -------------------------------
 # Constructor for ConSavLabor
 # -------------------------------
-function ConSavLabor(; T::Int=50, beta::Float64=0.97, rho::Float64=1.0, y::Float64=0.5,
-                        r::Float64=0.03, a_max::Float64=15.0, Na::Int=30, simN::Int=5000,
+function ConSavLabor(; T::Int=50, beta::Float64=0.97, rho::Float64=1.0, y::Float64=0.6,
+                        r::Float64=0.03, a_max::Float64=20.0, Na::Int=30, simN::Int=5000,
                         a_min::Float64=0.0, k_max::Float64=30.0, Nk::Int=30,
                         w::Float64=12.5, tau::Float64=0.25,
                         eta::Float64=2.0, alpha::Float64=0.08,
                         phi::Float64=20.0, seed::Int=1234)
+
 
     # --- Time horizon and simulation settings ---
     simT = T
 
     # --- Grids for state variables and decisions ---
     #a_grid = nonlinspace(a_min, a_max, Na, 1.5)
-    a_grid = create_focused_grid(a_min, 4.0, a_max, Na, 0.8, 1.1)
+    a_grid = create_focused_grid(a_min, 5.0, a_max, Na, 0.7, 1.1)
     k_grid = nonlinspace(0.0, k_max, Nk, 1.5)
 
 
