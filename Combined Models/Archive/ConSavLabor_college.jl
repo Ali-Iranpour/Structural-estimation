@@ -91,7 +91,7 @@ end
 # =============================================================================
 function ConSavLaborCollege(; 
     T::Int=50, t_college::Int=4, beta::Float64=0.97, rho::Float64=1.0, 
-    r::Float64=0.03, a_max::Float64=20.0, Na::Int=30, y::Float64=0.6,
+    r::Float64=0.03, a_max::Float64=20.0, Na::Int=50, y::Float64=0.6,
     simN::Int=5000, a_min::Float64=0.0, k_max::Float64=30.0, Nk::Int=30, 
     w::Float64=12.5, tau::Float64=0.25, eta::Float64=2.0, alpha::Float64=0.1, 
     phi::Float64=20.0, seed::Int=1234, college_cost::Float64=1.2, 
@@ -103,8 +103,8 @@ function ConSavLaborCollege(;
     
     # --- Grids for state variables ---
     #a_grid = create_focused_grid(a_min, 500000.0, a_max, Na, 0.5, 1.1);    # Nonlinear grid for assets
-    a_grid = create_focused_grid(a_min, 5.0, a_max, Na, 0.5, 1.2)
-    k_grid = nonlinspace(0.0, k_max, Nk, 1.5)
+    a_grid = create_focused_grid(a_min, 7.0, a_max, Na, 0.8, 1.1)
+    k_grid = create_focused_grid(0.0, 5.0, k_max, Nk, 0.8, 1.1)
     #a_grid  = range(a_min, a_max, length=Na)
     #k_grid  = range(0.0, k_max, length=Nk)      # Nonlinear grid for human capital
     
@@ -217,7 +217,7 @@ function solve_model_college!(model::ConSavLaborCollege)
                 assets = a_grid[i_a]
                 if assets < a_min_t[t]
                     for i_k in 1:Nk
-                        sol_v[t, i_a, i_k] = -100  # Use -Inf for infeasible
+                        sol_v[t, i_a, i_k] = -20  # Use -Inf for infeasible
                         sol_c[t, i_a, i_k] = 0.0
                         #sol_h[t, i_a, i_k] = NaN
                     end
