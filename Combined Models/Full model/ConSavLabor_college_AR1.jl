@@ -59,7 +59,7 @@ function ConSavLaborCollege_AR1(;
     p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5)
 
     simT = T
-    a_grid = create_focused_grid(a_min, 10.0, a_max, Na, 0.8, 1.1)
+    a_grid = create_focused_grid(a_min, 8.0, a_max, Na, 0.7, 1.1)
     k_grid = nonlinspace(0.0, k_max, Nk, 1.5)
 
     # --- Setup Shocks ---
@@ -488,4 +488,146 @@ function compute_min_assets(model::ConSavLaborCollege_AR1)
     end
 
     return a_min_t
+end
+
+
+# --------------------------
+# Helper for Simulation
+# --------------------------
+"""
+Draws a discrete outcome from a vector of probabilities.
+"""
+function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
+    cdf = cumsum(probs)
+    return findfirst(x -> x >= draw, cdf)
+end
+
+# --------------------------
+# Simulation (Stochastic)
+# --------------------------
+function simulate_model!(model::ConSavLaborCollege_AR1)
+    # ------------------------------------------------
+    # 1) Basic setup and parameter extraction
+    # ------------------------------------------------
+    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
+    @unpack a_grid, k_grid, t_grid, p_grid, t_weight, p_transition = model
+    @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
+    @unpack sim_t_idx, sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx = model
+    @unpack draws_uniform_t, draws_uniform_p, y = model
+
+    # ------------------------------------------------
+    # 2) Precompute policy and value function interpolators
+    # ------------------------------------------------
+    # Create multi-dimensional interpolators: [Time, Transitory Idx, Persistent Idx]
+    interp_c_work = [
+        LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_t, i_p]; extrapolation_bc=Flat())
+        for t in 1:T, i_t in 1:model.Nt, i_p in 1:model.Np
+    ]
+    interp_h_work = [LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_t, i_p]; extrapolation_bc=Flat())
+        for t in 1:T, i_t in 1:model.Nt, i_p in 1:model.Np
+    ]
+    interp_c_college = [LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_t, i_p]; extrapolation_bc=Flat())
+        for t in 1:T, i_t in 1:model.Nt, i_p in 1:model.Np
+    ]
+
+    # Value functions are only needed for the initial decision at t=1
+    interp_v_work = [LinearInterpolation((a_grid, k_grid), model.sol_v_work[1, :, :, i_t, i_p]; extrapolation_bc=Flat())
+        for i_t in 1:model.Nt, i_p in 1:model.Np
+    ]
+    interp_v_college = [LinearInterpolation((a_grid, k_grid), model.sol_v_college[1, :, :, i_t, i_p]; extrapolation_bc=Flat())
+        for i_t in 1:model.Nt, i_p in 1:model.Np
+    ]
+
+    # ------------------------------------------------
+    # 3) Compute initial values & choose college vs. work
+    # ------------------------------------------------
+    path_choice = Vector{Symbol}(undef, simN)
+    for i in 1:simN
+        a0, k0, p0_idx = sim_a_init[i], sim_k_init[i], sim_p_init_idx[i]
+
+        # Calculate the EXPECTED value of each path over the initial transitory shock distribution
+        EV_college = sum(t_weight[i_t] * interp_v_college[i_t, p0_idx](a0, k0) for i_t in 1:model.Nt)
+        EV_work    = sum(t_weight[i_t] * interp_v_work[i_t, p0_idx](a0, k0) for i_t in 1:model.Nt)
+        
+        path_choice[i] = EV_college > EV_work ? :college : :work
+    end
+
+    # ------------------------------------------------
+    # 4) Initialize the simulation arrays
+    # ------------------------------------------------
+    sim_a[:, 1] .= sim_a_init
+    sim_k[:, 1] .= sim_k_init
+    sim_p_idx[:, 1] .= sim_p_init_idx
+
+    # ------------------------------------------------
+    # 5) Simulate forward for each t = 1,...,T
+    # ------------------------------------------------
+    @showprogress "Simulating..." for t in 1:T
+        for i in 1:simN
+            # Retrieve current states
+            a = sim_a[i, t]
+            k = sim_k[i, t]
+            p_idx = sim_p_idx[i, t]
+
+            # Draw current transitory shock
+            t_draw = draws_uniform_t[i, t]
+            t_idx = discrete_draw(t_weight, t_draw)
+            sim_t_idx[i, t] = t_idx
+
+            # Choose consumption & hours via shock-dependent policy
+            if path_choice[i] == :college && t <= t_college
+                # In college, policy only depends on (a,k). `sol_c_college` is constant across t_idx.
+                c = interp_c_college[t, t_idx, p_idx](a, k)
+                h = 0.0
+            else # Working path (or post-college)
+                c = interp_c_work[t, t_idx, p_idx](a, k)
+                h = interp_h_work[t, t_idx, p_idx](a, k)
+            end
+
+            sim_c[i, t] = c
+            sim_h[i, t] = h
+
+            # Compute income and wage based on path and realized shocks
+            if path_choice[i] == :college && t <= t_college
+                sim_income[i, t] = y # Non-labor income only
+                sim_wage[i, t] = 0
+            else
+                t_shock = t_grid[t_idx]
+                p_shock = p_grid[p_idx]
+                wage = wage_func(model, k, t, t_shock, p_shock)
+                sim_wage[i, t] = wage / 0.584
+                sim_income[i, t] = wage * h # Labor + non-labor income
+            end
+
+            # If not in the final period, update next period's states
+            if t < T
+                # State transition for assets and human capital
+                if path_choice[i] == :college && t <= t_college
+                    a_next = (1 + r)*a - c - college_cost + y
+                    k_next = k + college_boost
+                else # Working path
+                    a_next = (1 + r)*a + sim_income[i,t] - c + y # (1+r)a + labor_income - c + y
+                    k_next = k + h
+                end
+                
+                sim_a[i, t+1] = max(a_next, a_min)
+                sim_k[i, t+1] = k_next
+
+                # State transition for persistent shock
+                p_draw = draws_uniform_p[i, t]
+                p_trans_probs = p_transition[p_idx, :]
+                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
+            end
+        end
+    end
+
+    # ------------------------------------------------
+    # 6) Report results
+    # ------------------------------------------------
+    num_college = sum(path_choice .== :college)
+    println("\n--- Simulation Results ---")
+    println("Number choosing college: $num_college ($(round(100*num_college/simN, digits=1))%)")
+    println("Number choosing work:    $(simN - num_college)")
+
+    return model, path_choice
 end
