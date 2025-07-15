@@ -405,6 +405,7 @@ end
     end
     psychic_cost = model.kappa / (k + 1.0)^2
     #psychic_cost = model.kappa * log(k)
+    #psychic_cost = model.kappa * exp(-k)
     return cons_utility - psychic_cost
 end
 
