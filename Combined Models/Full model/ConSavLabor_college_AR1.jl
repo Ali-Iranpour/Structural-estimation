@@ -25,13 +25,19 @@ mutable struct ConSavLaborCollege_AR1
     Nk::Int; simT::Int; simN::Int
     a_grid::Vector{Float64}; k_grid::Vector{Float64}
 
+    # Transitory shocks
+    Nt::Int                     # Number of grid points for t
+    t_grid::Vector{Float64}     # Grid for transitory shock t
+    sigma_eps::Float64          # Std dev of transitory shock
+    t_weight::Vector{Float64}   # Weights for t quadrature
+
     # --- Stochastic Shock Parameters (AR1 only) ---
     Np::Int; p_grid::Vector{Float64}; p_transition::Matrix{Float64}
     p_ar1::Float64; sigma_p::Float64
 
-    # --- Solution arrays (4D: T, Na, Nk, Np) ---
-    sol_c_work::Array{Float64, 4}; sol_h_work::Array{Float64, 4}; sol_v_work::Array{Float64, 4}
-    sol_c_college::Array{Float64, 4}; sol_h_college::Array{Float64, 4}; sol_v_college::Array{Float64, 4}
+    # --- Solution arrays (4D: T, Na, Nk, Np, Nt) ---
+    sol_c_work::Array{Float64, 5}; sol_h_work::Array{Float64, 5}; sol_v_work::Array{Float64, 5}
+    sol_c_college::Array{Float64, 5}; sol_h_college::Array{Float64, 5}; sol_v_college::Array{Float64, 5}
 
     # --- Simulation arrays ---
     sim_c::Matrix{Float64}; sim_h::Matrix{Float64}; sim_a::Matrix{Float64}
@@ -54,11 +60,17 @@ function ConSavLaborCollege_AR1(;
     phi::Float64=20.0, seed::Int=1234, college_cost::Float64=1.2,
     college_boost::Float64=2.0, kappa::Float64=5.0,
     # Shock parameters (AR1 only)
-    p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5)
+    p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
+    Nt::Int=7, sigma_eps::Float64=0.2)
 
     simT = T
     a_grid = create_focused_grid(a_min, 8.0, a_max, Na, 0.7, 1.1)
     k_grid = nonlinspace(0.001, k_max, Nk, 1.5)
+
+    # Gauss-Hermite quadrature for transitory shocks
+    nodes, weights = gausshermite(Nt)
+    t_grid = sqrt(2) * sigma_eps .* nodes
+    t_weight = weights / sqrt(pi)
 
     # --- Setup Persistent AR1 Shock ---
     mc = tauchen(Np, p_ar1, sigma_p, 0.0, 3)
@@ -66,7 +78,7 @@ function ConSavLaborCollege_AR1(;
     p_transition = mc.p
 
     # --- Initialize solution arrays (4D) ---
-    sol_shape = (T, Na, Nk, Np)
+    sol_shape = (T, Na, Nk, Np, Nt)
     sol_c_work = fill(NaN, sol_shape); sol_h_work = fill(NaN, sol_shape); sol_v_work = fill(NaN, sol_shape)
     sol_c_college = fill(NaN, sol_shape); sol_h_college = fill(NaN, sol_shape); sol_v_college = fill(NaN, sol_shape)
 
@@ -79,7 +91,7 @@ function ConSavLaborCollege_AR1(;
 
     rng = MersenneTwister(seed)
     sim_a_init = rand(rng, simN) .* 10
-    sim_k_init = rand(rng, simN) .* 5
+    sim_k_init = zeros(Float64, simN)
     sim_p_init_idx = fill(ceil(Int, Np/2), simN) # Start at median persistent shock
 
     draws_uniform_p = rand(rng, sim_shape...)
@@ -88,6 +100,7 @@ function ConSavLaborCollege_AR1(;
     return ConSavLaborCollege_AR1(
         T, t_college, rho, beta, phi, eta, alpha, y, w, tau, r,
         a_max, a_min, Na, k_max, Nk, simT, simN, a_grid, k_grid,
+        Nt, t_grid, sigma_eps, t_weight,
         Np, p_grid, p_transition, p_ar1, sigma_p,
         sol_c_work, sol_h_work, sol_v_work, sol_c_college, sol_h_college, sol_v_college,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
@@ -126,9 +139,9 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
 
         h_opt = h_vec[1]
         cons = assets + wage_func(model, capital, T, p_shock) * h_opt + model.y
-        sol_h_work[T, i_a, i_k, i_p] = h_opt
-        sol_c_work[T, i_a, i_k, i_p] = cons
-        sol_v_work[T, i_a, i_k, i_p] = -minf
+        sol_h_work[T, i_a, i_k, i_p, :] .= h_opt
+        sol_c_work[T, i_a, i_k, i_p, :] .= cons
+        sol_v_work[T, i_a, i_k, i_p, :] .= -minf
     end
 
     # --- Earlier periods (t = T-1 to 1) ---
@@ -152,11 +165,11 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
             maxeval!(opt, 1000)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 0.0)
             min_objective!(opt, obj_wrapper)
-            init = [max(sol_c_work[t + 1, i_a, i_k, i_p], 1e-6), sol_h_work[t + 1, i_a, i_k, i_p]]
+            init = [max(sol_c_work[t + 1, i_a, i_k, i_p, 1], 1e-6), sol_h_work[t + 1, i_a, i_k, i_p, 1]]
             (minf, x_opt, ret) = optimize(opt, init)
-            sol_c_work[t, i_a, i_k, i_p] = x_opt[1]
-            sol_h_work[t, i_a, i_k, i_p] = x_opt[2]
-            sol_v_work[t, i_a, i_k, i_p] = -minf
+            sol_c_work[t, i_a, i_k, i_p, :] .= x_opt[1]
+            sol_h_work[t, i_a, i_k, i_p, :] .= x_opt[2]
+            sol_v_work[t, i_a, i_k, i_p, :] .= -minf
         end
     end
 end
@@ -194,9 +207,9 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
 
                 h_opt = h_vec[1]
                 cons = assets + wage_func(model, capital, T, p_shock) * h_opt + model.y
-                sol_h_college[T, i_a, i_k, i_p] = h_opt
-                sol_c_college[T, i_a, i_k, i_p] = cons
-                sol_v_college[T, i_a, i_k, i_p] = -minf
+                sol_h_college[T, i_a, i_k, i_p, :] .= h_opt
+                sol_c_college[T, i_a, i_k, i_p, :] .= cons
+                sol_v_college[T, i_a, i_k, i_p, :] .= -minf
             end
         
         elseif t > t_college
@@ -219,49 +232,66 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                 maxeval!(opt, 1000)
                 inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 0.0)
                 min_objective!(opt, obj_wrapper)
-                init = [max(sol_c_college[t + 1, i_a, i_k, i_p], 1e-6), sol_h_college[t + 1, i_a, i_k, i_p]]
+                init = [max(sol_c_college[t + 1, i_a, i_k, i_p, 1], 1e-6), sol_h_college[t + 1, i_a, i_k, i_p, 1]]
                 (minf, x_opt, ret) = optimize(opt, init)
-                sol_c_college[t, i_a, i_k, i_p] = x_opt[1]
-                sol_h_college[t, i_a, i_k, i_p] = x_opt[2]
-                sol_v_college[t, i_a, i_k, i_p] = -minf
+                sol_c_college[t, i_a, i_k, i_p, :] .= x_opt[1]
+                sol_h_college[t, i_a, i_k, i_p, :] .= x_opt[2]
+                sol_v_college[t, i_a, i_k, i_p, :] .= -minf
             end
 
-        else # During college periods
-            V_cont = (t == t_college) ? sol_v_work : sol_v_college
-            interp = create_interpolator(model, V_cont, t + 1)
-
-            for i_p in 1:Np, i_k in 1:Nk, i_a in 1:Na
-                assets, capital = a_grid[i_a], k_grid[i_k]
-
-                # --- Feasibility Check ---
+        else  # During college periods
+            interp = create_interpolator(model, model.sol_v_college, t + 1)
+            for i_p in 1:model.Np, i_k in 1:model.Nk, i_a in 1:model.Na
+                assets, capital = model.a_grid[i_a], model.k_grid[i_k]
                 if assets < a_min_t[t]
-                    sol_c_college[t, i_a, i_k, i_p] = NaN
-                    sol_h_college[t, i_a, i_k, i_p] = NaN
-                    sol_v_college[t, i_a, i_k, i_p] = -1e10
+                    model.sol_c_college[t, i_a, i_k, i_p, :] .= NaN
+                    model.sol_h_college[t, i_a, i_k, i_p, :] .= NaN
+                    model.sol_v_college[t, i_a, i_k, i_p, :] .= -Inf
                     continue
                 end
 
-                # --- Optimization ---
-                function obj_wrapper(c_vec::Vector, grad::Vector)
-                    f = obj_college_period(model, c_vec, assets, capital, t, i_p, interp, grad)
-                    if length(grad) > 0
-                        grad[:] = -grad[:]
+                if t == 1
+                    for i_t in 1:model.Nt
+                        ε = model.t_grid[i_t]
+                        init = [0.13]
+                        opt = Opt(:LD_SLSQP, 1)
+                        lower_bounds!(opt, 0.01)
+                        upper_bounds!(opt, 20.0)
+                        ftol_rel!(opt, 1e-8)
+                        maxeval!(opt, 1000)
+                        min_objective!(opt, (c_vec, grad) -> begin
+                            f = obj_college_period_general(model, c_vec, assets, capital, t, i_p, interp, ε, grad)
+                            if length(grad) > 0
+                                grad[:] = -grad[:]
+                            end
+                            return -f
+                        end)
+                        inequality_constraint!(opt, (x, grad) -> asset_constraint_college(x, grad, model, assets, t), 1e-6)
+                        (minf, c_vec, ret) = optimize(opt, init)
+                        model.sol_c_college[t, i_a, i_k, i_p, i_t] = c_vec[1]
+                        model.sol_h_college[t, i_a, i_k, i_p, i_t] = 0.0
+                        model.sol_v_college[t, i_a, i_k, i_p, i_t] = -minf
                     end
-                    return -f
+                else
+                    init = [0.13]
+                    opt = Opt(:LD_SLSQP, 1)
+                    lower_bounds!(opt, 0.01)
+                    upper_bounds!(opt, 20.0)
+                    ftol_rel!(opt, 1e-8)
+                    maxeval!(opt, 1000)
+                    min_objective!(opt, (c_vec, grad) -> begin
+                        f = obj_college_period_general(model, c_vec, assets, capital, t, i_p, interp, 0.0, grad)
+                        if length(grad) > 0
+                            grad[:] = -grad[:]
+                        end
+                        return -f
+                    end)
+                    inequality_constraint!(opt, (x, grad) -> asset_constraint_college(x, grad, model, assets, t), 1e-6)
+                    (minf, c_vec, ret) = optimize(opt, init)
+                    model.sol_c_college[t, i_a, i_k, i_p, :] .= c_vec[1]
+                    model.sol_h_college[t, i_a, i_k, i_p, :] .= 0.0
+                    model.sol_v_college[t, i_a, i_k, i_p, :] .= -minf
                 end
-                init = [0.13]
-                opt = Opt(:LD_SLSQP, 1)
-                lower_bounds!(opt, 0.01)
-                upper_bounds!(opt, 20.0)
-                ftol_rel!(opt, 1e-8)
-                maxeval!(opt, 1000)
-                min_objective!(opt, obj_wrapper)
-                inequality_constraint!(opt, (x, grad) -> asset_constraint_college(x, grad, model, assets, t), 1e-6)
-                (minf, c_vec, ret) = optimize(opt, init)
-
-                sol_c_college[t, i_a, i_k, i_p] = c_vec[1]
-                sol_h_college[t, i_a, i_k, i_p] = 0.0
-                sol_v_college[t, i_a, i_k, i_p] = -minf
             end
         end
     end
@@ -330,8 +360,10 @@ end
 end
 
 # --- College Period ---
-@inline function obj_college_period(model::ConSavLaborCollege_AR1, c_vec::Vector, assets::Float64,
-    capital::Float64, t::Int, i_p::Int, interp, grad::Vector)
+@inline function obj_college_period_general(
+    model::ConSavLaborCollege_AR1, c_vec::Vector, assets::Float64, capital::Float64,
+    t::Int, i_p::Int, interp, ε::Float64, grad::Vector
+)
     c = c_vec[1]
     a_next = (1 + model.r) * assets - c - model.college_cost + model.y
     k_next = capital + model.college_boost
@@ -346,13 +378,14 @@ end
             Vj = interp_jp(a_next, k_next)
             gradV = Interpolations.gradient(interp_jp, a_next, k_next)
             dV_da = gradV[1]
-
             V_next += p_prob * Vj
             gradV_c += p_prob * (-dV_da)
         end
     end
 
-    V = util_college(model, c, capital) + model.beta * V_next
+    # If t==1, use ε, else 0
+    V = util_college(model, c, capital) + (t==1 ? ε : 0.0) + model.beta * V_next
+
     if length(grad) > 0
         grad[1] = c^(-model.rho) + model.beta * gradV_c
     end
@@ -405,10 +438,8 @@ end
     end
     psychic_cost = model.kappa / (k + 1.0)^2
     #psychic_cost = model.kappa * log(k)
-    #psychic_cost = model.kappa * exp(-k)
     return cons_utility - psychic_cost
 end
-
 
 @inline function wage_func(model::ConSavLaborCollege_AR1, k::Float64, t::Int, p_shock::Float64)
     base_wage = model.w_vec[t] * (1 + model.alpha * k)
@@ -418,7 +449,7 @@ end
 function create_interpolator(model::ConSavLaborCollege_AR1, sol_v::Array, t::Int)
     return [
         extrapolate(
-            interpolate((model.a_grid, model.k_grid), sol_v[t, :, :, i_p], Gridded(Linear())),
+            interpolate((model.a_grid, model.k_grid), sol_v[t, :, :, i_p, 1], Gridded(Linear())),
             Line()  # or Line()
         )
         for i_p in 1:model.Np
@@ -438,6 +469,7 @@ function compute_min_assets(model::ConSavLaborCollege_AR1)
 end
 
 
+
 # --------------------------
 # Helper for Simulation
 # --------------------------
@@ -447,61 +479,82 @@ function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
 end
 
 # --------------------------
-# Simulation (AR1 Shock Only)
+# Simulation (AR1 Shock and Preference Shocks)
 # --------------------------
 function simulate_model!(model::ConSavLaborCollege_AR1)
     @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition = model
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
     @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = model
+    @unpack Nt, t_weight = model
 
-    # Precompute policy and value function interpolators
+    # -- 1. Precompute interpolators for each possible shock node for college policy --
+    interp_c_college = [
+        [LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+            for t in 1:T, i_p in 1:model.Np]
+        for i_t in 1:Nt
+    ]
+    interp_h_college = [
+        [LinearInterpolation((a_grid, k_grid), model.sol_h_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+            for t in 1:T, i_p in 1:model.Np]
+        for i_t in 1:Nt
+    ]
+    interp_v_college = [
+        [LinearInterpolation((a_grid, k_grid), model.sol_v_college[1, :, :, i_p, i_t]; extrapolation_bc=Flat())
+            for i_p in 1:model.Np]
+        for i_t in 1:Nt
+    ]
+
     interp_c_work = [
-        LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
         for t in 1:T, i_p in 1:model.Np
     ]
     interp_h_work = [
-        LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_p]; extrapolation_bc=Flat())
-        for t in 1:T, i_p in 1:model.Np
-    ]
-    interp_c_college = [
-        LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_p]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
         for t in 1:T, i_p in 1:model.Np
     ]
     interp_v_work = [
-        LinearInterpolation((a_grid, k_grid), model.sol_v_work[1, :, :, i_p]; extrapolation_bc=Flat())
-        for i_p in 1:model.Np
-    ]
-    interp_v_college = [
-        LinearInterpolation((a_grid, k_grid), model.sol_v_college[1, :, :, i_p]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid, k_grid), model.sol_v_work[1, :, :, i_p, 1]; extrapolation_bc=Flat())
         for i_p in 1:model.Np
     ]
 
-    # Initial decision
+    # -- 2. Assign a taste shock node to each agent for t == 1 --
+    cum_weights = cumsum(model.t_weight)
+    rng = MersenneTwister(123)  # Reproducible
+    eps_indices = [findfirst(w -> w ≥ rand(rng), cum_weights) for _ in 1:simN]
+
+    # -- 3. Initial path choice (now stochastic!) --
     path_choice = Vector{Symbol}(undef, simN)
     for i in 1:simN
         a0, k0, p0_idx = sim_a_init[i], sim_k_init[i], sim_p_init_idx[i]
-        EV_college = interp_v_college[p0_idx](a0, k0)
-        EV_work = interp_v_work[p0_idx](a0, k0)
+        i_t = eps_indices[i]
+        EV_college = interp_v_college[i_t][p0_idx](a0, k0)  # <-- each agent gets their node!
+        EV_work    = interp_v_work[p0_idx](a0, k0)
         path_choice[i] = EV_college > EV_work ? :college : :work
     end
 
-    # Initialize simulation arrays
+    # -- 4. Initialize simulation arrays --
     sim_a[:, 1] .= sim_a_init
     sim_k[:, 1] .= sim_k_init
     sim_p_idx[:, 1] .= sim_p_init_idx
 
-    # Simulate forward
+    # -- 5. Simulate forward --
     @showprogress "Simulating..." for t in 1:T
         for i in 1:simN
             a = sim_a[i, t]
             k = sim_k[i, t]
             p_idx = sim_p_idx[i, t]
+            i_t = eps_indices[i]
 
-            # Choose consumption & hours
             if path_choice[i] == :college && t <= t_college
-                c = interp_c_college[t, p_idx](a, k)
-                h = 0.0
+                if t == 1
+                    c = interp_c_college[i_t][t, p_idx](a, k)
+                    h = interp_h_college[i_t][t, p_idx](a, k)
+                else
+                    # Use mean (first node) for other periods, or expected if you want
+                    c = interp_c_college[1][t, p_idx](a, k)
+                    h = interp_h_college[1][t, p_idx](a, k)
+                end
             else
                 c = interp_c_work[t, p_idx](a, k)
                 h = interp_h_work[t, p_idx](a, k)
@@ -541,11 +594,11 @@ function simulate_model!(model::ConSavLaborCollege_AR1)
         end
     end
 
-    # Report results
+    # -- 6. Report results --
     num_college = sum(path_choice .== :college)
     println("\n--- Simulation Results ---")
     println("Number choosing college: $num_college ($(round(100*num_college/simN, digits=1))%)")
     println("Number choosing work:    $(simN - num_college)")
 
-    return model, path_choice
+    return model, path_choice, eps_indices
 end
