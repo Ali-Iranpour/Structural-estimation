@@ -44,9 +44,10 @@ mutable struct ConSavLaborCollege_AR1
     sol_c_work::Array{Float64, 5}; sol_h_work::Array{Float64, 5}; sol_v_work::Array{Float64, 5}
     sol_c_college::Array{Float64, 5}; sol_h_college::Array{Float64, 5}; sol_v_college::Array{Float64, 5}
 
-    # --- Solution arrays (5D: T, Na, Nk, Np, Nt) ---
-    sol_tr_college::Array{Float64, 5}; sol_tr_work::Array{Float64, 5}
-    sol_tr_v_college::Array{Float64, 5}; sol_tr_v_work::Array{Float64, 5}
+    # --- Solution arrays (4D: Na, Nk, Np, Nt) ---
+    sol_tr_college::Array{Float64, 4}; sol_tr_work::Array{Float64, 4}
+    sol_tr_v_college::Array{Float64, 4}; sol_tr_v_work::Array{Float64, 4}
+    sol_exp_college::Array{Float64, 4}; sol_exp_v_college::Array{Float64, 4}
 
     # --- Simulation arrays ---
     sim_c::Matrix{Float64}; sim_h::Matrix{Float64}; sim_a::Matrix{Float64}
@@ -98,8 +99,10 @@ function ConSavLaborCollege_AR1(;
     sol_c_college = fill(NaN, sol_shape); sol_h_college = fill(NaN, sol_shape); sol_v_college = fill(NaN, sol_shape)
 
     # --- Initialize half period solution arrays (5D) ---
-    sol_tr_college = fill(NaN, sol_shape); sol_tr_work = fill(NaN, sol_shape)
-    sol_tr_v_college = fill(NaN, sol_shape); sol_tr_v_work = fill(NaN, sol_shape)
+    tr_shape = (Na, Nk, Np, Nt)
+    sol_tr_college = fill(NaN, tr_shape); sol_tr_work = fill(NaN, tr_shape)
+    sol_tr_v_college = fill(NaN, tr_shape); sol_tr_v_work = fill(NaN, tr_shape)
+    sol_exp_college = fill(NaN, tr_shape); sol_exp_v_college = fill(NaN, tr_shape)
 
     # --- Initialize simulation arrays ---
     sim_shape = (simN, T)
@@ -124,6 +127,7 @@ function ConSavLaborCollege_AR1(;
         Np, p_grid, p_transition, p_ar1, sigma_p,
         sol_c_work, sol_h_work, sol_v_work, sol_c_college, sol_h_college, sol_v_college,
         sol_tr_college, sol_tr_work, sol_tr_v_college, sol_tr_v_work,
+        sol_exp_college, sol_exp_v_college,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
         sim_a_init, sim_k_init, sim_p_init_idx, sim_income, sim_wage,
         draws_uniform_p, w_vec, college_cost, college_boost, kappa
@@ -643,8 +647,8 @@ function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
         HC = k_grid[ik]
         tr_hi = assets - 1e-9
         if assets ≤ 1e-3
-            model.sol_tr_work[1, ia, ik, :, :] .= 0.0
-            model.sol_tr_v_work[1, ia, ik, :, :] .= -Inf
+            model.sol_tr_work[ia, ik, :, :] .= 0.0
+            model.sol_tr_v_work[ia, ik, :, :] .= -Inf
             continue
         end
 
@@ -668,8 +672,8 @@ function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
         (minf, xopt, ret) = optimize(opt, init)
 
         # Fill for all [ip, it] for compatibility
-        model.sol_tr_work[1, ia, ik, :, :]   .= xopt[1]
-        model.sol_tr_v_work[1, ia, ik, :, :] .= -minf
+        model.sol_tr_work[ia, ik, :, :]   .= xopt[1]
+        model.sol_tr_v_work[ia, ik, :, :] .= -minf
     end
     return nothing
 end
@@ -687,8 +691,8 @@ function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
         HC = k_grid[ik]
         tr_hi = assets - 1e-9
         if assets ≤ a_min_t[1]
-            model.sol_tr_college[1, ia, ik, :, it] .= 0.0
-            model.sol_tr_v_college[1, ia, ik, :, it] .= -Inf
+            model.sol_tr_college[ia, ik, :, it] .= 0.0
+            model.sol_tr_v_college[ia, ik, :, it] .= -Inf
             continue
         end
 
@@ -713,8 +717,8 @@ function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
   
 
         # Fill for all ip for compatibility
-        model.sol_tr_college[1, ia, ik, :, it]   .= xopt[1]
-        model.sol_tr_v_college[1, ia, ik, :, it] .= -minf
+        model.sol_tr_college[ia, ik, :, it]   .= xopt[1]
+        model.sol_tr_v_college[ia, ik, :, it] .= -minf
     end
     return nothing
 end
@@ -808,4 +812,87 @@ function stationary_dist(P)
     π .*= sign(π[1])
     π ./= sum(π)
     return π
+end
+
+
+function optimal_transfer_exp_college!(model::ConSavLaborCollege_AR1)
+    @unpack Na, Nk, a_grid, k_grid, p_transition, Np, Nt, t_weight = model
+    π_p = stationary_dist(p_transition)
+    coef = (1-model.mu) + model.mu*model.omega
+
+    V1_college = [[extrapolate(interpolate((a_grid, k_grid), model.sol_v_college[1, :, :, ip, it], Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
+
+    for ia in 1:Na, ik in 1:Nk
+        assets = a_grid[ia]
+        HC = k_grid[ik]
+        tr_hi = assets - 1e-9
+        if assets ≤ 1e-3
+            model.sol_exp_college[ia, ik, :, :] .= 0.0
+            model.sol_exp_v_college[ia, ik, :, :] .= -Inf
+            continue
+        end
+
+        function obj_wrapper(x::Vector, grad::Vector)
+            tr = x[1]
+            f = obj_transfer_exp_college(model, tr, assets, HC, grad, V1_college, Np, Nt, π_p, t_weight)
+            if length(grad) > 0
+                grad[:] = -grad[:]
+            end
+            return -f
+        end
+
+        opt = Opt(:LD_SLSQP, 1)
+        lower_bounds!(opt, [1e-12])
+        upper_bounds!(opt, [tr_hi])
+        ftol_rel!(opt, 1e-8)
+        maxeval!(opt, 500)
+        min_objective!(opt, obj_wrapper)
+        # Initial guess 
+        init = [tr_hi * 0.99]
+        (minf, xopt, ret) = optimize(opt, init)
+  
+        # Fill for all [ip, it] for compatibility
+        model.sol_exp_college[ia, ik, :, :] .= xopt[1]
+        model.sol_exp_v_college[ia, ik, :, :] .= -minf
+    end
+    return nothing
+end
+
+
+function obj_transfer_exp_college(
+    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
+    grad::Vector, V1_college::Vector, Np::Int, Nt::Int, π_p::Vector, t_weight::Vector
+)
+    a_terminal = assets - tr
+
+    if a_terminal <= 0.0
+        if length(grad) > 0
+            grad[1] = 0.0
+        end
+        return -1e12
+    end
+
+    V_parent = terminal_value(model, HC, a_terminal)
+    # Expectation over AR1 (p) and epsilon (t)
+    V_child = 0.0
+    dV_child_dtr = 0.0
+    for ip in 1:Np
+        for it in 1:Nt
+            interp = V1_college[ip][it]
+            weight = π_p[ip] * t_weight[it]
+            Vj = interp(tr, HC)
+            gradV = Interpolations.gradient(interp, tr, HC)
+            dV_child_dtr += weight * gradV[1]
+            V_child      += weight * Vj
+        end
+    end
+
+    coef = (1-model.mu) + model.mu*model.omega
+    f = coef * V_child + model.mu * V_parent
+
+    if length(grad) > 0
+        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
+        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
+    end
+    return f
 end
