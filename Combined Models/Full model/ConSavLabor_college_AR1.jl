@@ -25,6 +25,11 @@ mutable struct ConSavLaborCollege_AR1
     Nk::Int; simT::Int; simN::Int
     a_grid::Vector{Float64}; k_grid::Vector{Float64}
 
+    psi_terminal::Float64       # Terminal value weight on human capital
+    kappa_terminal::Float64     # Weight on parent's retained assets
+    omega::Float64              # Weight on child's life-cycle utility
+    mu::Float64                 # Weight on Parent's utility
+
     # Transitory shocks
     Nt::Int                     # Number of grid points for t
     t_grid::Vector{Float64}     # Grid for transitory shock t
@@ -35,9 +40,13 @@ mutable struct ConSavLaborCollege_AR1
     Np::Int; p_grid::Vector{Float64}; p_transition::Matrix{Float64}
     p_ar1::Float64; sigma_p::Float64
 
-    # --- Solution arrays (4D: T, Na, Nk, Np, Nt) ---
+    # --- Solution arrays (5D: T, Na, Nk, Np, Nt) ---
     sol_c_work::Array{Float64, 5}; sol_h_work::Array{Float64, 5}; sol_v_work::Array{Float64, 5}
     sol_c_college::Array{Float64, 5}; sol_h_college::Array{Float64, 5}; sol_v_college::Array{Float64, 5}
+
+    # --- Solution arrays (5D: T, Na, Nk, Np, Nt) ---
+    sol_tr_college::Array{Float64, 5}; sol_tr_work::Array{Float64, 5}
+    sol_tr_v_college::Array{Float64, 5}; sol_tr_v_work::Array{Float64, 5}
 
     # --- Simulation arrays ---
     sim_c::Matrix{Float64}; sim_h::Matrix{Float64}; sim_a::Matrix{Float64}
@@ -53,15 +62,21 @@ end
 # Constructor for ConSavLaborCollege_AR1 with AR1 Shock
 # =============================================================================
 function ConSavLaborCollege_AR1(;
-    T::Int=50, t_college::Int=4, beta::Float64=0.97, rho::Float64=1.0,
-    r::Float64=0.03, a_max::Float64=20.0, Na::Int=30, y::Float64=0.6,
-    simN::Int=5000, a_min::Float64=0.0, k_max::Float64=30.0, Nk::Int=30,
-    w::Float64=12.5, tau::Float64=0.25, eta::Float64=2.0, alpha::Float64=0.08,
-    phi::Float64=20.0, seed::Int=1234, college_cost::Float64=1.2,
-    college_boost::Float64=2.0, kappa::Float64=5.0,
-    # Shock parameters (AR1 only)
-    p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
-    Nt::Int=7, sigma_eps::Float64=0.2)
+                T::Int=50, t_college::Int=4, beta::Float64=0.97, rho::Float64=1.0,
+                r::Float64=0.03, a_max::Float64=20.0, Na::Int=30, y::Float64=0.6,
+                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=30.0, Nk::Int=30,
+                w::Float64=12.5, tau::Float64=0.25, eta::Float64=2.0, alpha::Float64=0.08,
+                phi::Float64=20.0, seed::Int=1234, college_cost::Float64=1.2,
+                college_boost::Float64=2.0, kappa::Float64=5.0,
+                # Shock parameters (AR1 only)
+                p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
+                # Preference shock parameters
+                Nt=11, sigma_eps=0.5,
+                # --- Terminal value parameters ---
+                psi_terminal::Float64=1.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
+                    # --- Bargaining parameter ---
+                mu = 0.5 
+                )
 
     simT = T
     a_grid = create_focused_grid(a_min, 8.0, a_max, Na, 0.7, 1.1)
@@ -77,10 +92,14 @@ function ConSavLaborCollege_AR1(;
     p_grid = exp.(mc.state_values)
     p_transition = mc.p
 
-    # --- Initialize solution arrays (4D) ---
+    # --- Initialize solution arrays (5D) ---
     sol_shape = (T, Na, Nk, Np, Nt)
     sol_c_work = fill(NaN, sol_shape); sol_h_work = fill(NaN, sol_shape); sol_v_work = fill(NaN, sol_shape)
     sol_c_college = fill(NaN, sol_shape); sol_h_college = fill(NaN, sol_shape); sol_v_college = fill(NaN, sol_shape)
+
+    # --- Initialize half period solution arrays (5D) ---
+    sol_tr_college = fill(NaN, sol_shape); sol_tr_work = fill(NaN, sol_shape)
+    sol_tr_v_college = fill(NaN, sol_shape); sol_tr_v_work = fill(NaN, sol_shape)
 
     # --- Initialize simulation arrays ---
     sim_shape = (simN, T)
@@ -91,7 +110,7 @@ function ConSavLaborCollege_AR1(;
 
     rng = MersenneTwister(seed)
     sim_a_init = rand(rng, simN) .* 10
-    sim_k_init = zeros(Float64, simN)
+    sim_k_init = rand(rng, simN) .* 5
     sim_p_init_idx = fill(ceil(Int, Np/2), simN) # Start at median persistent shock
 
     draws_uniform_p = rand(rng, sim_shape...)
@@ -100,9 +119,11 @@ function ConSavLaborCollege_AR1(;
     return ConSavLaborCollege_AR1(
         T, t_college, rho, beta, phi, eta, alpha, y, w, tau, r,
         a_max, a_min, Na, k_max, Nk, simT, simN, a_grid, k_grid,
+        psi_terminal, kappa_terminal, omega, mu,
         Nt, t_grid, sigma_eps, t_weight,
         Np, p_grid, p_transition, p_ar1, sigma_p,
         sol_c_work, sol_h_work, sol_v_work, sol_c_college, sol_h_college, sol_v_college,
+        sol_tr_college, sol_tr_work, sol_tr_v_college, sol_tr_v_work,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
         sim_a_init, sim_k_init, sim_p_init_idx, sim_income, sim_wage,
         draws_uniform_p, w_vec, college_cost, college_boost, kappa
@@ -436,7 +457,7 @@ end
     else
         cons_utility = (c^(1.0 - model.rho)) / (1.0 - model.rho)
     end
-    psychic_cost = model.kappa / (k + 1.0)^2
+    psychic_cost = model.kappa / (k + 1.0)^4
     #psychic_cost = model.kappa * log(k)
     return cons_utility - psychic_cost
 end
@@ -458,7 +479,7 @@ end
 
 function compute_min_assets(model::ConSavLaborCollege_AR1)
     @unpack t_college, r, y, college_cost, a_min = model
-    c_min = 0.15  # Minimum consumption threshold
+    c_min = 0.3  # Minimum consumption threshold
 
     a_min_t = zeros(t_college)
     a_min_t[t_college] = (a_min + c_min + college_cost - y) / (1 + r)
@@ -467,7 +488,6 @@ function compute_min_assets(model::ConSavLaborCollege_AR1)
     end
     return a_min_t
 end
-
 
 
 # --------------------------
@@ -479,7 +499,7 @@ function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
 end
 
 # --------------------------
-# Simulation (AR1 Shock and Preference Shocks)
+# Simulation (AR1 Shock Only)
 # --------------------------
 function simulate_model!(model::ConSavLaborCollege_AR1)
     @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
@@ -601,4 +621,191 @@ function simulate_model!(model::ConSavLaborCollege_AR1)
     println("Number choosing work:    $(simN - num_college)")
 
     return model, path_choice, eps_indices
+end
+
+
+# ========== Main Solvers ==========
+
+function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
+    @unpack Na, Nk, a_grid, k_grid, p_transition, Np = model
+    π_p = stationary_dist(p_transition)
+    coef = (1-model.mu) + model.mu*model.omega
+
+    # V_child_interp is the expected child value interpolator over AR1 shock (does not depend on epsilon)
+    it_base = 1
+    V1_work = [extrapolate(interpolate((a_grid, k_grid), model.sol_v_work[1, :, :, ip, it_base], Gridded(Linear())), Line()) for ip in 1:Np]
+    function V_child_interp(tr, HC)
+        sum(π_p[ip] * V1_work[ip](tr, HC) for ip in 1:Np)
+    end
+
+    for ia in 1:Na, ik in 1:Nk
+        assets = a_grid[ia]
+        HC = k_grid[ik]
+        tr_hi = assets - 1e-9
+        if assets ≤ 1e-3
+            model.sol_tr_work[1, ia, ik, :, :] .= 0.0
+            model.sol_tr_v_work[1, ia, ik, :, :] .= -Inf
+            continue
+        end
+
+        function obj_wrapper(x::Vector, grad::Vector)
+            tr = x[1]
+            f = obj_transfer_work(model, tr, assets, HC, grad, V1_work, Np, π_p)
+            if length(grad) > 0
+                grad[:] = -grad[:]
+            end
+            return -f
+        end
+
+        opt = Opt(:LD_SLSQP, 1)
+        lower_bounds!(opt, [1e-6])
+        upper_bounds!(opt, [tr_hi])
+        ftol_rel!(opt, 1e-8)
+        maxeval!(opt, 500)
+        min_objective!(opt, obj_wrapper)
+        # Initial guess 
+        init = [tr_hi * 0.5]
+        (minf, xopt, ret) = optimize(opt, init)
+
+        # Fill for all [ip, it] for compatibility
+        model.sol_tr_work[1, ia, ik, :, :]   .= xopt[1]
+        model.sol_tr_v_work[1, ia, ik, :, :] .= -minf
+    end
+    return nothing
+end
+
+function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
+    @unpack Na, Nk, Nt, a_grid, k_grid, p_transition, Np = model
+    π_p = stationary_dist(p_transition)
+    a_min_t = compute_min_assets(model)
+    coef = (1-model.mu) + model.mu*model.omega
+
+    V1_college = [[extrapolate(interpolate((a_grid, k_grid), model.sol_v_college[1, :, :, ip, it], Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
+
+    for ia in 1:Na, ik in 1:Nk, it in 1:Nt
+        assets = a_grid[ia]
+        HC = k_grid[ik]
+        tr_hi = assets - 1e-9
+        if assets ≤ a_min_t[1]
+            model.sol_tr_college[1, ia, ik, :, it] .= 0.0
+            model.sol_tr_v_college[1, ia, ik, :, it] .= -Inf
+            continue
+        end
+
+        function obj_wrapper(x::Vector, grad::Vector)
+            tr = x[1]
+            f = obj_transfer_college(model, tr, assets, HC, grad, V1_college, it, Np, π_p)
+            if length(grad) > 0
+                grad[:] = -grad[:]
+            end
+            return -f
+        end
+
+        opt = Opt(:LD_SLSQP, 1)
+        lower_bounds!(opt, [1e-12])
+        upper_bounds!(opt, [tr_hi])
+        ftol_rel!(opt, 1e-8)
+        maxeval!(opt, 500)
+        min_objective!(opt, obj_wrapper)
+        # Initial guess 
+        init = [tr_hi * 0.99]
+        (minf, xopt, ret) = optimize(opt, init)
+  
+
+        # Fill for all ip for compatibility
+        model.sol_tr_college[1, ia, ik, :, it]   .= xopt[1]
+        model.sol_tr_v_college[1, ia, ik, :, it] .= -minf
+    end
+    return nothing
+end
+
+
+
+# ======== Objective: Work Path ==========
+function obj_transfer_work(
+    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
+    grad::Vector, V1_work::Vector, Np::Int, π_p::Vector
+)
+    a_terminal = assets - tr
+
+    if a_terminal <= 0.0
+        if length(grad) > 0
+            grad[1] = 0.0
+        end
+        return -1e12
+    end
+
+    V_parent = terminal_value(model, HC, a_terminal)
+    # Expectation over AR1 shock
+    V_child = 0.0
+    dV_child_dtr = 0.0
+    for ip in 1:Np
+        interp = V1_work[ip]
+        Vj = interp(tr, HC)
+        gradV = Interpolations.gradient(interp, tr, HC)
+        dV_child_dtr += π_p[ip] * gradV[1]
+        V_child      += π_p[ip] * Vj
+    end
+
+    coef = (1-model.mu) + model.mu*model.omega
+    f = coef * V_child + model.mu * V_parent
+
+    if length(grad) > 0
+        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
+        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
+    end
+    return f
+end
+
+# ========== Objective: College Path ==========
+function obj_transfer_college(
+    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
+    grad::Vector, V1_college::Vector, it::Int, Np::Int, π_p::Vector
+)
+    a_terminal = assets - tr
+
+    if a_terminal <= 0.0
+        if length(grad) > 0
+            grad[1] = 0.0
+        end
+        return -1e12
+    end
+
+    V_parent = terminal_value(model, HC, a_terminal)
+    # Expectation over AR1 shock
+    V_child = 0.0
+    dV_child_dtr = 0.0
+    for ip in 1:Np
+        interp = V1_college[ip][it]
+        Vj = interp(tr, HC)
+        gradV = Interpolations.gradient(interp, tr, HC)
+        dV_child_dtr += π_p[ip] * gradV[1]
+        V_child      += π_p[ip] * Vj
+    end
+
+    coef = (1-model.mu) + model.mu*model.omega
+    f = coef * V_child + model.mu * V_parent
+
+    if length(grad) > 0
+        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
+        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
+    end
+    return f
+end
+
+# ========== Terminal Value ==========
+@inline function terminal_value(model::ConSavLaborCollege_AR1, k::Float64, a_terminal::Float64)
+    @unpack psi_terminal, kappa_terminal = model
+    return psi_terminal * log(k) + kappa_terminal * log(a_terminal)
+end
+# ==
+
+
+# ========== Stationary Distribution Helper ==========
+function stationary_dist(P)
+    vals, vecs = eigen(P')
+    π = vec(real(vecs[:, argmax(real(vals))]))
+    π .*= sign(π[1])
+    π ./= sum(π)
+    return π
 end
