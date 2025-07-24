@@ -64,8 +64,8 @@ end
 # =============================================================================
 function ConSavLaborCollege_AR1(;
                 T::Int=50, t_college::Int=4, beta::Float64=0.97, rho::Float64=1.0,
-                r::Float64=0.03, a_max::Float64=20.0, Na::Int=30, y::Float64=0.6,
-                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=30.0, Nk::Int=30,
+                r::Float64=0.03, a_max::Float64=30.0, Na::Int=30, y::Float64=0.6,
+                simN::Int=5000, a_min::Float64=0.01, k_max::Float64=30.0, Nk::Int=30,
                 w::Float64=12.5, tau::Float64=0.25, eta::Float64=2.0, alpha::Float64=0.08,
                 phi::Float64=20.0, seed::Int=1234, college_cost::Float64=1.2,
                 college_boost::Float64=2.0, kappa::Float64=5.0,
@@ -74,14 +74,14 @@ function ConSavLaborCollege_AR1(;
                 # Preference shock parameters
                 Nt=11, sigma_eps=0.5,
                 # --- Terminal value parameters ---
-                psi_terminal::Float64=1.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
+                psi_terminal::Float64=2.0, kappa_terminal::Float64=2.0, omega::Float64=2.0,
                     # --- Bargaining parameter ---
                 mu = 0.5 
                 )
 
     simT = T
-    a_grid = create_focused_grid(a_min, 8.0, a_max, Na, 0.7, 1.1)
-    k_grid = nonlinspace(0.001, k_max, Nk, 1.5)
+    a_grid = create_focused_grid(a_min, 13.0, a_max, Na, 0.7, 1.1)
+    k_grid = nonlinspace(0.01, k_max, Nk, 1.5)
 
     # Gauss-Hermite quadrature for transitory shocks
     nodes, weights = gausshermite(Nt)
@@ -185,7 +185,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
             end            
             opt = Opt(:LD_SLSQP, 2)
             lower_bounds!(opt, [0.01, 1e-3])
-            upper_bounds!(opt, [30, 1.0])
+            upper_bounds!(opt, [40.0, 1.0])
             ftol_rel!(opt, 1e-8)
             maxeval!(opt, 1000)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 0.0)
@@ -252,7 +252,7 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                 end            
                 opt = Opt(:LD_SLSQP, 2)
                 lower_bounds!(opt, [0.01, 1e-3])
-                upper_bounds!(opt, [30, 1.0])
+                upper_bounds!(opt, [40.0, 1.0])
                 ftol_rel!(opt, 1e-8)
                 maxeval!(opt, 1000)
                 inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 0.0)
@@ -281,7 +281,7 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                         init = [0.13]
                         opt = Opt(:LD_SLSQP, 1)
                         lower_bounds!(opt, 0.01)
-                        upper_bounds!(opt, 20.0)
+                        upper_bounds!(opt, 40.0)
                         ftol_rel!(opt, 1e-8)
                         maxeval!(opt, 1000)
                         min_objective!(opt, (c_vec, grad) -> begin
@@ -301,7 +301,7 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                     init = [0.13]
                     opt = Opt(:LD_SLSQP, 1)
                     lower_bounds!(opt, 0.01)
-                    upper_bounds!(opt, 20.0)
+                    upper_bounds!(opt, 40.0)
                     ftol_rel!(opt, 1e-8)
                     maxeval!(opt, 1000)
                     min_objective!(opt, (c_vec, grad) -> begin
@@ -505,7 +505,7 @@ end
 # --------------------------
 # Simulation (AR1 Shock Only)
 # --------------------------
-function simulate_model!(model::ConSavLaborCollege_AR1)
+function simulate_model_child!(model::ConSavLaborCollege_AR1)
     @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition = model
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
@@ -620,7 +620,7 @@ function simulate_model!(model::ConSavLaborCollege_AR1)
 
     # -- 6. Report results --
     num_college = sum(path_choice .== :college)
-    println("\n--- Simulation Results ---")
+    println("\n--- Simulation Results for Child optimization ---")
     println("Number choosing college: $num_college ($(round(100*num_college/simN, digits=1))%)")
     println("Number choosing work:    $(simN - num_college)")
 
@@ -895,4 +895,163 @@ function obj_transfer_exp_college(
         grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
     end
     return f
+end
+
+# --------------------------
+# Helper for Simulation
+# --------------------------
+function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
+    cdf = cumsum(probs)
+    return findfirst(x -> x >= draw, cdf)
+end
+
+# --------------------------
+# Simulation (AR1 Shock Only)
+# --------------------------
+function simulate_model_family!(model::ConSavLaborCollege_AR1)
+    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
+    @unpack a_grid, k_grid, p_grid, p_transition = model
+    @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
+    @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = model
+    @unpack Nt, t_weight, Np = model
+
+    # -- 1. Precompute interpolators for policies and transfer values --
+    # College policy interpolators
+    interp_c_college = [
+        [LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+            for t in 1:T, i_p in 1:Np]
+        for i_t in 1:Nt
+    ]
+    interp_h_college = [
+        [LinearInterpolation((a_grid, k_grid), model.sol_h_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+            for t in 1:T, i_p in 1:Np]
+        for i_t in 1:Nt
+    ]
+    # Work policy interpolators
+    interp_c_work = [
+        LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:Np
+    ]
+    interp_h_work = [
+        LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:Np
+    ]
+    # Transfer value interpolators
+    sol_tr_v_college_interp = [
+        [extrapolate(interpolate((a_grid, k_grid), model.sol_tr_v_college[:, :, ip, it], Gridded(Linear())), Line()) 
+            for ip in 1:Np]
+        for it in 1:Nt
+    ]
+    sol_tr_v_work_interp = [
+        extrapolate(interpolate((a_grid, k_grid), model.sol_tr_v_work[:, :, ip, 1], Gridded(Linear())), Line()) 
+        for ip in 1:Np
+    ]
+    # Transfer amount interpolators
+    sol_tr_college_interp = [
+        [extrapolate(interpolate((a_grid, k_grid), model.sol_tr_college[:, :, ip, it], Gridded(Linear())), Line()) 
+            for ip in 1:Np]
+        for it in 1:Nt
+    ]
+    sol_tr_work_interp = [
+        extrapolate(interpolate((a_grid, k_grid), model.sol_tr_work[:, :, ip, 1], Gridded(Linear())), Line()) 
+        for ip in 1:Np
+    ]
+
+    # -- 2. Assign a taste shock node to each agent for t == 1 --
+    cum_weights = cumsum(model.t_weight)
+    rng = MersenneTwister(123)  # Reproducible
+    eps_indices = [findfirst(w -> w ≥ rand(rng), cum_weights) for _ in 1:simN]
+
+    # -- 3. Initial path choice based on parent's transfer decision --
+    path_choice = Vector{Symbol}(undef, simN)
+    tr_initial = Vector{Float64}(undef, simN)
+    for i in 1:simN
+        parent_assets = sim_a_init[i]  # Parent's assets
+        HC = sim_k_init[i]             # Child's initial human capital
+        ip = sim_p_init_idx[i]         # Persistent shock index
+        it = eps_indices[i]            # Taste shock index
+
+        # Compute parent's value for each path
+        f_college = sol_tr_v_college_interp[it][ip](parent_assets, HC)
+        f_work = sol_tr_v_work_interp[ip](parent_assets, HC)
+
+        # Choose path and set transfer
+        if f_college > f_work
+            path_choice[i] = :college
+            tr = sol_tr_college_interp[it][ip](parent_assets, HC)
+        else
+            path_choice[i] = :work
+            tr = sol_tr_work_interp[ip](parent_assets, HC)
+        end
+        tr_initial[i] = tr
+    end
+
+    # -- 4. Initialize simulation arrays with transfer as initial asset --
+    sim_a[:, 1] .= tr_initial  # Child's initial asset is the transfer
+    sim_k[:, 1] .= sim_k_init
+    sim_p_idx[:, 1] .= sim_p_init_idx
+
+    # -- 5. Simulate forward --
+    @showprogress "Simulating..." for t in 1:T
+        for i in 1:simN
+            a = sim_a[i, t]
+            k = sim_k[i, t]
+            p_idx = sim_p_idx[i, t]
+            i_t = eps_indices[i]
+
+            if path_choice[i] == :college && t <= t_college
+                if t == 1
+                    c = interp_c_college[i_t][t, p_idx](a, k)
+                    h = interp_h_college[i_t][t, p_idx](a, k)
+                else
+                    # Use mean (first node) for other periods
+                    c = interp_c_college[1][t, p_idx](a, k)
+                    h = interp_h_college[1][t, p_idx](a, k)
+                end
+            else
+                c = interp_c_work[t, p_idx](a, k)
+                h = interp_h_work[t, p_idx](a, k)
+            end
+
+            sim_c[i, t] = c
+            sim_h[i, t] = h
+
+            # Compute income and wage
+            if path_choice[i] == :college && t <= t_college
+                sim_income[i, t] = y
+                sim_wage[i, t] = 0
+            else
+                p_shock = p_grid[p_idx]
+                wage = wage_func(model, k, t, p_shock)
+                sim_wage[i, t] = wage / 0.584
+                sim_income[i, t] = wage * h
+            end
+
+            # Update next period's states
+            if t < T
+                if path_choice[i] == :college && t <= t_college
+                    a_next = (1 + r)*a - c - college_cost + y
+                    k_next = k + college_boost
+                else
+                    a_next = (1 + r)*a + sim_income[i,t] - c + y
+                    k_next = k + h
+                end
+                sim_a[i, t+1] = max(a_next, a_min)
+                sim_k[i, t+1] = k_next
+
+                # Transition for persistent shock
+                p_draw = draws_uniform_p[i, t]
+                p_trans_probs = p_transition[p_idx, :]
+                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
+            end
+        end
+    end
+
+    # -- 6. Report results --
+    num_college = sum(path_choice .== :college)
+    println("\n--- Simulation Results for Family optimization ---")
+    println("Number choosing college: $num_college ($(round(100*num_college/simN, digits=1))%)")
+    println("Number choosing work:    $(simN - num_college)")
+
+    return model, path_choice, eps_indices
 end
