@@ -112,7 +112,7 @@ function ConSavLaborCollege_AR1(;
     sim_income = fill(NaN, sim_shape); sim_wage = fill(NaN, sim_shape)
 
     rng = MersenneTwister(seed)
-    sim_a_init = rand(rng, simN) .* 10
+    sim_a_init = rand(rng, simN) .* 20
     sim_k_init = rand(rng, simN) .* 5
     sim_p_init_idx = fill(ceil(Int, Np/2), simN) # Start at median persistent shock
 
