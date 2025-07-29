@@ -563,7 +563,7 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     sim_p_idx[:, 1] .= sim_p_init_idx
 
     # -- 5. Simulate forward --
-    @showprogress "Simulating..." for t in 1:T
+    for t in 1:T
         for i in 1:simN
             a = sim_a[i, t]
             k = sim_k[i, t]
@@ -589,7 +589,7 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
 
             # Compute income and wage
             if path_choice[i] == :college && t <= t_college
-                sim_income[i, t] = y
+                sim_income[i, t] = 0
                 sim_wage[i, t] = 0
             else
                 p_shock = p_grid[p_idx]
@@ -600,9 +600,14 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
 
             # Update next period's states
             if t < T
-                if path_choice[i] == :college && t <= t_college
-                    a_next = (1 + r)*a - c - college_cost + y
-                    k_next = k + college_boost
+                if path_choice[i] == :college 
+                    if t<= t_college
+                        a_next = (1 + r)*a - c - college_cost + y
+                        k_next = k + college_boost
+                    else
+                        a_next = (1 + r)*a + sim_income[i,t] - c + y
+                        k_next = k + h
+                    end
                 else
                     a_next = (1 + r)*a + sim_income[i,t] - c + y
                     k_next = k + h
@@ -626,7 +631,6 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
 
     return model, path_choice, eps_indices
 end
-
 
 # ========== Main Solvers ==========
 
@@ -918,22 +922,22 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     # -- 1. Precompute interpolators for policies and transfer values --
     # College policy interpolators
     interp_c_college = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_p, i_t]; extrapolation_bc=Line())
             for t in 1:T, i_p in 1:Np]
         for i_t in 1:Nt
     ]
     interp_h_college = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_h_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid, k_grid), model.sol_h_college[t, :, :, i_p, i_t]; extrapolation_bc=Line())
             for t in 1:T, i_p in 1:Np]
         for i_t in 1:Nt
     ]
     # Work policy interpolators
     interp_c_work = [
-        LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p, 1]; extrapolation_bc=Line())
         for t in 1:T, i_p in 1:Np
     ]
     interp_h_work = [
-        LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_p, 1]; extrapolation_bc=Line())
         for t in 1:T, i_p in 1:Np
     ]
     # Transfer value interpolators
@@ -1018,7 +1022,7 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
 
             # Compute income and wage
             if path_choice[i] == :college && t <= t_college
-                sim_income[i, t] = y
+                sim_income[i, t] = 0
                 sim_wage[i, t] = 0
             else
                 p_shock = p_grid[p_idx]
@@ -1029,9 +1033,14 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
 
             # Update next period's states
             if t < T
-                if path_choice[i] == :college && t <= t_college
-                    a_next = (1 + r)*a - c - college_cost + y
-                    k_next = k + college_boost
+                if path_choice[i] == :college 
+                    if t<= t_college
+                        a_next = (1 + r)*a - c - college_cost + y
+                        k_next = k + college_boost
+                    else
+                        a_next = (1 + r)*a + sim_income[i,t] - c + y
+                        k_next = k + h
+                    end
                 else
                     a_next = (1 + r)*a + sim_income[i,t] - c + y
                     k_next = k + h
