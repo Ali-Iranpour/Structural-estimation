@@ -80,7 +80,7 @@ function ConSavLaborCollege_AR1(;
                 )
 
     simT = T
-    a_grid = create_focused_grid(a_min, 13.0, a_max, Na, 0.7, 1.1)
+    a_grid = create_focused_grid(a_min, 3.0, a_max, Na, 0.3, 1.3)
     k_grid = nonlinspace(0.01, k_max, Nk, 1.5)
 
     # Gauss-Hermite quadrature for transitory shocks
