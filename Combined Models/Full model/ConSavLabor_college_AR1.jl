@@ -1064,3 +1064,150 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
 
     return model, path_choice, eps_indices
 end
+
+
+
+# Helper: Deepcopy model, set college_boost, and resolve
+function model_with_belief(model, college_boost_val)
+    m = deepcopy(model)
+    m.college_boost = college_boost_val
+    solve_model_college!(m)  # This should solve for policy/value arrays
+    return m
+end
+
+function simulate_model_child_hetero!(
+    model::ConSavLaborCollege_AR1,
+    belief_values::Vector{Float64},      # possible beliefs about college boost
+    belief_type::Vector{Int}             # for each agent, which belief they hold (length simN)
+)
+    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
+    @unpack a_grid, k_grid, p_grid, p_transition = model
+    @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
+    @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = model
+    @unpack Nt, t_weight = model
+
+    college_boost_true = model.college_boost
+
+    # -- 1. Precompute policy/value interpolators for each belief --
+    M = length(belief_values)
+    println("Solving policy functions for $M belief types...")
+    models_belief = [model_with_belief(model, belief_values[m]) for m in 1:M]
+
+    interp_c_college_belief = [
+        [LinearInterpolation((a_grid, k_grid), models_belief[m].sol_c_college[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+            for t in 1:T, i_p in 1:model.Np]
+        for m in 1:M
+    ]
+    interp_h_college_belief = [
+        [LinearInterpolation((a_grid, k_grid), models_belief[m].sol_h_college[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+            for t in 1:T, i_p in 1:model.Np]
+        for m in 1:M
+    ]
+    interp_v_college_belief = [
+        [LinearInterpolation((a_grid, k_grid), models_belief[m].sol_v_college[1, :, :, i_p, 1]; extrapolation_bc=Flat())
+            for i_p in 1:model.Np]
+        for m in 1:M
+    ]
+
+    # -- 2. Precompute work path interpolators (assume work policies are the same for all beliefs) --
+    interp_c_work = [
+        LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:model.Np
+    ]
+    interp_h_work = [
+        LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:model.Np
+    ]
+    interp_v_work = [
+        LinearInterpolation((a_grid, k_grid), model.sol_v_work[1, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for i_p in 1:model.Np
+    ]
+
+    # -- 3. Assign taste shock node to each agent for t == 1 --
+    cum_weights = cumsum(model.t_weight)
+    rng = MersenneTwister(123)  # Reproducible
+    eps_indices = [findfirst(w -> w ≥ rand(rng), cum_weights) for _ in 1:simN]
+
+    # -- 4. Initial path choice (using agent's belief) --
+    path_choice = Vector{Symbol}(undef, simN)
+    for i in 1:simN
+        a0, k0, p0_idx = sim_a_init[i], sim_k_init[i], sim_p_init_idx[i]
+        i_t = eps_indices[i]
+        m = belief_type[i]
+        EV_college = interp_v_college_belief[m][p0_idx](a0, k0)
+        EV_work    = interp_v_work[p0_idx](a0, k0)
+        path_choice[i] = EV_college > EV_work ? :college : :work
+    end
+
+    # -- 5. Initialize simulation arrays --
+    sim_a[:, 1] .= sim_a_init
+    sim_k[:, 1] .= sim_k_init
+    sim_p_idx[:, 1] .= sim_p_init_idx
+
+    # -- 6. Simulate forward --
+    @showprogress "Simulating..." for t in 1:T
+        for i in 1:simN
+            a = sim_a[i, t]
+            k = sim_k[i, t]
+            p_idx = sim_p_idx[i, t]
+            i_t = eps_indices[i]
+            m = belief_type[i]  # <--- agent's belief
+
+            if path_choice[i] == :college && t <= t_college
+                c = interp_c_college_belief[m][t, p_idx](a, k)
+                h = interp_h_college_belief[m][t, p_idx](a, k)
+            else
+                c = interp_c_work[t, p_idx](a, k)
+                h = interp_h_work[t, p_idx](a, k)
+            end
+
+            sim_c[i, t] = c
+            sim_h[i, t] = h
+
+            # Compute income and wage
+            if path_choice[i] == :college && t <= t_college
+                sim_income[i, t] = 0.0
+                sim_wage[i, t] = 0.0
+            else
+                p_shock = p_grid[p_idx]
+                wage = wage_func(model, k, t, p_shock)
+                sim_wage[i, t] = wage / 0.584
+                sim_income[i, t] = wage * h
+            end
+
+            # Update next period's states
+            if t < T
+                if path_choice[i] == :college
+                    if t < t_college
+                        a_next = (1 + r) * a - c - college_cost + y
+                        k_next = k + belief_values[m]
+                    elseif t == t_college
+                        a_next = (1 + r) * a - c - college_cost + y
+                        k_next = k + college_boost_true + 3 * (college_boost_true - belief_values[m])
+                    else
+                        a_next = (1 + r) * a + sim_income[i, t] - c + y
+                        k_next = k + h
+                    end
+                else
+                    a_next = (1 + r) * a + sim_income[i, t] - c + y
+                    k_next = k + h
+                end
+                sim_a[i, t + 1] = a_next
+                sim_k[i, t + 1] = k_next
+
+                # Transition for persistent shock
+                p_draw = draws_uniform_p[i, t]
+                p_trans_probs = p_transition[p_idx, :]
+                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
+            end
+        end
+    end
+
+    # -- 7. Report results --
+    num_college = sum(path_choice .== :college)
+    println("\n--- Simulation Results with Heterogeneous Beliefs ---")
+    println("Number choosing college: $num_college ($(round(100*num_college/simN, digits=1))%)")
+    println("Number choosing work:    $(simN - num_college)")
+
+    return model, path_choice, eps_indices
+end
