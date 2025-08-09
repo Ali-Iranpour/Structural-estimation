@@ -70,7 +70,7 @@ function ConSavLaborCollege_AR1(;
                 phi::Float64=20.0, seed::Int=1234, college_cost::Float64=1.2,
                 college_boost::Float64=2.0, kappa::Float64=5.0,
                 # Shock parameters (AR1 only)
-                p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
+                p_ar1::Float64=0.95, sigma_p::Float64=0.2, Np::Int=5,
                 # Preference shock parameters
                 Nt=11, sigma_eps=0.5,
                 # --- Terminal value parameters ---
@@ -80,7 +80,7 @@ function ConSavLaborCollege_AR1(;
                 )
 
     simT = T
-    a_grid = create_focused_grid(a_min, 3.0, a_max, Na, 0.3, 1.3)
+    a_grid = create_focused_grid(a_min, 3.0, a_max, Na, 0.3, 1.2)
     k_grid = nonlinspace(0.01, k_max, Nk, 1.5)
 
     # Gauss-Hermite quadrature for transitory shocks
@@ -185,7 +185,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
             end            
             opt = Opt(:LD_SLSQP, 2)
             lower_bounds!(opt, [0.01, 1e-3])
-            upper_bounds!(opt, [40.0, 1.0])
+            upper_bounds!(opt, [100.0, 1.0])
             ftol_rel!(opt, 1e-8)
             maxeval!(opt, 1000)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 0.0)
@@ -199,6 +199,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
     end
 end
 
+
 # ---------------------------------
 # Model Solver for "College" Path
 # ---------------------------------
@@ -210,59 +211,11 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
     a_min_t = compute_min_assets(model)
 
     @showprogress 1 "Solving college model..." for t in T:-1:1
-        if t == T
-            for i_p in 1:Np, i_k in 1:Nk, i_a in 1:Na
-                assets, capital = a_grid[i_a], k_grid[i_k]
-                p_shock = p_grid[i_p]
-
-                function obj_wrapper(h_vec::Vector, grad::Vector)
-                    f = obj_last_period(model, h_vec, assets, capital, T, p_shock, grad)
-                    if length(grad) > 0
-                        grad[:] = -grad[:] # Negate for minimization
-                    end
-                    return -f # Minimize negative utility
-                end
-                opt = Opt(:LD_SLSQP, 1)
-                lower_bounds!(opt, [1e-3])
-                upper_bounds!(opt, [1.0])
-                ftol_rel!(opt, 1e-8)
-                min_objective!(opt, obj_wrapper)
-                init = [0.3]
-                (minf, h_vec, ret) = optimize(opt, init)
-
-                h_opt = h_vec[1]
-                cons = assets + wage_func(model, capital, T, p_shock) * h_opt + model.y
-                sol_h_college[T, i_a, i_k, i_p, :] .= h_opt
-                sol_c_college[T, i_a, i_k, i_p, :] .= cons
-                sol_v_college[T, i_a, i_k, i_p, :] .= -minf
-            end
-        
-        elseif t > t_college
-            interp = create_interpolator(model, sol_v_work, t + 1)
-            for i_p in 1:Np, i_k in 1:Nk, i_a in 1:Na
-                assets, capital = a_grid[i_a], k_grid[i_k]
-                p_shock = p_grid[i_p]
-
-                function obj_wrapper(x::Vector, grad::Vector)
-                    f = obj_work_period(model, x, assets, capital, t, p_shock, i_p, interp, grad)
-                    if length(grad) > 0
-                        grad[:] = -grad[:] # Negate for minimization
-                    end
-                    return -f # Minimize negative value function
-                end            
-                opt = Opt(:LD_SLSQP, 2)
-                lower_bounds!(opt, [0.01, 1e-3])
-                upper_bounds!(opt, [40.0, 1.0])
-                ftol_rel!(opt, 1e-8)
-                maxeval!(opt, 1000)
-                inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 0.0)
-                min_objective!(opt, obj_wrapper)
-                init = [max(sol_c_college[t + 1, i_a, i_k, i_p, 1], 1e-6), sol_h_college[t + 1, i_a, i_k, i_p, 1]]
-                (minf, x_opt, ret) = optimize(opt, init)
-                sol_c_college[t, i_a, i_k, i_p, :] .= x_opt[1]
-                sol_h_college[t, i_a, i_k, i_p, :] .= x_opt[2]
-                sol_v_college[t, i_a, i_k, i_p, :] .= -minf
-            end
+        if t > t_college
+            # For all post-college periods including the terminal period, copy from work arrays
+            sol_c_college[t, :, :, :, :] .= model.sol_c_work[t, :, :, :, :]
+            sol_h_college[t, :, :, :, :] .= model.sol_h_work[t, :, :, :, :]
+            sol_v_college[t, :, :, :, :] .= model.sol_v_work[t, :, :, :, :]
 
         else  # During college periods
             interp = create_interpolator(model, model.sol_v_college, t + 1)
@@ -281,7 +234,7 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                         init = [0.13]
                         opt = Opt(:LD_SLSQP, 1)
                         lower_bounds!(opt, 0.01)
-                        upper_bounds!(opt, 40.0)
+                        upper_bounds!(opt, 50.0)
                         ftol_rel!(opt, 1e-8)
                         maxeval!(opt, 1000)
                         min_objective!(opt, (c_vec, grad) -> begin
@@ -492,7 +445,6 @@ function compute_min_assets(model::ConSavLaborCollege_AR1)
     end
     return a_min_t
 end
-
 
 # --------------------------
 # Helper for Simulation
