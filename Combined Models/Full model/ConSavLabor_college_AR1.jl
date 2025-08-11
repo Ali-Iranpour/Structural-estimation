@@ -70,7 +70,7 @@ function ConSavLaborCollege_AR1(;
                 phi::Float64=20.0, seed::Int=1234, college_cost::Float64=1.2,
                 college_boost::Float64=2.0, kappa::Float64=5.0,
                 # Shock parameters (AR1 only)
-                p_ar1::Float64=0.95, sigma_p::Float64=0.2, Np::Int=5,
+                p_ar1::Float64=0.90, sigma_p::Float64=0.1, Np::Int=5,
                 # Preference shock parameters
                 Nt=11, sigma_eps=0.5,
                 # --- Terminal value parameters ---
