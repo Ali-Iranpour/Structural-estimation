@@ -31,8 +31,7 @@ This repository contains the Julia/Jupyter code for a structural lifecycle model
 │   │   ├── transfer_CRRA_wage.ipynb           # CRRA model with stochastic wages
 │   │   ├── ConSavLabor_college_AR1.jl         # Julia module: child's AR(1) college/work lifecycle
 │   │   ├── ConSavLabor_college_ret.jl         # Julia module: child's lifecycle with retirement
-│   │   └── plots/                             # All generated output figures (PDFs)
-│   │
+│   │   │
 │   ├── Child & Parent part/                   # Intermediate combined models
 │   │   ├── Family_with_asset.ipynb            # Parent-child model with regime switch at t=7
 │   │   ├── family_only_HC.ipynb               # Parent-child model with HC investment only
@@ -45,18 +44,10 @@ This repository contains the Julia/Jupyter code for a structural lifecycle model
 │       ├── consavlabor.jl                     # Archived Julia module
 │       └── issue.md                           # Notes on modeling issues
 │
-├── test codes /                               # Scratch notebooks and experiments
-│   ├── test.ipynb
-│   ├── new.ipynb
-│   ├── familyyyyyy.ipynb
-│   ├── transfer_model.ipynb
-│   └── ConSavLabor_college_AR1.jl
-│
 ├── docs/                                      # Documentation
 │   ├── SLSQP_algorithm.md                     # SLSQP algorithm math and pseudocode
 │   └── Flat_policy_function.md                # Notes on flat policy function issues
 │
-├── Thesis_code.ipynb                          # Top-level thesis notebook
 ├── README.md                                  # This file
 └── .gitignore
 ```
