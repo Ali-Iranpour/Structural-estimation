@@ -3,10 +3,10 @@
 Maps each equation in [`model.txt`](model.txt) to the code that implements it.
 Line numbers are as of 2026-08-02.
 
-- **P** = `src/parent_family.jl`
-- **C** = `ConSavLabor_college_ret.jl`
+- **P** = `code/src/parent_family.jl`
+- **C** = `code/src/child_lifecycle_ret.jl`
 
-⚠️ marks a known departure from the model — see "Known issues" in [`README.md`](README.md).
+⚠️ marks a known departure from the model — see "Known issues" in [`GUIDE.md`](GUIDE.md).
 
 ---
 

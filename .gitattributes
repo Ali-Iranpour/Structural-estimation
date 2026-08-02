@@ -1,1 +1,12 @@
-*.ipynb filter=lfs diff=lfs merge=lfs -text
+# Archived notebooks are already stored in Git LFS — leave them that way.
+# Dropping this rule would turn already-committed LFS pointers into literal
+# pointer text on checkout.
+archive/**/*.ipynb filter=lfs diff=lfs merge=lfs -text
+
+# Active notebooks: strip outputs on commit (working copy keeps them).
+# The filter itself is defined per clone — run ./tools/setup-git-filters.sh once.
+code/**/*.ipynb filter=nbstrip
+
+# Never try to merge or text-diff these.
+*.pdf  binary
+*.jld2 binary

@@ -23,16 +23,32 @@ QuantEcon = "fcd29c91-0bd7-5a09-975d-7ac3f643a60c"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 
-# Versions verified working on 2026-08-02 (julia 1.11.3):
-#   DataFrames 1.7.0        Dierckx 0.5.4          Distributions 0.25.117
-#   FastGaussQuadrature 1.0.2  FilePathsBase 0.9.24  ForwardDiff 0.10.38
-#   Interpolations 0.15.1   LaTeXStrings 1.4.0     Measures 0.3.2
-#   NLopt 1.1.2             Parameters 0.12.3      Plots 1.40.9
-#   ProgressMeter 1.10.2    QuantEcon 0.16.6       StatsBase 0.34.4
-#   StatsPlots 0.15.7
+
+
+# Versions below are pinned to the exact set verified working on 2026-08-02
+# (Julia 1.11.3). Left unpinned, Pkg resolves ForwardDiff to 1.x and NLopt to
+# 1.2.x, which are untested here. Relax a pin deliberately, one at a time, and
+# re-run the model before committing the new Manifest.
 #
-# Interpolations 0.15.x matters: the Gridded(Linear()) + Interpolations.gradient
-# API used throughout the solver changed in earlier versions.
+# Interpolations 0.15.x in particular is load-bearing: the
+# Gridded(Linear()) + Interpolations.gradient API used throughout both solvers
+# changed in earlier versions.
 
 [compat]
 julia = "1.11"
+DataFrames = "=1.7.0"
+Dierckx = "=0.5.4"
+Distributions = "=0.25.117"
+FastGaussQuadrature = "=1.0.2"
+FilePathsBase = "=0.9.24"
+ForwardDiff = "=0.10.38"
+Interpolations = "=0.15.1"
+LaTeXStrings = "=1.4.0"
+Measures = "=0.3.2"
+NLopt = "=1.1.2"
+Parameters = "=0.12.3"
+Plots = "=1.40.9"
+ProgressMeter = "=1.10.2"
+QuantEcon = "=0.16.6"
+StatsBase = "=0.34.4"
+StatsPlots = "=0.15.7"

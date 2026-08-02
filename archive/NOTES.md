@@ -1,7 +1,7 @@
 # Archive
 
 Superseded work, kept for reference. **Nothing here is current.**
-The live model is in [`Combined Models/Full model/`](../Combined%20Models/Full%20model/).
+The live model is in [`code/`](../code/).
 
 Archived 2026-08-02. Folder structure preserved as it was; git history is intact, so
 `git log --follow <path>` still works across the move.
@@ -10,17 +10,17 @@ Archived 2026-08-02. Folder structure preserved as it was; git history is intact
 
 ## `Combined Models/Full model/` — previous versions of the current model
 
-Superseded by `transfer_CRRA_wage.ipynb`. Listed oldest → newest.
+Superseded by `code/transfer_CRRA_wage.ipynb`. Listed oldest → newest.
 
 | File | What it was | Why superseded |
 |---|---|---|
 | `transfer_model.ipynb` | Base parent-child model. Log utility, i.i.d. transitory shocks. | Replaced by the AR(1) variant. |
 | `transfer_model_AR1.ipynb` | Log utility, AR(1) wage shocks, flat tax. Child module: `ConSavLabor_college_AR1.jl`. | Parent utility is log, not CRRA; no `η`; flat proportional tax; wage is `w₀(1+αk)z` with parental human capital as a state — none of which match the current model spec. |
 | `transfer_CRRA.ipynb` | CRRA parent utility + retirement. | Intermediate step; superseded by the `_wage` variant. |
-| `transfer_CRRA_wage_ORIGINAL.ipynb` | **Byte-identical copy of `transfer_CRRA_wage.ipynb` before the 2026-08-02 extraction.** | Kept so the extraction can be verified. Diff its cells 8, 12, 14, 15, 16, 44, 49 against `src/parent_family.jl` — they should match verbatim, except that the driver code at the end of cell 49 was moved back into the notebook. |
+| `transfer_CRRA_wage_ORIGINAL.ipynb` | **Byte-identical copy of `code/transfer_CRRA_wage.ipynb` before the 2026-08-02 extraction.** | Kept so the extraction can be verified. Diff its cells 8, 12, 14, 15, 16, 44, 49 against `code/src/parent_family.jl` — they should match verbatim, except that the driver code at the end of cell 49 was moved back into the notebook. |
 
-`ConSavLabor_college_AR1.jl` was **not** archived — it remains in `Full model/` at your
-request, though the current notebook includes `ConSavLabor_college_ret.jl` instead.
+`ConSavLabor_college_AR1.jl` was **not** archived — it is now `code/src/child_lifecycle_ar1.jl`, kept at your
+request, though the current notebook includes `code/src/child_lifecycle_ret.jl` instead.
 
 ---
 
@@ -56,7 +56,7 @@ request, though the current notebook includes `ConSavLabor_college_ret.jl` inste
 `ConSavLabor_college_SE.ipynb` (heterogeneous beliefs about college returns) ·
 `ConSavLabor_college_retire.ipynb` (adds a retirement phase)
 
-These are the direct ancestors of `ConSavLabor_college_ret.jl`.
+These are the direct ancestors of `code/src/child_lifecycle_ret.jl`.
 
 ## `Family Model/` — early family models
 
