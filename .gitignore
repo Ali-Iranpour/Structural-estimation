@@ -1,11 +1,17 @@
 # OS-generated
 .DS_Store
 
-# Notebooks
-Thesis_code.ipynb
-test.ipynb
+# Scratch notebooks (archived 2026-08-02)
+archive/Thesis_code.ipynb
+archive/test codes/
 
-# Folders (note the trailing slash)
-test codes /
-Combined Models/Full model/plots/
-Combined Models/Full model/terminal_assets/
+# Output ------------------------------------------------------------------
+# figures/ and tables/ ARE tracked — they are paper deliverables and small.
+# data/ holds solved models and simulation dumps, which can be very large.
+output/data/
+output/reports/*.aux
+output/reports/*.log
+
+# Julia
+*.jl.cov
+*.jl.mem

@@ -1,0 +1,313 @@
+\section{The Model}
+\subsection{Environment}
+The model starts with a 2-parents family at the birth of their child. It follows the parents until the child turns 18, and follows the child until his death. Parents are assumed to be age 26 at the start of the model when the child is born. As shown in Figure \ref{fig:life_cycle}, the child has 3 stages of life: childhood, adolescence, and adulthood. During the first two stages (until age 18), the child lives with the parents, after which the child separates and makes independent life-cycle decisions. After the child’s separation, parents’ life-cycle decisions are summarized using a terminal value rather than explicitly tracked. The model has no retirement stage and ends as the child becomes 68 years old. In the first stage of the child's life, from age 0 to 7, all decisions related to the family and the child’s human capital formation are made by the parents. The human capital production function of the child is assumed to be in a Cobb–Douglas form, capturing dynamic complementary as the human capital at period $t + 1$ depends on human capital in period $t$. Parents annually decide on their consumption, labor supply, child's educational expenditure, and the time investment dedicated to the child. In the second stage, from age 7 to 17, as the child enters school, the child gradually gains autonomy within the family and becomes more and more involved in the decisions related to their human capital within a bargaining framework. Additionally, the child’s own study time is included in the human capital production function. We introduce a half-period between ages 17 and 18, during which parents transfer assets to the child, which become the child’s initial asset in the next stage. At the same time, parents and child jointly decide whether the child enrolls in college or enters the labor market. If the child attend the college, he faces consumption and saving decisions during college and enter the labor market at age 22. If the child work immediately, he face consumption, saving, and labor supply decisions from age 18. In both paths, the child remains in the labor market until age 68. The model prohibits borrowing, thereby ensuring that in each period, household expenditures exactly equal household income.
+
+
+\input{Figure/life_cycle}
+
+\subsection{The Childhood and Adolescence Problem}
+
+
+\textbf{Preferences} \quad We consider a family consisting of the parents and a single child, who interact over a finite horizon $t = 1, \ldots, T_L-1$. The parents are assumed to act as a single decision-making unit. They derive utility from their own private consumption, leisure, and the human capital of their child. The private utility of the parents in period $t$ is defined as follows:
+
+\begin{equation}
+  U_{p,t}
+ = \phi_{1}\frac{c_t^{1-\rho}}{1-\rho} + \phi_{2}\frac{h_t^{1+\eta}}{1+\eta}    + \phi_{3}\,\ln HC_{t},  \label{eq:parent-util}
+\end{equation}
+
+Here, $c_{p,t}$ denotes parental consumption, $l_{p,t}$ parental leisure, and $HC_t$ the child’s cognitive skills (or “ability”) measured at the start of period $t$. The preference weights $(\phi_1,\phi_2,\phi_3)$ are strictly positive and normalized to sum to one. The child’s period-$t$ utility is then specified as:
+
+\begin{equation}
+  U_{c,t}
+  = \lambda_{1}\,\ln l_{c,t}
+          + \lambda_{2}\,\ln HC_{t},
+  \label{eq:child-util}
+\end{equation}
+where $l_{c,t}$ denotes the child’s leisure (play) time. The preference weights $(\lambda_{1},\lambda_{2})$ are strictly positive and normalized. 
+To model the process of intra-household decision-making, we model the family’s joint utility consisting of parents and the child private utility with age-of-child varying welfare weights\footnote{\footnotesize{We do not explicitly model the process that generates these weights and take them as exogenous to the model.}}. the parents and the child bargain over the allocation of the child’s leisure and human capital investment once childhood ends. The parents’ bargaining weight is denoted by $\tilde{\mu}_t \in (0,1)$, while the child’s bargaining weight is $(1-\tilde{\mu}_t)$. During childhood ($t \leq 7$), the Pareto weight assigned to the child’s utility is set to zero, so all decisions are made by the parents. As the child enters adolescence, they gradually gain autonomy and more power within the family which translates to higher welfare weight in he family joint utility function. In addition, their own decision regarding the time investment in their human capital becomes relevant. The utility of the family is given by:
+\begin{equation}
+    U_{f,t} =
+      \phi_1 \frac{C_t^{1-\rho}}{1-\rho}  
+    + \phi_2 \frac{h_t^{1+\eta}}{1+\eta}
+    + \tilde{\alpha}_1 \log l_{c,t}
+    + \tilde{\alpha}_2 \log HC_t,
+\end{equation}
+where:
+\begin{align}
+    \tilde{\alpha}_1 &= (1 - \tilde{\mu}_t) \cdot \lambda_1, \label{eq:alpha1}\\
+    \tilde{\alpha}_2 &= \tilde{\mu}_t \cdot \phi_3 + (1 - \tilde{\mu}_t) \cdot \lambda_2. \label{eq:alpha2}
+\end{align}
+Equations \eqref{eq:alpha1}–\eqref{eq:alpha2} define the effective utility weights on the child’s outcomes as a function of intra-household welfare weights. 
+Specifically, $\tilde{\alpha}_1$ in \eqref{eq:alpha1} shows that the weight on the child’s leisure is entirely determined by the child’s welfare share $(1-\tilde{\mu}_t)$, while $\tilde{\alpha}_2$ in \eqref{eq:alpha2} illustrates that the weight on human capital reflects both parental valuation ($\phi_3$) and the child’s valuation ($\lambda_2$), combined according to the welfare weights. 
+
+
+\noindent\textbf{Welfare Weights} \quad The Welfare weights are homogeneous across households and evolve over time according to equation below as the child ages.
+\begin{equation}
+  \tilde{\mu}_{t} =
+  \begin{cases}
+    1,                 & \text{if } t \le 7,\\[4pt]
+    1-\mu_{1}(t-7),    & \text{if } 7 < t \le 18,
+  \end{cases}
+  \label{eq:bargain-weight}
+\end{equation}
+This schedule implies that during childhood ($t \leq 7$), parents have full control ($\tilde{\mu}_t=1$), so the child’s utility carries no weight. From age 7 onward, as the child enters school and gradually gains autonomy, the parent’s weight decreases linearly while the child’s weight $(1-\tilde{\mu}_t)$ increases with age.
+
+\noindent\textbf{Time and Budget Constraints} \quad The family’s choices in each period are subject to both budget and time constraints. The budget constraint determines the evolution of household assets:
+\begin{equation}
+    a_{t+1}
+  = (1 + r)\,a_t
+     + y - T(w_t\, h_t)
+     + b_t - c_{p,t} - e_{p,t}, \qquad a_{t+1} \geq 0,
+\end{equation}
+where $a_{t}$ denotes household assets at the beginning of period $t$, $r$ is the interest rate, $w_t$ is the hourly wage rate, $h_{p,t}$ is parental labor supply, $T(y)$ is the progressive taxation, $b_t$ represents non-labor income or transfers, $c_{p,t}$ is parental consumption, and $e_{p,t}$ is parental educational expenditure on the child. The non-negativity condition, $a_{t+1} \geq 0$, rules out borrowing. In order to model parental wages $w_t$, We collapse the mother and father into a single representative household, both age and wages are defined as the mean across the two parents. The wage equation is specified as: 
+
+\begin{equation}
+\begin{aligned}
+\ln w_{it} = \beta_0
+&+ \beta_1 \,\text{BothCollege}_i
++ \beta_2 \,\text{Age}_{it}
++ \beta_3 \,\text{Age}_{it}^2 \\
+&+ \beta_4 \,(\text{BothCollege}_i \times \text{Age}_{it})
++ \beta_5 \,(\text{BothCollege}_i \times \text{Age}_{it}^2)
++ z_{it},
+\end{aligned}
+\label{eq:wage_log}
+\end{equation}
+
+Average wage of household $i$ in period $t$ is denoted $w_{it}$, and $\text{BothCollege}_i$ is an indicator equal to one if both parents hold a college degree. The quadratic age terms capture the hump-shaped life-cycle profile, while the interaction terms allow the slope and curvature to differ across education groups. The empirical estimates corresponding to Equation~\eqref{eq:wage_log} are reported in Table~\ref{tab:wage_estimates}. The error term $z_{it}$ represents a persistent stochastic shock following an AR(1) process. Following the empirical wage literature, we assume these shocks follow a random walk:
+\begin{equation}
+    z_{it} = \rho z_{i,t-1} + \varepsilon_{it}, 
+    \qquad \varepsilon_{it} \sim \mathcal{N}(0,\sigma^2).
+\end{equation}
+
+
+
+%\begin{equation}
+% w_t = w_0 \cdot (1 + \alpha k_t) \cdot z_t
+%\label{eq:wage}
+%\end{equation}
+%where $w_0$ is the baseline wage, $\alpha$ governs the return to parental human capital and 
+
+The time endowment in each period is normalized to one for both parent and child. For the parent, time is divided between labor supply ($h_{p,t}$), time spent on child care ($\tau_{p,t}$), and leisure ($l_{p,t}$):
+\begin{equation}
+  h_{p,t} + \tau_{p,t} + l_{p,t} = 1.  
+\end{equation}
+For the child, available time is allocated among study ($\tau_{c,t}$), time spent with the parent ($\tau_{p,t}$), and leisure ($l_{c,t}$):
+\begin{equation}
+    \tau_{c,t} + \tau_{p,t} + l_{c,t} = 1.
+\end{equation}
+
+\noindent\textbf{Human Capital Production} \quad We use Cobb-Douglas specification for the child human capital production function. For childhood period $(t \leq 7)$, The child's human capital at $t+1$ is a function of child care time, parental expenditure, and the current level of child's human capital in period $t$. As soon as child enters Adolescence ($7< t \leq 17$) the child own study time is also added to the production function. The production function is defined as:
+\begin{equation}
+    \log HC_{t+1} =
+\begin{cases}
+\log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t & \text{if } t \leq 7\\
+\log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t + \sigma_{4t} \log \tau_{c,t} & \text{if } 7< t \leq 17
+\end{cases}
+\end{equation}
+Here, $R_t$ is a total factor of productivity, $\tau_{p,t}$ is the time spent with the parent, $e_{p,t}$ is the expenditure on the child by the parents, $HC_t$ is the child’s cognitive ability at the start of period $t$, and $\tau_{c,t}$ is the child’s own study time. We use time-specific parameters because the productivity of different inputs changes by the child's age. 
+
+%The parent's human capital $k_t$ changes by learning-by-doing mechanism. Specifically, we assume that the human capital of parent increase by the time spent working and does not depreciate. The law of motion of parental human capital is:
+%\begin{equation}
+%  k_{t+1} = k_t + h_{p,t}
+%\end{equation}
+
+\subsubsection{Value Functions}
+\label{sec:value-functions}
+
+The family’s value function at period $t$ incorporates bargaining weights and private utilities into a unified dynamic decision-making framework. The state variables at the beginning of each period are defined as follows: $a_t$ denotes the household’s asset holdings, $k_t$ is the stock of parental human capital, and $HC_t$ represents the child’s cognitive ability. The value function can be specified over three distinct life stages:
+
+
+\noindent\textbf{Childhood ($t \leq 7$)}: In this stage, child holds no exclusive welfare weight within the family, and as a result, the parents act as the single decision maker, choosing their consumption ($c_{p,t}$), educational investments in the child ($e_{p,t}$), labor supply ($h_{p,t}$), and parental time dedicated to child care ($\tau_{p,t}$).
+
+    \begin{equation}
+        V_t(a_t, k_t, HC_t) = \max_{c_{p,t},\,e_{p,t},\,h_{p,t},\,\tau_{p,t}}
+        \left\{ U_{f,t} + \beta\, \mathbb{E}_{z}\left[ V_{t+1}(a_{t+1}, k_{t+1}, HC_{t+1})\right] \right\}
+    \end{equation}
+    
+\noindent\textbf{Adolescence ($7 < t <17$)}: As the child transitions into adolescence, The child gains autonomy and gets involved in the intra-household decision making. The child’s choice regarding study time ($\tau_{c,t}$) becomes relevant. Accordingly, the family’s problem expands:
+        \begin{equation}
+        V_t(a_t, k_t, HC_t)=\max_{c_{p,t},\,e_{p,t},\,h_{p,t},\,\tau_{p,t},\,\tau_{c,t}}
+        \left\{ U_{f,t} + \beta\, \mathbb{E}_{z}\left[ V_{t+1}(a_{t+1}, k_{t+1}, HC_{t+1})\right] \right\}
+        \end{equation}
+
+\noindent\textbf{Last year of adolescence ($t = 17$)}: In the final decision-making period of the family, the family optimizes choices taking into account the uncertainty surrounding the child’s future adult outcomes. Formally, the value function incorporates an expectation over future shocks, where $z_0$ is an AR(1) wage shock that remains unresolved at this stage, and $\epsilon_0$ is a preference shock for the child’s college decision, realized at $t = T_L$. Here, $V_{T_L-1}^{\text{CD}}$ denotes the expected continuation value, which is defined in detail in Section~\ref{sec:terminal-period-utility} below.
+    \begin{equation}
+    \label{eq:T_L_1}
+        V_t(a_t, k_t, HC_t) = \max_{c_{p,t},\,e_{p,t},\,h_{p,t},\,\tau_{p,t},\,\tau_{c,t}}
+        \left\{ U_{f,t} + \beta\, \mathbb{E}_{z_0, \epsilon_0}\left[ V_{T_L-1}^{\text{CD}}(a_{t+1}, HC_{t+1}) \right] \right\}
+    \end{equation}
+
+
+\subsubsection{Transfer and College Decision}
+\label{sec:terminal-period-utility}
+
+
+In the start of terminal period ($t = T_L$), the parent and child cooperatively decide whether the child should enroll in college or enter the workforce. This joint decision is made through a collective decision making framework, with welfare weight $\theta \in (0,1)$ assigned to the parent’s utility and $(1-\theta)$ to the child’s utility. Conditional on this decision, the parent chooses the level of altruistic transfer, $tr$, to the child. This choice is made after all the uncertainties in the period are realized. 
+
+
+In addition to the baseline case with homogeneous beliefs, we consider a more general framework with heterogeneous beliefs across families. Each agent holds a belief $m$ with a subjective estimate $b_m$ of the annual human capital increment from each year of college. These beliefs influence both the family’s investment in the child’s human capital during childhood and adolescence, and the size of the transfer allocated for college. Consequently, they also shape the joint decision regarding college enrollment and the perceived post‐graduation wage profile. Upon graduation, agents observe the \emph{true} annual human capital increment, $b^\star$, and update their beliefs accordingly.
+
+The parent's utility in this period, incorporates altruism toward the child, direct utility from their own terminal assets, and prestige toward child's current stock of human capital. The parent's utility is given by:
+
+\begin{equation}
+\begin{aligned}
+    V_{T_L}^P &= \psi_{\mathrm{term}} \log HC_{T_L}
+    + \kappa_{\mathrm{term}} \log a_{\mathrm{term}}
+    + \omega V_{T_L}^C \\
+    &\text{s.t.} \quad a_{\mathrm{term}} = a_{T_L} - tr.
+\end{aligned}
+\end{equation}
+where $\psi_{\mathrm{term}}$ denotes the parent’s weight on the child’s human capital, which may reflect paternalism or concern for prestige; $\kappa_{\mathrm{term}}$ captures utility from terminal assets\footnote{Since we do not model parental choices after the child leaves the household, $\kappa_{\mathrm{term}}$ represents the value of assets for late-life consumption, retirement, and potential monetary transfers to the child.}; and $\omega$ is the weight on parental altruism. Here, $HC_{T_L}$ is the child’s human capital, $a_{\mathrm{term}}$ denotes the parent’s terminal asset holdings for later life, and $V_{T_L}^C$ is the child’s continuation value.
+
+The child’s terminal value reflects a discrete choice between college ($E$) and work ($W$), based on the realized preference shock for college:
+\begin{equation}
+    V_{T_L}^C(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m) =
+    \max \left\{
+        V_0^E(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m),
+        \;
+        V_0^W(tr, HC_{T_L}, z_{T_L})
+    \right\}
+\end{equation}
+
+In the separation period at $T_L$, the family chooses the transfer to the child by solving:
+\begin{equation}
+    V_{T_L}^{\mathrm{CD}}(a_{T_L}, HC_{T_L}, \epsilon_0, m) =
+\max_{0 \leq tr \leq a_{T_L}} \left\{
+\mathbb{E}_{z_{T_L}} \left[
+(1 - \theta) V_{T_L}^C(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m)
++ \theta V_{T_L}^P(tr, HC_{T_L}, \epsilon_0, m)
+\right]
+\right\}
+\end{equation}
+where $V_{T_L}^C$ and $V_{T_L}^P$ are the child’s and parent’s value functions, respectively, as functions of the transfer $tr$ and the college/work choice $d$. At period $T_L-1$, the value function also takes expectations over the preference shock because it was not realized on that period, like we see in equation (\ref{eq:T_L_1}):
+\begin{equation}
+    V_{T_L-1}^{\mathrm{CD}}(a_{T_L}, HC_{T_L}, m) =
+    \max_{0 \leq tr \leq a_{T_L}} \left\{
+        \mathbb{E}_{\epsilon_0,\, z_{T_L}} \left[
+            (1 - \theta) V_{T_L}^C(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m)
+            + \theta V_{T_L}^P(tr, HC_{T_L}, \epsilon_0, m)
+        \right]
+    \right\}
+\end{equation}
+
+The optimal enrollment and transfer choice are:
+\begin{equation}
+    d^*(a_{T_L}, HC_{T_L}, \epsilon_0) =
+     \arg\max_{0 \leq tr \leq a_{T_L}}\left\{
+            \mathbb{E}_{z_{T_L}} \left[
+                (1-\theta)\, V_{T_L}^C(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m)
+                + \theta\, V_{T_L}^P(tr, a_{T_L}, HC_{T_L}, \epsilon_0, m)
+            \right]
+        \right\}
+\end{equation}
+
+
+
+
+
+\subsection{Adulthood Problem}
+
+Following the joint decision of work or college in the terminal period ($t=T_L$), the child embarks on their chosen life path, which extends until death at age 68, $T_D$. The financial transfer received from the parent, $tr$, becomes the child's initial asset endowment, $a_{T_L}$. The child's subsequent problem consists of choosing consumption, savings, and labor supply to maximize lifetime utility. The structure of this problem depends critically on whether the child enters the labor market directly or attends college.
+
+\subsubsection{Work Path}
+\noindent\textbf{Preferences} \quad 
+If the child chooses the work path, they maximize lifetime utility defined over consumption and leisure, subject to their budget and human capital accumulation constraints. Per-period utility takes the form:
+\begin{equation}
+U^W(c_t,h_t) = \frac{c_t^{1-\rho}}{1-\rho} - \varphi\frac{h_t^{1+\eta}}{1+\eta},
+\end{equation}
+where $c_t$ denotes consumption, $h_t$ denotes hours of labor supplied, $\rho$ is the coefficient of relative risk aversion, and $\eta$ governs the Frisch elasticity of labor supply. The parameter $\varphi$ scales the disutility of labor.
+
+\noindent\textbf{Budget Constraints} \quad 
+The budget constraint governs the law of motion for assets:
+\begin{equation}
+a_{t+1} = (1 + r)a_t + - T(w_t\, h_t) - c_t + b_t
+\end{equation}
+This constraint connects today’s asset choice to tomorrow’s state variables, combining returns on savings with net labor income and transfers. The wage, $w_t$, is endogenous and depends on the stock of human capital and a multiplicative, stochastic (AR1) shock, $z_t$:
+\begin{equation}
+w_t = w_0 \cdot (1 + \alpha \cdot HC_t) \cdot z_t
+\end{equation}
+
+\noindent\textbf{Human Capital Production} \quad 
+Human capital evolves through a learning-by-doing process, where it accumulates with labor supplied:
+\begin{equation}
+HC_{t+1} = HC_t + h_t
+\end{equation}
+
+
+
+
+\noindent\textbf{Value Function} \quad Based on above equations, an individual in the labor force—either a high school graduate from the outset or a college graduate—solves a standard life-cycle consumption, savings, and labor supply problem. The state variables for an individual are their assets, $a_t$, their stock of human capital, $HC_t$, and a stochastic wage shock, $z_t$. The value function for an individual in the workforce, $V^W_t$, is given by the Bellman equation:
+\begin{equation}
+V^W_t(a_t, HC_t, z_t) = \max_{c_t, h_t} \left\{ 
+U^W(c_t,h_t)
++ \beta\, \mathbb{E}_{z_{t+1}} \big[ V^W_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \big] 
+\right\}.
+\end{equation}
+
+
+
+\subsubsection{College Path}
+
+\noindent\textbf{Preferences} \quad 
+If the child chooses to attend college, they solve a different optimization problem for the first $T_E$ periods of adulthood, corresponding to the four years of college. During this stage, the child maximizes utility defined over consumption, subject to a budget constraint and human capital accumulation. Unlike in the work path, there is no labor supply decision. Instead, per-period utility depends on consumption and a psychic cost of enrollment:
+\begin{equation}
+U^E(c_t, HC_t) = \frac{c_t^{1-\rho}}{1-\rho} - \kappa_X,
+\end{equation}
+where $\kappa_X$ represents the psychic cost of attending college, which decreases with the child’s human capital stock.
+\begin{equation}
+\kappa_{X} = \kappa\frac{1}{(HC + 1)^2}
+\end{equation}
+
+\noindent\textbf{Budget Constraint} \quad 
+During college, the budget constraint is:
+\begin{equation}
+a_{t+1} = (1 + r) a_t - c_t - c_{\text{college}} + b_t,
+\end{equation}
+where $a_t$ is asset holdings at the beginning of the period, $c_t$ is consumption, $c_{\text{college}}$ denotes direct college costs, $b_t$ represents transfers or non-labor income, and $a_{t+1}$ is next period’s assets.
+
+\noindent\textbf{Human Capital Production} \quad
+Under homogeneous beliefs, human capital evolves deterministically as
+\begin{equation}
+HC_{t+1} = HC_t + h^E,
+\end{equation}
+where $h^E$ is the fixed increment from each year of college. After graduation, the process transitions to learning-by-doing as in the work path.
+
+To allow for heterogeneity, we extend the baseline by introducing subjective beliefs $b_m$ about the annual increment to human capital, distinct from the true value $b^\star$. During college, perceived and actual human capital evolve as
+\begin{align}
+\text{Perceived:} \quad & \tilde{HC}_{t+1} = \tilde{HC}_t + b_m, \\
+\text{Actual:}    \quad & HC_{t+1} = HC_t + b^\star.
+\end{align}
+At graduation, the true increment $b^\star$ is revealed, and human capital is reconciled to close the gap between perceived and actual accumulation:
+\begin{equation}
+HC_{t+1} = \tilde{HC}_{t} + b^\star + (T_E - 1)(b^\star - b_m)\footnote{The multiplier $(T_E-1)$ reflects the cumulative misperception across all years of college, corrected at graduation.}.
+\end{equation}
+so that optimistic students ($b_m > b^\star$) face a downward revision, while pessimistic students ($b_m < b^\star$) receive a positive surprise. The homogeneous case is nested as the special case $b_m = b^\star$.
+
+Intuitively, this structure captures how beliefs shape family investment decisions during college, while ensuring that long-run outcomes are ultimately anchored to realized productivity upon entry into the labor market.
+
+\noindent\textbf{Value Function} \quad The recursive value function for a college student, $V^E_t$, is:
+\begin{equation}
+V^E_t(a_t, HC_t, \epsilon_0, z_t) =
+\begin{cases}
+  \displaystyle
+  \max_{c_t}
+  \left\{U^E(c_t, HC_t)
+      + \epsilon_0
+      + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^E_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
+  \right\}, & t = 18 \\[5ex]
+
+  \displaystyle
+  \max_{c_t}
+  \left\{ U^E(c_t, HC_t)
+      + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^E_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
+  \right\}, & 18 < t < 22 \\[5ex]
+
+  \displaystyle
+  \max_{c_t}
+  \left\{U^E(c_t, HC_t)
+      + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^W_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
+  \right\}, & t = 22
+\end{cases}
+\end{equation}
+At entry ($t=T_L$), a one-time preference shock $\epsilon_0$ is realized. In the terminal college year ($t=T_E$), the continuation value transitions into the work path.
