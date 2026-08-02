@@ -1,11 +1,14 @@
 # OS-generated
 .DS_Store
 
-# Notebooks
-Thesis_code.ipynb
-test.ipynb
+# Scratch notebooks (moved into archive/ on 2026-08-02)
+archive/Thesis_code.ipynb
+archive/test codes/
 
-# Folders (note the trailing slash)
-test codes /
+# Figure output — NOTE: plots are not under version control.
+# Remove this line if you want figures tracked.
 Combined Models/Full model/plots/
 Combined Models/Full model/terminal_assets/
+
+# Julia
+Manifest.toml

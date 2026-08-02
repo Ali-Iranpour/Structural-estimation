@@ -1,0 +1,38 @@
+name = "StructuralEstimation"
+authors = ["Ali Iranpour"]
+
+# Environment for the full parent-child lifecycle model.
+# Activate from this directory with:  julia --project=.
+# Then:  using Pkg; Pkg.instantiate()
+
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Dierckx = "39dd38d3-220a-591b-8e3c-4c3a8c710a94"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+FastGaussQuadrature = "442a2c76-b920-505d-bb47-c5924d526838"
+FilePathsBase = "48062228-2e41-5def-b9a4-89aafe57970f"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+Measures = "442fdcdd-2543-5da2-b0f3-8c86c306513e"
+NLopt = "76087f3c-5699-56af-9a33-bf431cd00edd"
+Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+QuantEcon = "fcd29c91-0bd7-5a09-975d-7ac3f643a60c"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
+
+# Versions verified working on 2026-08-02 (julia 1.11.3):
+#   DataFrames 1.7.0        Dierckx 0.5.4          Distributions 0.25.117
+#   FastGaussQuadrature 1.0.2  FilePathsBase 0.9.24  ForwardDiff 0.10.38
+#   Interpolations 0.15.1   LaTeXStrings 1.4.0     Measures 0.3.2
+#   NLopt 1.1.2             Parameters 0.12.3      Plots 1.40.9
+#   ProgressMeter 1.10.2    QuantEcon 0.16.6       StatsBase 0.34.4
+#   StatsPlots 0.15.7
+#
+# Interpolations 0.15.x matters: the Gridded(Linear()) + Interpolations.gradient
+# API used throughout the solver changed in earlier versions.
+
+[compat]
+julia = "1.11"
