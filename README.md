@@ -13,7 +13,7 @@ the child's birth to age 18; the child is then followed to age 68.
 | Run the model | [`docs/GUIDE.md`](docs/GUIDE.md) |
 | Read the model as written in the paper | [`docs/model.txt`](docs/model.txt) |
 | Find which code implements which equation | [`docs/MODEL.md`](docs/MODEL.md) |
-| Know what's currently broken | "Known issues" in [`docs/GUIDE.md`](docs/GUIDE.md) |
+| Know what's currently broken | [`docs/ERRORS.md`](docs/ERRORS.md) — every error, severity, file and line |
 | Find an old version | [`archive/NOTES.md`](archive/NOTES.md) |
 
 ---
@@ -34,7 +34,8 @@ the child's birth to age 18; the child is then followed to age 68.
 ├── docs/
 │   ├── model.txt                   LaTeX model specification from the paper
 │   ├── MODEL.md                    equation ↔ code map
-│   ├── GUIDE.md                    how to run, parameters, known issues
+│   ├── GUIDE.md                    how to run, parameters
+│   ├── ERRORS.md                   full audit: severity, file, line
 │   ├── SLSQP_algorithm.md          methodology note
 │   └── Flat_policy_function.md     methodology note
 │
@@ -117,7 +118,7 @@ and re-run before committing a new Manifest.
 
 ## Known limitations
 
-`docs/GUIDE.md` carries the full list from the 2026-08 audit, ordered by severity. The
+[`docs/ERRORS.md`](docs/ERRORS.md) carries the full list, ordered by severity. The
 three that most affect results: a spurious `∂V/∂k` term in the labor-supply gradient, the
 college choice being taken outside the taste-shock expectation, and unseeded RNG in the
 parent simulation (so counterfactual arms do not share random numbers). None are fixed.

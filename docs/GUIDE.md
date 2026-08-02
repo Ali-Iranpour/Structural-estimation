@@ -147,95 +147,32 @@ Note the notebook overrides several of these at construction (`Na=50, Nk=50, Nt=
 
 ## Known issues
 
-Open findings from the 2026-08 code audit. **None have been fixed** — this section is the
-to-do list, ordered by severity. Line numbers refer to the current files.
+The full audit — every error, its severity, and the exact file and line — is in
+[`ERRORS.md`](ERRORS.md). **Nothing in it has been fixed.**
 
-### Critical
+The three that most affect results:
 
-1. **Spurious `∂V/∂k` in the labor-supply FOC.** Since `k` is now the fixed `BothCollege`
-   indicator, `∂k_next/∂h_p = 0`, but `obj_work_period_full` (`grad[4]`) and
-   `obj_work_period_parentonly` (`grad[3]`) still add `dV_dk_sum`. With `k_grid = {0,1}`
-   that term equals the entire lifetime value gap between education types — a large
-   positive constant added to the hours gradient. It drives `h_p` to its upper bound for
-   `t ≤ 16`. `obj_last_period_full` is correct, which confirms it's an incomplete edit.
-   *Fix: delete `dV_dk_sum` from those two gradients.*
-
-2. **College choice taken outside the ε expectation.** The model has
-   `V^C = max{V^E(ε₀), V^W}` with the max *inside*, and the transfer chosen after
-   uncertainty resolves. The code computes `max(E_ε[V^E], V^W)` via
-   `v_max = safe_maximum.(sol_exp_v_college, sol_tr_v_work)` — 9 occurrences in the
-   notebook. By Jensen this understates the option value of college and biases take-up
-   downward, most at the margin. `simulate_model_family!` does it *correctly*, so the
-   solve and the simulation currently use different decision rules.
-   *Fix: `sum(t_weight[it] .* max.(sol_tr_v_college[:,:,:,it], sol_tr_v_work[:,:,:,1]) for it in 1:Nt)`,
-   and drop `optimal_transfer_exp_college!` from the terminal-value path.*
-
-3. **Unseeded RNG in the parent simulation.** `sample(1:Np, Weights(...))` and
-   `rand(Beta(α,β), simN)` use the global RNG, so every counterfactual arm draws
-   different shocks. Comparisons confound the parameter change with Monte Carlo noise,
-   and results change on every re-run. The child model does this correctly via
-   `draws_uniform_p`. *Fix: pre-draw seeded uniforms in the parent constructor.*
-
-### High
-
-4. **`-Inf` sentinel is reachable.** `compute_min_assets` uses `c_min = 0.3` to mark
-   infeasible college states as `-Inf`, but `asset_constraint_college` only enforces
-   `a_next ≥ a_min = 0.01`. At the current calibration `a_min_t = [3.354, 2.555, 1.732, 0.884]`,
-   and the reachable set from feasible points straddles the `-Inf` region, which is then
-   linearly interpolated. *Fix: enforce `a_next ≥ a_min_t[t+1]`.*
-
-5. **Psychic cost uses the wrong power.** `code/src/child_lifecycle_ret.jl:485` has
-   `kappa/(k+1)^4`; the model says `κ/(HC+1)²`.
-
-6. **Retirement is in the code but not in the model.** `t_retire = 42` with a pension at a
-   0.5 replacement rate. `model.txt` says "The model has no retirement stage and ends as
-   the child becomes 68". Also `T = 52` gives a terminal age of 69, not 68.
-
-7. **Convergence diagnostics discarded.** 65 uses of `@suppress_output` swallow
-   `print_period_stats`, so the converged/maxeval share is unknown for every counterfactual.
-   `other_dict` is only populated in the `t ≤ 7` loop, so "Other: 0.0%" is printed
-   unconditionally elsewhere. Non-converged NLopt returns are accepted silently.
-
-8. **Simulated states are never clamped** to the solver's own constraints, and
-   `asset_constraint_max` (`a_next ≤ a_max`) is a numerical device with no counterpart in
-   the model — it binds for the right tail of the LogNormal(0.296, 1.402) initial assets.
-
-9. **Asymmetric transfer optimization.** Work starts at `tr_hi*0.5` with `ftol_rel=1e-8`;
-   college starts at `tr_hi*0.99` with `ftol_rel=1e-6`. The discrete college/work
-   comparison is between two differently-initialized local optima.
-
-10. **Shock discretization too coarse.** Parent `Np=3` for `ρ=0.9`; child `Np=5` for
-    `ρ=0.95`. Use Rouwenhorst with `N ≥ 7`. Also `E[exp(z)] = exp(σ_z²/2) ≠ 1`, giving a
-    small systematic wage drift.
-
-11. **Piecewise-linear continuation value** (`Gridded(Linear())`) under gradient-based
-    SLSQP: `∇V` is discontinuous at every knot. Cubic or shape-preserving interpolation
-    would cut iteration counts substantially.
-
-### Medium
-
-12. `(φ₁,φ₂,φ₃) = (1.0, 20.0, 0.03)` sum to 21.03; `model.txt` says they are "normalized to
-    sum to one".
-13. `BothCollege` share hardcoded as `Bernoulli(0.3)` — should be sourced to the estimation sample.
-14. The `2 ×` multiplier in the parent `wage_func` contradicts "wages are defined as the
-    mean across the two parents" (it makes it the household total).
-15. **Verify age units.** `β_age * t` uses `t ∈ 1..17`. Correct only if the Stata `Age` was
-    normalized (e.g. `age − 25`). The implied peak `β₂/(2|β₃|) ≈ 26.6` reads as actual age
-    51.6 under that assumption (plausible) or 26.6 raw (implausible) — so probably right,
-    but confirm against the regression script and state it in the paper.
-16. σ₄ uses `(t−7)` while σ₁–σ₃ use `(t−1)`, so `σ_{4,0}` is the elasticity at `t=7` and
-    `σ_{1,0}` at `t=1` — not comparable in a table. No returns-to-scale restriction on
-    `Σ_j σ_jt` (≈0.60 at baseline, unguarded in counterfactuals).
-17. Counterfactual labels: check the `μ_t` slope arms (low slope ⇒ *high* `μ̃_t`) and the
-    model/label order in the college-decision figure.
-18. No accuracy diagnostics anywhere — no Euler residuals, no grid-refinement check, no
-    assertion that simulated states stay inside the grids.
+1. 🔴 **Spurious `∂V/∂k` in the labor-supply gradient** (`parent_family.jl:636, 678`).
+   `k` is the fixed `BothCollege` indicator, so `∂k'/∂h_p = 0`, but both gradients still
+   add `dV_dk_sum` — the whole lifetime value gap between education types. Drives `h_p`
+   to its bound for all `t ≤ 16`.
+2. 🔴 **College choice taken outside the ε expectation** (11 sites in the notebook).
+   `max(E_ε[V^E], V^W)` instead of `E_ε[max(V^E(ε), V^W)]`. Understates the option value
+   of college, and disagrees with what `simulate_model_family!` actually does.
+3. 🔴 **Unseeded RNG in the parent simulation** (`parent_family.jl:941, 1091`).
+   Counterfactual arms do not share random numbers.
 
 ---
 
 ## Change log
 
 **2026-08-02b — `code/` `docs/` `output/` layout.** No model logic changed.
+
+- Fixed a regression introduced earlier the same day: removing the unconditional
+  `mkpath` from `plot_family_counterfactuals` left it with no directory creation at
+  all, so `save=true` would have failed. `mkpath` restored inside the `if save`
+  branch. Audited all 7 `savefig` sites; the other 6 were already correct.
+- Added `docs/ERRORS.md` — the full audit with severity, file and line.
 
 - Code to `code/`, model spec and notes to `docs/`, figures to `output/figures/`
   (structure preserved; the 20 empty timestamped `Parameters/` folders dropped).
