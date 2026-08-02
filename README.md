@@ -1,159 +1,87 @@
-# Structural Estimation — Lifecycle Family Model
+# Structural Estimation — Parent-Child Lifecycle Model
 
-This repository contains the Julia/Jupyter code for a structural lifecycle model of intergenerational human capital investment and college decisions. The project builds from a simple consumption-saving model up to a full parent-child dynamic model with AR(1) wage shocks, progressive taxation, and retirement.
+Julia code for a structural lifecycle model of intergenerational human capital
+investment and college choice. A family (two parents, one child) is followed from
+the child's birth to age 18; the child is then followed to age 68.
 
----
-
-## Repository Structure
-
-```
-├── ConSavLabor/                               # Core consumption-saving and labor models
-│   ├── consumption_saving.ipynb               # Basic T-period consumption-saving model
-│   ├── ConSavLabor.ipynb                      # Labor supply with endogenous human capital
-│   ├── ConSavLabor_AR1.ipynb                  # Labor model with AR(1) persistent wage shocks
-│   └── ConSavLabor_stochastic.ipynb           # Labor model with i.i.d. wage shocks
-│
-├── ConSavLabor_college/                       # College choice and belief heterogeneity models
-│   ├── ConSavLabor_college.ipynb              # College vs. work model with lifecycle decisions
-│   ├── ConSavLabor_college_AR1.ipynb          # College model with AR(1) persistent wage shocks
-│   ├── ConSavLabor_college_SE.ipynb           # Model with heterogeneous beliefs about college returns
-│   └── ConSavLabor_college_retire.ipynb       # College model extended with retirement phase
-│
-├── Family Model/                              # Family decision-making and child HC investment
-│   ├── family.ipynb                           # Dynamic family model with education and care decisions
-│   └── parent_child_model.ipynb               # Dynamic family model with parent-child interaction
-│
-├── Combined Models/                           # Combined parent-child lifecycle models
-│   ├── Full model/                            # Full integrated model (see folder README)
-│   │   ├── transfer_model.ipynb               # Base T-period parent-child model (log utility)
-│   │   ├── transfer_model_AR1.ipynb           # Parent-child model with AR(1) wage shocks
-│   │   ├── transfer_CRRA.ipynb                # Parent-child model with CRRA utility + retirement
-│   │   ├── transfer_CRRA_wage.ipynb           # CRRA model with stochastic wages
-│   │   ├── ConSavLabor_college_AR1.jl         # Julia module: child's AR(1) college/work lifecycle
-│   │   ├── ConSavLabor_college_ret.jl         # Julia module: child's lifecycle with retirement
-│   │   │
-│   ├── Child & Parent part/                   # Intermediate combined models
-│   │   ├── Family_with_asset.ipynb            # Parent-child model with regime switch at t=7
-│   │   ├── family_only_HC.ipynb               # Parent-child model with HC investment only
-│   │   └── modeified_family_with_asset.ipynb  # Modified asset-holding version
-│   │
-│   └── Archive/                               # Earlier/experimental versions
-│       ├── transfer_model.ipynb               # Archived base transfer model
-│       ├── Parent_OLG.ipynb                   # Overlapping-generations parent model
-│       ├── ConSavLabor_college.jl             # Archived Julia module
-│       ├── consavlabor.jl                     # Archived Julia module
-│       └── issue.md                           # Notes on modeling issues
-│
-├── docs/                                      # Documentation
-│   ├── SLSQP_algorithm.md                     # SLSQP algorithm math and pseudocode
-│   └── Flat_policy_function.md                # Notes on flat policy function issues
-│
-├── README.md                                  # This file
-└── .gitignore
-```
+**The current model lives in [`Combined Models/Full model/`](Combined%20Models/Full%20model/).**
+Everything in `archive/` is superseded and kept only for reference.
 
 ---
 
-## Model Descriptions
+## Where to start
 
-### `ConSavLabor/` — Core Consumption-Saving and Labor Models
-
-**`consumption_saving.ipynb`**
-
-Implements a basic **T-period consumption-saving model** using backward induction and simulation. Includes visualizations of policy and value functions, along with counterfactual analysis for different income and wealth scenarios.
-
-**`ConSavLabor.ipynb`**
-
-Implements a dynamic **consumption-saving-labor model** with endogenous human capital accumulation. Solves using backward induction, simulates individual behavior, and includes counterfactual analysis for taxes, wages, preferences, and initial wealth.
-
-**`ConSavLabor_AR1.ipynb`**
-
-Extends the consumption-saving-labor model with a **persistent AR(1) wage shock**. Uses Tauchen discretization for the AR(1) process and Gauss-Hermite quadrature for integration.
-
-**`ConSavLabor_stochastic.ipynb`**
-
-Solves and simulates a finite-horizon $T$-period consumption-saving model with endogenous labor supply and **i.i.d. transitory wage shocks**. At each period $t$, the agent chooses consumption $c_t$ and labor $\ell_t$ to maximize lifetime utility under a stochastic budget constraint.
-
----
-
-### `ConSavLabor_college/` — College Choice and Belief Heterogeneity
-
-**`ConSavLabor_college.ipynb`**
-
-Implements a dynamic model of **college and labor supply decisions** over the life cycle. The agent chooses between college or the labor market at age 18, then makes optimal decisions over consumption, saving, labor supply, and human capital accumulation.
-
-**`ConSavLabor_college_AR1.ipynb`**
-
-Extends the college model with a **persistent AR(1) wage process**. Solves for separate college and work policy functions and simulates life-cycle outcomes under wage uncertainty.
-
-**`ConSavLabor_college_SE.ipynb`**
-
-Extends the college model to allow **heterogeneous subjective beliefs** about college returns. Solves for optimal policies under each belief type and simulates outcomes to study how misperceptions affect college attendance and lifetime earnings.
-
-**`ConSavLabor_college_retire.ipynb`**
-
-Extends the college model to include a **mandatory retirement phase**. After the working lifecycle, the agent transitions to retirement where income comes from savings and a pension.
-
----
-
-### `Family Model/` — Family Decision-Making
-
-**`family.ipynb`**
-
-Implements a **T-period dynamic family model** with endogenous investment in child human capital. Each period, the family chooses consumption, labor supply, child care time, and education expenditure to maximize lifetime utility.
-
-**`parent_child_model.ipynb`**
-
-Implements a **T-period dynamic family model** where a parent and child jointly decide on parental consumption, labor supply, child care time, child's study time, and education expenditure via a cooperative interaction weighted by the child's bargaining parameter.
-
----
-
-### `Combined Models/Full model/` — Full Integrated Parent-Child Lifecycle Model
-
-See [Combined Models/Full model/README.md](Combined%20Models/Full%20model/README.md) for detailed documentation.
-
-The full model combines the parent-child family decision structure with the child's full college/work lifecycle, including AR(1) shocks, CRRA utility, progressive taxation, and retirement. Four notebook variants explore different utility specifications and wage processes.
-
----
-
-### `Combined Models/Child & Parent part/` — Intermediate Combined Models
-
-**`Family_with_asset.ipynb`**
-
-Combines parent and child decisions in a single model with a **regime switch at $t=7$** (adolescence to early adulthood). Tracks assets, human capital, and care decisions across both regimes.
-
-**`family_only_HC.ipynb`**
-
-Simplified version focusing on the **human capital accumulation channel** without full asset dynamics.
-
-**`modeified_family_with_asset.ipynb`**
-
-Modified version with alternative asset-grid specifications and boundary conditions.
-
----
-
-## Optimization Library
-
-This project uses NLopt's SLSQP solver for interior optimization at each grid point. For details about the algorithm, including pseudocode and math, see [docs/SLSQP_algorithm.md](docs/SLSQP_algorithm.md). Notes on flat policy function issues are in [docs/Flat_policy_function.md](docs/Flat_policy_function.md).
-
----
-
-## Dependencies
-
-All notebooks are written in **Julia** and run in Jupyter via the IJulia kernel. Key packages:
-
-| Package | Purpose |
+| I want to… | Go to |
 |---|---|
-| `NLopt` | Nonlinear optimization (SLSQP) |
-| `Interpolations` / `Dierckx` | Grid interpolation |
-| `QuantEcon` | Tauchen discretization, utility routines |
-| `FastGaussQuadrature` | Gauss-Hermite quadrature for shock integration |
-| `Plots` / `StatsPlots` | Visualization |
-| `Parameters` | Struct keyword constructors |
-| `Base.Threads` | Parallelization over grid points |
+| Run the model | [`Combined Models/Full model/README.md`](Combined%20Models/Full%20model/README.md) |
+| Read the model as written in the paper | [`Combined Models/Full model/model.txt`](Combined%20Models/Full%20model/model.txt) |
+| Find which code implements which equation | [`Combined Models/Full model/MODEL.md`](Combined%20Models/Full%20model/MODEL.md) |
+| Know what's currently broken | "Known issues" in the Full model README |
+| Find an old version | [`archive/NOTES.md`](archive/NOTES.md) |
 
 ---
 
-## Author
+## Layout
 
-Ali Iranpour — TeIAS Thesis, 2025–2026
+```
+.
+├── Combined Models/Full model/     ← CURRENT MODEL
+│   ├── transfer_CRRA_wage.ipynb        driver notebook (solve, simulate, counterfactuals)
+│   ├── src/parent_family.jl            parent problem: struct, solver, simulators
+│   ├── ConSavLabor_college_ret.jl      child lifecycle — WITH retirement (the one used)
+│   ├── ConSavLabor_college_AR1.jl      child lifecycle — no retirement (not included)
+│   ├── model.txt                       LaTeX model spec from the paper
+│   ├── MODEL.md                        equation ↔ code map
+│   ├── README.md                       how to run, parameters, known issues
+│   ├── Project.toml                    pinned dependencies
+│   └── plots/                          figure output (git-ignored)
+│
+├── docs/                           methodology notes
+│   ├── SLSQP_algorithm.md
+│   └── Flat_policy_function.md
+│
+└── archive/                        superseded work — see archive/NOTES.md
+    ├── Combined Models/{Archive, Child & Parent part, Full model}/
+    ├── ConSavLabor/  ConSavLabor_college/  Family Model/  test codes/
+    └── Thesis_code.ipynb
+```
+
+---
+
+## Model in one paragraph
+
+Two parents and one child interact over `t = 1..17` (child ages 0–17). Parents choose
+consumption, labor supply, education expenditure, and time with the child; from age 7
+the child bargains over their own study time and leisure under an age-varying welfare
+weight. The child's cognitive skill follows a Cobb-Douglas production function in
+parental time, education spending, lagged skill, and (after age 7) the child's own
+study time. At age 18 the family jointly chooses college vs. work and the parents
+transfer assets, which become the child's initial wealth. The child then solves a
+consumption-saving-labor problem to age 68. Parental wages follow an estimated profile
+in age and whether both parents hold a college degree, plus an AR(1) shock; labor
+income is taxed progressively.
+
+Full specification: [`model.txt`](Combined%20Models/Full%20model/model.txt).
+
+---
+
+## Setup
+
+```bash
+cd "Combined Models/Full model" && julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+Then open `transfer_CRRA_wage.ipynb` with the IJulia (Julia 1.11) kernel and run cells
+in order. See the Full model README for runtime expectations and caveats.
+
+---
+
+## Notes on this repository
+
+- **`plots/` is git-ignored.** Figures are not under version control — regenerate them by
+  running the notebook, or drop the ignore rule if you want them tracked.
+- **Git history is large (~1.3 GB).** Notebooks are committed with their output cells and
+  several are 30–58 MB. Consider `nbstripout` before further commits; otherwise history
+  grows by roughly the notebook size on every save.
+- **Git LFS is applied inconsistently.** `.gitattributes` declares `*.ipynb filter=lfs`,
+  but only some notebooks are actually stored as LFS pointers. Worth making uniform.
