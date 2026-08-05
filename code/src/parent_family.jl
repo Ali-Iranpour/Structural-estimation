@@ -1307,20 +1307,41 @@ function simulate_model_family_hetero!(
 
 
     # -- College interpolators (belief-specific) --
+    # C14: these were built over the whole asset grid, including the rows the college
+    # solver left as NaN. Two separate feasibility masks apply, and each belief model
+    # carries its own:
+    #   * the child's college policies are NaN below a_req[t]        -> csl(m, t)
+    #   * the transfer arrays are NaN below a_req[1] + delta_P       -> ip0[m]
+    a_req_b = [compute_min_assets(child_models[m]) for m in 1:num_bins]
+    csl = function (m, t)
+        i0 = t <= child_models[m].t_college ? first_feasible_a(child_models[m], a_req_b[m], t) : 1
+        return i0 === nothing ? (1:length(a_grid)) : (i0:length(a_grid))
+    end
+    col_min = [min_parent_assets_for_college(child_models[m]) for m in 1:num_bins]
+    ip0 = Vector{Int}(undef, num_bins)
+    for m in 1:num_bins
+        i = first_feasible_parent_a(child_models[m])
+        i === nothing && error("Belief bin $m: college transfer infeasible at every asset " *
+                               "grid point (needs a >= $(col_min[m]))")
+        i > length(a_grid) - 1 && error("Belief bin $m: college transfer feasible at only " *
+                                        "$(length(a_grid) - i + 1) asset node(s); need 2 to interpolate")
+        ip0[m] = i
+    end
+
     interp_c_college_belief = [
-        LinearInterpolation((a_grid, k_grid), child_models[m].sol_c_college[t, :, :, ip, it]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid[csl(m, t)], k_grid), child_models[m].sol_c_college[t, csl(m, t), :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, t in 1:T, ip in 1:Np
     ]
     interp_h_college_belief = [
-        LinearInterpolation((a_grid, k_grid), child_models[m].sol_h_college[t, :, :, ip, it]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid[csl(m, t)], k_grid), child_models[m].sol_h_college[t, csl(m, t), :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, t in 1:T, ip in 1:Np
     ]
     sol_tr_v_college_interp_belief = [
-        LinearInterpolation((a_grid, k_grid), child_models[m].sol_tr_v_college[:, :, ip, it]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid[ip0[m]:end], k_grid), child_models[m].sol_tr_v_college[ip0[m]:end, :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, ip in 1:Np
     ]
     sol_tr_college_interp_belief = [
-        LinearInterpolation((a_grid, k_grid), child_models[m].sol_tr_college[:, :, ip, it]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid[ip0[m]:end], k_grid), child_models[m].sol_tr_college[ip0[m]:end, :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, ip in 1:Np
     ]
 
@@ -1340,7 +1361,10 @@ function simulate_model_family_hetero!(
         ip = sim_p_init_idx[i]
         parent_assets = sim_a_init[i]
         HC = sim_k_init[i]
-        f_college = sol_tr_v_college_interp_belief[m, it, ip](parent_assets, HC)
+        # C14: below col_min[m] the college branch was never solved -- -Inf, as in
+        # discrete_college_choice, rather than an extrapolation of the feasible slice.
+        f_college = parent_assets >= col_min[m] ?
+                    sol_tr_v_college_interp_belief[m, it, ip](parent_assets, HC) : -Inf
         f_work = sol_tr_v_work_interp[ip](parent_assets, HC)
         if f_college > f_work
             path_choice[i] = :college

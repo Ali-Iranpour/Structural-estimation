@@ -1144,9 +1144,22 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
         LinearInterpolation((a_grid, k_grid), model.sol_h_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
         for t in 1:T, i_p in 1:Np
     ]
+    # C14: the college transfer arrays hold NaN wherever the parent cannot both fund
+    # a_req[1] and retain delta_P, so these interpolants are built over the feasible
+    # parent-asset slice. `col_min` below then reproduces discrete_college_choice's -Inf
+    # at the point of comparison, so the slice is never evaluated outside its domain in
+    # a way that can pick college.
+    col_min = min_parent_assets_for_college(model)
+    ip0 = first_feasible_parent_a(model)
+    ip0 === nothing && error("College transfer infeasible at every asset grid point " *
+                             "(needs a >= $col_min, a_grid ends at $(a_grid[end]))")
+    ip0 > length(a_grid) - 1 && error("College transfer feasible at only $(length(a_grid) - ip0 + 1) " *
+                                      "asset node(s); need at least 2 to interpolate")
+    ag_p = a_grid[ip0:end]
+
     # Transfer value interpolators
     sol_tr_v_college_interp = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_tr_v_college[:, :, ip, it]; extrapolation_bc=Line())
+        [LinearInterpolation((ag_p, k_grid), model.sol_tr_v_college[ip0:end, :, ip, it]; extrapolation_bc=Line())
             for ip in 1:Np]
         for it in 1:Nt
     ]
@@ -1156,7 +1169,7 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     ]
     # Transfer amount interpolators
     sol_tr_college_interp = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_tr_college[:, :, ip, it]; extrapolation_bc=Flat())
+        [LinearInterpolation((ag_p, k_grid), model.sol_tr_college[ip0:end, :, ip, it]; extrapolation_bc=Flat())
             for ip in 1:Np]
         for it in 1:Nt
     ]
@@ -1180,8 +1193,11 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
         ip = sim_p_init_idx[i]         # Persistent shock index
         it = eps_indices[i]            # Taste shock index
 
-        # Compute parent's value for each path
-        f_college = sol_tr_v_college_interp[it][ip](parent_assets, HC)
+        # Compute parent's value for each path. C14: below col_min the college branch was
+        # never solved, so it is -Inf here exactly as in discrete_college_choice -- not an
+        # extrapolation of the feasible slice.
+        f_college = parent_assets >= col_min ?
+                    sol_tr_v_college_interp[it][ip](parent_assets, HC) : -Inf
         f_work = sol_tr_v_work_interp[ip](parent_assets, HC)
 
         # Choose path and set transfer
