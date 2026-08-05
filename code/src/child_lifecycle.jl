@@ -69,6 +69,8 @@ mutable struct ConSavLaborCollege_AR1
     w_vec::Vector{Float64}; college_cost::Float64; college_boost::Float64
     kappa::Float64 # parameter for psychic cost
     tax_lambda::Float64          # Progressive tax level parameter (HSV/Benabou)
+    c_floor::Float64             # Consumption floor; MUST equal the optimizer's lower bound on c
+    delta_P::Float64             # Minimum retained parental asset (a_bar^P) at the transfer stage
 end
 
 # =============================================================================
@@ -91,7 +93,14 @@ function ConSavLaborCollege_AR1(;
                 psi_terminal::Float64=1.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
                     # --- Bargaining parameter ---
                 mu = 0.5,
-                tax_lambda::Float64=0.82
+                tax_lambda::Float64=0.82,
+                # Consumption floor used BOTH as the optimizer's lower bound on c and in
+                # the college feasibility recursion. These were 0.01 and 0.3 respectively,
+                # so the feasibility test excluded states the optimizer could in fact solve.
+                c_floor::Float64=0.01,
+                # a_bar^P: minimum asset the parent retains. Was an implicit 1e-9, which let
+                # kappa_terminal*log(a_term) reach about -186. See N12 in docs/ERRORS.md.
+                delta_P::Float64=0.05
                 )
 
     simT = T
@@ -145,7 +154,8 @@ function ConSavLaborCollege_AR1(;
         sol_exp_college, sol_exp_v_college,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
         sim_a_init, sim_k_init, sim_p_init_idx, sim_income, sim_wage,
-        draws_uniform_p, w_vec, college_cost, college_boost, kappa, tax_lambda
+        draws_uniform_p, w_vec, college_cost, college_boost, kappa, tax_lambda,
+        c_floor, delta_P
     )
 end
 
@@ -170,6 +180,28 @@ end
 # = λ (1-τ) * w * (w*h)^(-τ)
 @inline function d_after_tax_dh(model::ConSavLaborCollege_AR1, w_pre::Float64, h::Float64)
     return model.tax_lambda * (1.0 - model.tau) * w_pre * (w_pre * h)^(-model.tau)
+end
+
+# ================================
+# Solver result validation
+# ================================
+"""
+    check_nlopt!(ret, minf, x, where)
+
+Reject an optimizer result instead of storing it. NLopt does not throw on
+`:INVALID_ARGS` or `:FAILURE`; it returns NaN, and silently storing that lets the NaN
+propagate through `init` and the interpolated continuation value. Economic
+infeasibility is handled separately, by the feasibility masks -- this function only
+signals *numerical* failure.
+"""
+@inline function check_nlopt!(ret, minf, x, where::AbstractString)
+    if ret in (:FAILURE, :INVALID_ARGS, :OUT_OF_MEMORY, :FORCED_STOP)
+        error("NLopt returned $ret at $where")
+    end
+    if !isfinite(minf) || any(!isfinite, x)
+        error("NLopt returned a non-finite result at $where: minf=$minf, x=$x")
+    end
+    return nothing
 end
 
 # ================================
@@ -200,6 +232,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
         maxeval!(opt, 1000)
         min_objective!(opt, obj_wrapper)
         (minf, h_vec, ret) = optimize(opt, [0.3])
+        check_nlopt!(ret, minf, h_vec, "work terminal ia=$i_a ik=$i_k ip=$i_p")
 
         h_opt = h_vec[1]
         w_pre = wage_func(model, capital, T, p_shock)
@@ -245,6 +278,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
 
             init = [clamp(sol_c_work[t + 1, i_a, i_k, i_p, 1], 0.01, c_hi), 0.4]
             (minf, x_opt, ret) = optimize(opt, init)
+            check_nlopt!(ret, minf, x_opt, "work t=$t ia=$i_a ik=$i_k ip=$i_p")
             sol_c_work[t, i_a, i_k, i_p, :] .= x_opt[1]
             sol_h_work[t, i_a, i_k, i_p, :] .= x_opt[2]
             sol_v_work[t, i_a, i_k, i_p, :] .= -minf
@@ -256,11 +290,14 @@ end
 # College-path solver (unchanged)
 # ================================
 function solve_model_college!(model::ConSavLaborCollege_AR1)
-    @unpack T, t_college, Na, Nk, Np, a_grid, k_grid, p_grid = model
+    @unpack T, t_college, Na, Nk, Np, a_grid, k_grid, p_grid, c_floor = model
     @unpack sol_c_college, sol_h_college, sol_v_college, sol_v_work = model
 
-    # Pre-calc min required assets per college year
-    a_min_t = compute_min_assets(model)
+    a_req = compute_min_assets(model)
+    if a_req[1] > a_grid[end]
+        error("College is infeasible at every asset grid point: a_req[1] = $(a_req[1]) > " *
+              "a_max = $(a_grid[end]). Widen the grid or revisit college_cost / y / c_floor.")
+    end
 
     @showprogress 1 "Solving college model..." for t in T:-1:1
         if t > t_college
@@ -269,57 +306,68 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
             sol_v_college[t, :, :, :, :] .= model.sol_v_work[t, :, :, :, :]
 
         else
-            interp = create_interpolator(model, model.sol_v_college, t + 1)
-            for i_p in 1:model.Np, i_k in 1:model.Nk, i_a in 1:model.Na
-                assets, capital = model.a_grid[i_a], model.k_grid[i_k]
-                if assets < a_min_t[t]
-                    model.sol_c_college[t, i_a, i_k, i_p, :] .= NaN
-                    model.sol_h_college[t, i_a, i_k, i_p, :] .= NaN
-                    model.sol_v_college[t, i_a, i_k, i_p, :] .= -Inf
+            # Continuation: for t < t_college the next period is a college year and its
+            # value is only defined on the feasible slice; at t == t_college the next
+            # period is the work path, defined everywhere.
+            interp = t + 1 > t_college ?
+                create_interpolator(model, model.sol_v_college, t + 1) :
+                create_interpolator_college(model, model.sol_v_college, t + 1, a_req)
+
+            for i_p in 1:Np, i_k in 1:Nk, i_a in 1:Na
+                assets, capital = a_grid[i_a], k_grid[i_k]
+
+                # Economically infeasible: cannot finish college from here. Leave NaN as
+                # a "not computed" marker. These cells are never interpolated -- college
+                # interpolants are built over the feasible slice only -- and never
+                # compared, because the discrete choice consults `college_feasible`.
+                if assets < a_req[t]
+                    sol_c_college[t, i_a, i_k, i_p, :] .= NaN
+                    sol_h_college[t, i_a, i_k, i_p, :] .= NaN
+                    sol_v_college[t, i_a, i_k, i_p, :] .= NaN
                     continue
                 end
 
-                if t == 1
-                    for i_t in 1:model.Nt
-                        ε = model.t_grid[i_t]
-                        init = [0.13]
-                        opt = Opt(:LD_SLSQP, 1)
-                        lower_bounds!(opt, 0.01)
-                        upper_bounds!(opt, 50.0)
-                        ftol_rel!(opt, 1e-8)
-                        maxeval!(opt, 1000)
-                        min_objective!(opt, (c_vec, grad) -> begin
-                            f = obj_college_period_general(model, c_vec, assets, capital, t, i_p, interp, ε, grad)
-                            if length(grad) > 0; grad[:] = -grad[:] end
-                            return -f
-                        end)
-                        inequality_constraint!(opt, (x, grad) -> asset_constraint_college(x, grad, model, assets, t), 1e-6)
-                        (minf, c_vec, ret) = optimize(opt, init)
-                        model.sol_c_college[t, i_a, i_k, i_p, i_t] = c_vec[1]
-                        model.sol_h_college[t, i_a, i_k, i_p, i_t] = 0.0
-                        model.sol_v_college[t, i_a, i_k, i_p, i_t] = -minf
-                    end
-                else
-                    init = [0.13]
+                # Consumption upper bound = the actual budget, so the box never binds and
+                # the initial guess is always inside it.
+                c_hi = max((1.0 + model.r) * assets - model.college_cost + model.y - a_req[t + 1],
+                           c_floor + 1e-8)
+
+                nodes = t == 1 ? (1:model.Nt) : (1:1)
+                for i_t in nodes
+                    eps_it = t == 1 ? model.t_grid[i_t] : 0.0
+
                     opt = Opt(:LD_SLSQP, 1)
-                    lower_bounds!(opt, 0.01)
-                    upper_bounds!(opt, 50.0)
+                    lower_bounds!(opt, c_floor)
+                    upper_bounds!(opt, c_hi)
                     ftol_rel!(opt, 1e-8)
                     maxeval!(opt, 1000)
                     min_objective!(opt, (c_vec, grad) -> begin
-                        f = obj_college_period_general(model, c_vec, assets, capital, t, i_p, interp, 0.0, grad)
+                        f = obj_college_period_general(model, c_vec, assets, capital, t,
+                                                       i_p, interp, eps_it, grad)
                         if length(grad) > 0; grad[:] = -grad[:] end
                         return -f
                     end)
-                    inequality_constraint!(opt, (x, grad) -> asset_constraint_college(x, grad, model, assets, t), 1e-6)
-                    (minf, c_vec, ret) = optimize(opt, init)
-                    model.sol_c_college[t, i_a, i_k, i_p, :] .= c_vec[1]
-                    model.sol_h_college[t, i_a, i_k, i_p, :] .= 0.0
-                    model.sol_v_college[t, i_a, i_k, i_p, :] .= -minf
+                    inequality_constraint!(opt,
+                        (x, grad) -> asset_constraint_college(x, grad, model, assets, t, a_req[t + 1]),
+                        1e-6)
+
+                    (minf, c_vec, ret) = optimize(opt, [clamp(0.13, c_floor, c_hi)])
+                    check_nlopt!(ret, minf, c_vec, "college t=$t ia=$i_a ik=$i_k ip=$i_p it=$i_t")
+
+                    if t == 1
+                        sol_c_college[t, i_a, i_k, i_p, i_t] = c_vec[1]
+                        sol_h_college[t, i_a, i_k, i_p, i_t] = 0.0
+                        sol_v_college[t, i_a, i_k, i_p, i_t] = -minf
+                    else
+                        sol_c_college[t, i_a, i_k, i_p, :] .= c_vec[1]
+                        sol_h_college[t, i_a, i_k, i_p, :] .= 0.0
+                        sol_v_college[t, i_a, i_k, i_p, :] .= -minf
+                    end
                 end
             end
         end
     end
+    return a_req
 end
 
 # ================================
@@ -432,11 +480,15 @@ end
     return g
 end
 
+# a_next must be enough to FINISH college, not merely to stay above a_min. `a_req_next`
+# is a_req[t+1] from compute_min_assets. Using a_min here (the old behaviour) let the
+# optimizer choose states from which the remaining college years were infeasible, which
+# is what made the -Inf region reachable.
 @inline function asset_constraint_college(c_vec::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
-    assets::Float64, t::Int)
+    assets::Float64, t::Int, a_req_next::Float64)
     c = c_vec[1]
     a_next = (1.0 + model.r) * assets - c - model.college_cost + model.y
-    g = model.a_min - a_next
+    g = a_req_next - a_next
     if length(grad) > 0
         grad[1] = 1.0
     end
@@ -480,24 +532,50 @@ function create_interpolator(model::ConSavLaborCollege_AR1, sol_v::Array, t::Int
 end
 
 # ================================
-# College asset minimum precompute
+# College feasibility
 # ================================
+# Required assets to enter college year t and still be able to FINISH. Recursion,
+# with the same consumption floor the optimizer enforces:
+#
+#     a_req[t_college+1] = a_min          (the work-path minimum on graduation)
+#     a_req[t]           = (a_req[t+1] + c_floor + college_cost - y) / (1 + r)
+#
+# Returned with length t_college+1 so index t+1 is always defined.
 function compute_min_assets(model::ConSavLaborCollege_AR1)
-    @unpack t_college, r, y, college_cost, a_min = model
-    c_min = 0.3  # Minimum consumption threshold
-
-    a_min_t = zeros(t_college)
-    a_min_t[t_college] = (a_min + c_min + college_cost - y) / (1 + r)
-    for t in (t_college-1):-1:1
-        a_min_t[t] = (a_min_t[t+1] + c_min + college_cost - y) / (1 + r)
+    @unpack t_college, r, y, college_cost, a_min, c_floor = model
+    a_req = zeros(t_college + 1)
+    a_req[t_college + 1] = a_min
+    for t in t_college:-1:1
+        a_req[t] = (a_req[t + 1] + c_floor + college_cost - y) / (1 + r)
     end
-    return a_min_t
+    return a_req
 end
 
+"""
+    first_feasible_a(model, a_req, t)
 
+Index of the first asset-grid point from which college year `t` is feasible, or
+`nothing` if none is. College interpolants are built over `first_feasible_a(...):Na`
+only, so infeasible cells never enter an interpolation.
+"""
+function first_feasible_a(model::ConSavLaborCollege_AR1, a_req::Vector{Float64}, t::Int)
+    thr = t <= length(a_req) ? a_req[t] : model.a_min
+    return findfirst(a -> a >= thr, model.a_grid)
+end
 
-
-
+# Continuation-value interpolator for the college path, restricted to the feasible
+# slice of the asset grid at period `t`. Infeasible cells hold NaN and are excluded.
+function create_interpolator_college(model::ConSavLaborCollege_AR1, sol_v::Array,
+                                     t::Int, a_req::Vector{Float64})
+    i0 = first_feasible_a(model, a_req, t)
+    i0 === nothing && return nothing
+    ag = model.a_grid[i0:end]
+    return [
+        extrapolate(interpolate((ag, model.k_grid), sol_v[t, i0:end, :, i_p, 1],
+                                Gridded(Linear())), Line())
+        for i_p in 1:model.Np
+    ]
+end
 
 # --------------------------
 # Helper for Simulation
@@ -519,19 +597,28 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
 
     # -- 1. Precompute interpolators --
 
+    # College policy cells below the feasibility threshold hold NaN, so each college-year
+    # interpolant is built over that year's feasible asset slice -- NaN never enters an
+    # interpolation.
+    a_req_sim = compute_min_assets(model)
+    csl(t) = begin
+        i0 = t <= t_college ? first_feasible_a(model, a_req_sim, t) : 1
+        i0 === nothing ? (1:length(a_grid)) : (i0:length(a_grid))
+    end
+
     # College (same as before)
     interp_c_college = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_c_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
             for t in 1:T, i_p in 1:model.Np]
         for i_t in 1:Nt
     ]
     interp_h_college = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_h_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_h_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
             for t in 1:T, i_p in 1:model.Np]
         for i_t in 1:Nt
     ]
     interp_v_college = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_v_college[1, :, :, i_p, i_t]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid[csl(1)], k_grid), model.sol_v_college[1, csl(1), :, i_p, i_t]; extrapolation_bc=Flat())
             for i_p in 1:model.Np]
         for i_t in 1:Nt
     ]
@@ -560,7 +647,8 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     for i in 1:simN
         a0, k0, p0_idx = sim_a_init[i], sim_k_init[i], sim_p_init_idx[i]
         i_t = eps_indices[i]
-        EV_college = interp_v_college[i_t][p0_idx](a0, k0)
+        # -Inf enters ONLY here, at the discrete comparison.
+        EV_college = a0 >= a_req_sim[1] ? interp_v_college[i_t][p0_idx](a0, k0) : -Inf
         EV_work    = interp_v_work[p0_idx](a0, k0)
         path_choice[i] = EV_college > EV_work ? :college : :work
     end
@@ -633,102 +721,129 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     return model, path_choice, eps_indices
 end
 
+# ========== Transfer-stage helpers ==========
+
+"""
+    maximize_1d(f, lo, hi; n_grid=48, n_refine=3)
+
+Bounded, derivative-free maximization of a scalar `f` on `[lo, hi]`: coarse grid sweep,
+then two local refinements around the incumbent.
+
+The transfer problem is one-dimensional and its objective is built from piecewise-linear
+interpolants and a feasibility boundary, so it is C0 but not C1. SLSQP assumes a smooth
+objective and was previously started from different points and tolerances in the two
+branches, which meant the college/work comparison was between two differently-conditioned
+local optima. This is slower per state but branch-symmetric and robust at the boundary.
+
+Non-finite objective values are skipped rather than stored.
+"""
+function maximize_1d(f, lo::Float64, hi::Float64; n_grid::Int=48, n_refine::Int=3)
+    hi <= lo && return (lo, f(lo))
+    best_x, best_f = lo, -Inf
+    a, b = lo, hi
+    for _ in 1:n_refine
+        xs = range(a, b, length=n_grid)
+        for x in xs
+            v = f(x)
+            if isfinite(v) && v > best_f
+                best_f = v; best_x = x
+            end
+        end
+        step = (b - a) / (n_grid - 1)
+        a = max(lo, best_x - step)
+        b = min(hi, best_x + step)
+        b <= a && break
+    end
+    return best_x, best_f
+end
+
+"""
+    min_parent_assets_for_college(model)
+
+Smallest parental asset level at which the college branch is feasible: the child must
+receive at least `a_req[1]` while the parent retains `delta_P`. Below this the college
+optimizer is never called and the branch is declared infeasible.
+"""
+min_parent_assets_for_college(model::ConSavLaborCollege_AR1) =
+    compute_min_assets(model)[1] + model.delta_P
+
+"""
+    first_feasible_parent_a(model)
+
+First asset-grid index at which the college transfer branch is feasible. College transfer
+interpolants are built from this index up, so infeasible cells (held as NaN) never enter
+an interpolation.
+"""
+function first_feasible_parent_a(model::ConSavLaborCollege_AR1)
+    thr = min_parent_assets_for_college(model)
+    return findfirst(a -> a >= thr, model.a_grid)
+end
+
 # ========== Main Solvers ==========
 
 function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
-    @unpack Na, Nk, a_grid, k_grid, p_transition, Np = model
+    @unpack Na, Nk, a_grid, k_grid, p_transition, Np, delta_P = model
     π_p = stationary_dist(p_transition)
-    coef = (1-model.mu) + model.mu*model.omega
 
-    # V_child_interp is the expected child value interpolator over AR1 shock (does not depend on epsilon)
-    it_base = 1
-    V1_work = [extrapolate(interpolate((a_grid, k_grid), model.sol_v_work[1, :, :, ip, it_base], Gridded(Linear())), Line()) for ip in 1:Np]
-    function V_child_interp(tr, HC)
-        sum(π_p[ip] * V1_work[ip](tr, HC) for ip in 1:Np)
-    end
+    V1_work = [extrapolate(interpolate((a_grid, k_grid), model.sol_v_work[1, :, :, ip, 1],
+                                       Gridded(Linear())), Line()) for ip in 1:Np]
 
     for ia in 1:Na, ik in 1:Nk
         assets = a_grid[ia]
-        HC = k_grid[ik]
-        tr_hi = assets - 1e-9
-        if assets ≤ 1e-3
-            model.sol_tr_work[ia, ik, :, :] .= 0.0
-            model.sol_tr_v_work[ia, ik, :, :] .= -Inf
-            continue
-        end
+        HC     = k_grid[ik]
 
-        function obj_wrapper(x::Vector, grad::Vector)
-            tr = x[1]
-            f = obj_transfer_work(model, tr, assets, HC, grad, V1_work, Np, π_p)
-            if length(grad) > 0
-                grad[:] = -grad[:]
-            end
-            return -f
-        end
+        # Work path admits a zero transfer, so the domain is [0, a - delta_P]. It is
+        # never infeasible: if the parent holds less than delta_P the domain collapses
+        # to {0} and the parent simply transfers nothing.
+        tr_lo, tr_hi = 0.0, max(0.0, assets - delta_P)
 
-        opt = Opt(:LD_SLSQP, 1)
-        lower_bounds!(opt, [1e-6])
-        upper_bounds!(opt, [tr_hi])
-        ftol_rel!(opt, 1e-8)
-        maxeval!(opt, 500)
-        min_objective!(opt, obj_wrapper)
-        # Initial guess 
-        init = [tr_hi * 0.5]
-        (minf, xopt, ret) = optimize(opt, init)
+        f(tr) = obj_transfer_work(model, tr, assets, HC, Float64[], V1_work, Np, π_p)
+        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)
 
-        # Fill for all [ip, it] for compatibility
-        model.sol_tr_work[ia, ik, :, :]   .= xopt[1]
-        model.sol_tr_v_work[ia, ik, :, :] .= -minf
+        model.sol_tr_work[ia, ik, :, :]   .= tr_opt
+        model.sol_tr_v_work[ia, ik, :, :] .= v_opt
     end
     return nothing
 end
 
 function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
-    @unpack Na, Nk, Nt, a_grid, k_grid, p_transition, Np = model
-    π_p = stationary_dist(p_transition)
-    a_min_t = compute_min_assets(model)
-    coef = (1-model.mu) + model.mu*model.omega
+    @unpack Na, Nk, Nt, a_grid, k_grid, p_transition, Np, delta_P = model
+    π_p   = stationary_dist(p_transition)
+    a_req = compute_min_assets(model)
 
-    V1_college = [[extrapolate(interpolate((a_grid, k_grid), model.sol_v_college[1, :, :, ip, it], Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
+    # sol_v_college holds NaN where college is infeasible, so build over the feasible
+    # slice only. The transfer lower bound is a_req[1], so the interpolant is never
+    # evaluated below it.
+    i1 = first_feasible_a(model, a_req, 1)
+    i1 === nothing && error("College infeasible at every asset grid point")
+    ag1 = a_grid[i1:end]
+    V1_college = [[extrapolate(interpolate((ag1, k_grid), model.sol_v_college[1, i1:end, :, ip, it],
+                                           Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
 
     for ia in 1:Na, ik in 1:Nk, it in 1:Nt
         assets = a_grid[ia]
-        HC = k_grid[ik]
-        tr_hi = assets - 1e-9
-        if assets ≤ a_min_t[1]
-            model.sol_tr_college[ia, ik, :, it] .= 0.0
-            model.sol_tr_v_college[ia, ik, :, it] .= -Inf
+        HC     = k_grid[ik]
+
+        # College requires the child to start with at least a_req[1] -- enough to finish
+        # all t_college years -- while the parent retains delta_P.
+        tr_lo, tr_hi = a_req[1], assets - delta_P
+        if tr_hi < tr_lo
+            # Economically infeasible. Do NOT call the optimizer, and do NOT write -Inf
+            # into an array that gets interpolated: NaN marks "not computed", and the
+            # discrete choice applies -Inf at the point of comparison instead.
+            model.sol_tr_college[ia, ik, :, it]   .= NaN
+            model.sol_tr_v_college[ia, ik, :, it] .= NaN
             continue
         end
 
-        function obj_wrapper(x::Vector, grad::Vector)
-            tr = x[1]
-            f = obj_transfer_college(model, tr, assets, HC, grad, V1_college, it, Np, π_p)
-            if length(grad) > 0
-                grad[:] = -grad[:]
-            end
-            return -f
-        end
+        f(tr) = obj_transfer_college(model, tr, assets, HC, Float64[], V1_college, it, Np, π_p)
+        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)   # same grid/tolerances as work
 
-        opt = Opt(:LD_SLSQP, 1)
-        lower_bounds!(opt, [1e-12])
-        upper_bounds!(opt, [tr_hi])
-        ftol_rel!(opt, 1e-6)
-        maxeval!(opt, 500)
-        min_objective!(opt, obj_wrapper)
-        # Initial guess 
-        init = [tr_hi * 0.99]
-        (minf, xopt, ret) = optimize(opt, init)
-  
-
-        # Fill for all ip for compatibility
-        model.sol_tr_college[ia, ik, :, it]   .= xopt[1]
-        model.sol_tr_v_college[ia, ik, :, it] .= -minf
+        model.sol_tr_college[ia, ik, :, it]   .= tr_opt
+        model.sol_tr_v_college[ia, ik, :, it] .= v_opt
     end
     return nothing
 end
-
-
 
 # ======== Objective: Work Path ==========
 function obj_transfer_work(
@@ -834,14 +949,23 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     @unpack Nt, t_weight = model
 
     # -- 1. Precompute interpolators for policies and transfer values --
+    # College policy cells below the feasibility threshold hold NaN, so each college-year
+    # interpolant is built over that year's feasible asset slice -- NaN never enters an
+    # interpolation.
+    a_req_sim = compute_min_assets(model)
+    csl(t) = begin
+        i0 = t <= t_college ? first_feasible_a(model, a_req_sim, t) : 1
+        i0 === nothing ? (1:length(a_grid)) : (i0:length(a_grid))
+    end
+
     # College policy interpolators
     interp_c_college = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_c_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_c_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
             for t in 1:T, i_p in 1:Np]
         for i_t in 1:Nt
     ]
     interp_h_college = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_h_college[t, :, :, i_p, i_t]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_h_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
             for t in 1:T, i_p in 1:Np]
         for i_t in 1:Nt
     ]
@@ -972,49 +1096,44 @@ end
 
 
 
+# NOTE: this implements the COMMITMENT timing (transfer chosen before eps_0 is observed).
+# Under the timing decided in docs/ERRORS.md Phase 0.5 it is not used for the parent's
+# terminal value and should be deleted when N1 lands. Kept for now, with the same domain
+# and optimizer as the other two branches so it no longer manufactures NaN.
 function optimal_transfer_exp_college!(model::ConSavLaborCollege_AR1)
-    @unpack Na, Nk, a_grid, k_grid, p_transition, Np, Nt, t_weight = model
-    π_p = stationary_dist(p_transition)
-    coef = (1-model.mu) + model.mu*model.omega
+    @unpack Na, Nk, a_grid, k_grid, p_transition, Np, Nt, t_weight, delta_P = model
+    π_p   = stationary_dist(p_transition)
+    a_req = compute_min_assets(model)
 
-    V1_college = [[extrapolate(interpolate((a_grid, k_grid), model.sol_v_college[1, :, :, ip, it], Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
+    # sol_v_college holds NaN where college is infeasible, so build over the feasible
+    # slice only. The transfer lower bound is a_req[1], so the interpolant is never
+    # evaluated below it.
+    i1 = first_feasible_a(model, a_req, 1)
+    i1 === nothing && error("College infeasible at every asset grid point")
+    ag1 = a_grid[i1:end]
+    V1_college = [[extrapolate(interpolate((ag1, k_grid), model.sol_v_college[1, i1:end, :, ip, it],
+                                           Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
 
     for ia in 1:Na, ik in 1:Nk
         assets = a_grid[ia]
-        HC = k_grid[ik]
-        tr_hi = assets - 1e-9
-        if assets ≤ 1e-3
-            model.sol_exp_college[ia, ik, :, :] .= 0.0
-            model.sol_exp_v_college[ia, ik, :, :] .= -Inf
+        HC     = k_grid[ik]
+
+        tr_lo, tr_hi = a_req[1], assets - delta_P
+        if tr_hi < tr_lo
+            model.sol_exp_college[ia, ik, :, :]   .= NaN
+            model.sol_exp_v_college[ia, ik, :, :] .= NaN
             continue
         end
 
-        function obj_wrapper(x::Vector, grad::Vector)
-            tr = x[1]
-            f = obj_transfer_exp_college(model, tr, assets, HC, grad, V1_college, Np, Nt, π_p, t_weight)
-            if length(grad) > 0
-                grad[:] = -grad[:]
-            end
-            return -f
-        end
+        f(tr) = obj_transfer_exp_college(model, tr, assets, HC, Float64[], V1_college,
+                                         Np, Nt, π_p, t_weight)
+        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)
 
-        opt = Opt(:LD_SLSQP, 1)
-        lower_bounds!(opt, [1e-12])
-        upper_bounds!(opt, [tr_hi])
-        ftol_rel!(opt, 1e-8)
-        maxeval!(opt, 500)
-        min_objective!(opt, obj_wrapper)
-        # Initial guess 
-        init = [tr_hi * 0.99]
-        (minf, xopt, ret) = optimize(opt, init)
-  
-        # Fill for all [ip, it] for compatibility
-        model.sol_exp_college[ia, ik, :, :] .= xopt[1]
-        model.sol_exp_v_college[ia, ik, :, :] .= -minf
+        model.sol_exp_college[ia, ik, :, :]   .= tr_opt
+        model.sol_exp_v_college[ia, ik, :, :] .= v_opt
     end
     return nothing
 end
-
 
 function obj_transfer_exp_college(
     model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
