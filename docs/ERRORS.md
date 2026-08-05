@@ -47,13 +47,13 @@ passed at construction, the terminal-value construction, experiment design, and 
 | N10 | Heterogeneous high-resource arms solve work at `y=0.6`, college at `y=1.08` | notebook | 🔴 |
 | ~~N11~~ | ~~Notebook cannot run top-to-bottom~~ — **FIXED** (Phase 1) | — | ✅ |
 | ~~C1~~ | ~~`-Inf` sentinel → 30% NaN~~ — **FIXED** in `child_lifecycle.jl` | — | ✅ |
-| C9 | Child simulation never clamps assets (live module only) | child_lifecycle_ret | 🟠 |
+| ~~C9~~ | ~~Child simulation never clamps~~ — **FIXED**: `snap` + reported excursions (Phase 2) | — | ✅ |
 | ~~C10~~ | ~~Return codes never inspected~~ — **FIXED**, `check_nlopt!` errors | — | ✅ |
-| C11 | Transfer/simulation extrapolation — **partly fixed** (domains aligned; `Line()` vs `Flat()` remains) | child_lifecycle | 🟡 |
+| ~~C11~~ | ~~Transfer/simulation extrapolation~~ — **FIXED**: one convention, `a_min = 0` (Phase 2) | — | ✅ |
 | C2 | Psychic cost uses `^4`, model says `^2` — **OUT OF SCOPE by instruction** | child_lifecycle | ⏸️ |
 | ~~C3~~ | ~~Retirement not in the model~~ — **FIXED**; notebook switched | — | ✅ |
 | ~~N2~~ | ~~Diagnostics suppressed~~ — **FIXED**: returned + hard floor (Phase 1) | — | ✅ |
-| P3 | Simulated states never clamped; artificial `a ≤ a_max` in the solve | parent_family | 🟠 |
+| ~~P3~~ | ~~Parent states unclamped~~ — **FIXED**: `snap_parent` + reported excursions (Phase 2) | — | ✅ |
 | ~~C4~~ | ~~Asymmetric transfer optimization~~ — **FIXED**, branch-symmetric `maximize_1d` | — | ✅ |
 | ~~C5~~ | ~~Shock discretization~~ — **RESOLVED: documented approximation** (Phase 0.7) | — | ✅ |
 | P4 | Objective/gradient inconsistent in `-1e8` penalty branches | parent_family | 🟠 |
@@ -1006,6 +1006,34 @@ P1, where the gradient describes a different function from the objective.
 
 ---
 
+## Phase 2 complete (2026-08-05) — child/transfer numerical domain
+
+C1 and C4 were closed in the previous commit. This phase closes the rest.
+
+| item | what changed |
+|---|---|
+| **C11** | **`a_min = 0.0`** for the child (was `0.01`). The work branch admits `tr = 0`, so zero has to be *on* the grid or the first child period is evaluated by extrapolation. With `tr ∈ [0, a−δ_P]` for work and `[a_req[1], a−δ_P]` for college, transfer evaluation now stays inside the solved domain. One extrapolation convention is stated and applied: **value functions `Line()`** (a boundary slope of zero would make saving look worthless), **policy functions `Flat()`** (never extrapolate a policy into territory where it was not optimal). The transfer-value interpolants in both simulators moved `Flat()` → `Line()` to match the solve. |
+| **C9 / P3** | `snap` (child) and `snap_parent` (parent) clamp **only floating-point-sized** violations, `tol = 1e-10`. A state that genuinely leaves the grid is left visible so `check_simulation` reports it — silently clipping a real out-of-grid state would rewrite the transition law, which is what the old `max(a_next, a_min)` did on the child side and what the parent did not do at all. |
+
+### Verified (Na=20, Nk=20, Nt=6, simN=400)
+
+```
+sol_*_work            0.00% NaN   0.00% Inf
+sol_*_college        1.08–20.00% NaN   0.00% Inf   (NaN = economically infeasible)
+ANY Inf anywhere?    false
+
+simulated states outside the grid
+  assets  below a_min 0.00%   above a_max 0.12%
+  HC      below k_min 0.00%   above k_max 0.00%
+labor at bounds       lower 0.00%   upper 0.00%
+```
+
+Asset excursions fell from **57.6%** (measured before Phase 2) to **0.12%**, inside the
+1% tolerance. Work transfers select exactly `0` at 66.2% of states — now an on-grid point
+rather than an extrapolation.
+
+---
+
 ## Fix roadmap
 
 Each phase makes the next one verifiable. **Do not re-run counterfactuals for the paper
@@ -1214,7 +1242,7 @@ backward and forward discrete-choice rules agree state by state.
 | 5.2 | **N5** | Passing `psi_terminal_belief_bin` to the college models is **not sufficient** while the work-transfer value is copied from a shared `base_child`. Recompute the belief-specific work transfer value too. Interacts with N10. |
 | 5.3 | **N7** | Make the resource arms symmetric, or state why they differ. |
 | 5.4 | — | Other experiment-definition defects: "High φ₂" *reduces* φ₂ from 20 to 15; the σ₄ slope experiment also moves its intercept; `R_1_baseline = 0.05` differs from the constructor's `0.06`. |
-| 5.5 | **N3** | Replace or remove the invalid CEV. |
+| 5.5 | **N3** | Replace and correct the invalid CEV. |
 | 5.6 | **N8, N9** | Fix labels **after** treatment definitions are final. |
 | 5.7 | **M1** | Write tables to `output/tables/`; wire in `write_manifest` (seeds, commit, parameters). |
 

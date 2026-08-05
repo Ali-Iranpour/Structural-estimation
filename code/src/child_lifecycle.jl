@@ -81,7 +81,9 @@ function ConSavLaborCollege_AR1(;
                 # child_lifecycle_ret.jl, which implied a terminal age of 69.
                 T::Int=51, t_college::Int=4, beta::Float64=0.97, rho::Float64=1.0,
                 r::Float64=0.03, a_max::Float64=100.0, Na::Int=30, y::Float64=0.6,
-                simN::Int=5000, a_min::Float64=0.01, k_max::Float64=30.0, Nk::Int=30,
+                # a_min = 0: the work branch admits tr = 0, so 0 must be IN the child's asset
+                # grid or the first child period is evaluated by extrapolation. Was 0.01.
+                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=30.0, Nk::Int=30,
                 w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0, alpha::Float64=0.08,
                 phi::Float64=18.0, seed::Int=1234, college_cost::Float64=1.2,
                 college_boost::Float64=2.0, kappa::Float64=5.0,
@@ -163,6 +165,21 @@ end
 
 
 const WAGE_SCALING_FACTOR = 0.584
+
+# ---------------------------------------------------------------------------
+# Extrapolation convention (C11). One rule, applied everywhere:
+#
+#   VALUE functions  -> Line()  : preserve the boundary slope. Flat() would assert
+#                                 dV/da = 0 off-grid, which is economically wrong and
+#                                 makes saving look worthless.
+#   POLICY functions -> Flat()  : hold the boundary policy. Line() would extrapolate a
+#                                 policy into territory where it was never optimal.
+#
+# Previously the transfer solve used Line() while the simulators used Flat() on the same
+# objects, so the value that selected a transfer was not the value its simulated policy
+# generated. With a_min = 0 and tr bounded into [0 or a_req[1], a - delta_P], evaluation
+# should stay inside the grid; `check_simulation` reports any excursion.
+# ---------------------------------------------------------------------------
 
 # ================================
 # Progressive tax helpers
@@ -580,6 +597,22 @@ function create_interpolator_college(model::ConSavLaborCollege_AR1, sol_v::Array
 end
 
 # --------------------------
+# Simulation domain guard
+# --------------------------
+"""
+    snap(x, lo, hi; tol = 1e-10)
+
+Clamp ONLY floating-point-sized violations. A state that genuinely leaves `[lo, hi]` is
+returned unchanged so that `check_simulation` can see and report it -- silently clipping an
+economically meaningful out-of-grid state would rewrite the transition law.
+"""
+@inline function snap(x::Float64, lo::Float64, hi::Float64; tol::Float64 = 1e-10)
+    x < lo && x > lo - tol && return lo
+    x > hi && x < hi + tol && return hi
+    return x
+end
+
+# --------------------------
 # Helper for Simulation
 # --------------------------
 function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
@@ -704,8 +737,10 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
                     k_next = k + h
                 end
 
-                sim_a[i, t+1] = a_next
-                sim_k[i, t+1] = k_next
+                # snap() fixes float-sized overshoot only; genuine excursions are left
+                # visible for check_simulation rather than silently clipped.
+                sim_a[i, t+1] = snap(a_next, a_min, model.a_max)
+                sim_k[i, t+1] = snap(k_next, k_grid[1], model.k_max)
 
                 p_draw = draws_uniform_p[i, t]
                 p_trans_probs = p_transition[p_idx, :]
@@ -982,12 +1017,12 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     ]
     # Transfer value interpolators
     sol_tr_v_college_interp = [
-        [LinearInterpolation((a_grid, k_grid), model.sol_tr_v_college[:, :, ip, it]; extrapolation_bc=Flat())
+        [LinearInterpolation((a_grid, k_grid), model.sol_tr_v_college[:, :, ip, it]; extrapolation_bc=Line())
             for ip in 1:Np]
         for it in 1:Nt
     ]
     sol_tr_v_work_interp = [
-        LinearInterpolation((a_grid, k_grid), model.sol_tr_v_work[:, :, ip, 1]; extrapolation_bc=Flat())
+        LinearInterpolation((a_grid, k_grid), model.sol_tr_v_work[:, :, ip, 1]; extrapolation_bc=Line())
         for ip in 1:Np
     ]
     # Transfer amount interpolators
@@ -1076,8 +1111,10 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
                     a_next = (1 + r) * a + sim_income[i, t] - c + y
                     k_next = k + h
                 end
-                sim_a[i, t+1] = a_next
-                sim_k[i, t+1] = k_next
+                # snap() fixes float-sized overshoot only; genuine excursions are left
+                # visible for check_simulation rather than silently clipped.
+                sim_a[i, t+1] = snap(a_next, a_min, model.a_max)
+                sim_k[i, t+1] = snap(k_next, k_grid[1], model.k_max)
 
                 # Transition for persistent shock
                 p_draw = draws_uniform_p[i, t]

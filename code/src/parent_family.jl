@@ -337,6 +337,18 @@ const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
 const AMIN = 0.0    # Minimum asset level
 
 
+"""
+    snap_parent(x, lo, hi; tol = 1e-10)
+
+Clamp only floating-point-sized violations of `[lo, hi]`; leave genuine excursions visible
+so the diagnostics can report them. See `snap` in child_lifecycle.jl.
+"""
+@inline function snap_parent(x::Float64, lo::Float64, hi::Float64; tol::Float64 = 1e-10)
+    x < lo && x > lo - tol && return lo
+    x > hi && x < hi + tol && return hi
+    return x
+end
+
 # --------------------------
 # Model Solver
 # --------------------------
@@ -1048,7 +1060,11 @@ function simulate_model!(model::Parent_child_interaction_age_specific_AR1)
             sim_income[i, t] = after_tax  # Store after-tax income
  
             # Transition equations
-            sim_a[i, t+1] = (1.0 + model.r) * a + sim_income[i, t] + model.y - sim_c[i, t] - sim_e[i, t]
+            a_next_p = (1.0 + model.r) * a + sim_income[i, t] + model.y - sim_c[i, t] - sim_e[i, t]
+            # Float-sized violations are snapped; genuine excursions are left visible so
+            # check_simulation can report them. Clipping a real out-of-grid state would
+            # silently rewrite the transition law.
+            sim_a[i, t+1] = snap_parent(a_next_p, model.a_min, model.a_max)
             sim_k[i, t+1] = k 
             if t < 8
                 hc_next = exp(log(model.R_vector[t]) +
@@ -1180,7 +1196,8 @@ function simulate_model_hetero!(
             after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
             sim_income[i, t] = after_tax  # Store after-tax income
 
-            sim_a[i, t+1] = (1.0 + pm.r) * a + sim_income[i, t] + pm.y - sim_c[i, t] - sim_e[i, t]
+            sim_a[i, t+1] = snap_parent((1.0 + pm.r) * a + sim_income[i, t] + pm.y -
+                                        sim_c[i, t] - sim_e[i, t], pm.a_min, pm.a_max)
             sim_k[i, t+1] = k
 
             if t < 8
