@@ -1,8 +1,8 @@
 # Run provenance — written automatically. Do not edit by hand.
 
 [run]
-timestamp   = "2026-08-05 20:15:53"
-git_commit  = "ba7013d-dirty"
+timestamp   = "2026-08-05 20:18:25"
+git_commit  = "62e3907-dirty"
 julia       = "1.11.3"
 hostname    = "MacBook-Air-2.local"
 output_dir  = "output/tables"
@@ -18,11 +18,11 @@ QuantEcon           = "0.16.6"
 [parameters]
 experiment          = "full_run"
 seed                = 1234
-simN                = 500
-child_Na            = 20
-child_Nk            = 20
-child_Nt            = 6
-parent_Na           = 10
+simN                = 5000
+child_Na            = 50
+child_Nk            = 50
+child_Nt            = 10
+parent_Na           = 30
 parent_Nk           = 2
-parent_Nhc          = 10
-quick               = true
+parent_Nhc          = 30
+quick               = false
