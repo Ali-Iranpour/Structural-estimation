@@ -70,6 +70,10 @@ passed at construction, the terminal-value construction, experiment design, and 
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
 | M1 | Tables: `run_all.jl` writes 3; **the notebook still writes none** | notebook | 🟡 |
+| T5 | `simulate_model_child!` missing `a_min` in `@unpack` — **FIXED** | — | ✅ |
+| T6 | Cell 11 broke on the new terminal-value API — **FIXED** | — | ✅ |
+| T7 | `plot_family_counterfactuals` used before defined — **FIXED** | — | ✅ |
+| T8 | `simulate_model_hetero!` `@inbounds` over unvalidated `belief_type` — **FIXED** | — | ✅ |
 | T1 | `fmt_num` emitted scientific notation ≥1e6 — **FIXED** | — | ✅ |
 | T2 | `build_tables_pdf` could `\input` a stale copy of itself — **FIXED** | — | ✅ |
 | T3 | Dead `safe_maximum` / `AMIN` in `parent_family.jl` — **FIXED** | — | ✅ |
@@ -1153,6 +1157,33 @@ does — that asymmetry is deliberate, the child relies on grid coverage plus
 
 Verified after the fixes: `run_all.jl --quick` still gives Bellman residual 5.7e-13,
 converged share 1.0000, 0.00% of states outside the grid, 3 tables, PDF built.
+
+---
+
+## Notebook execution test (2026-08-05) — `transfer_CRRA_wage.ipynb` now runs top-to-bottom
+
+The notebook had never been executed end-to-end in this work. Converting it to a script
+with shrunken grids and running it found four defects that no static check caught.
+
+| # | Finding | Status |
+|---|---|---|
+| **T5** | `simulate_model_child!` used `a_min` without unpacking it — introduced when `snap()` was added in Phase 2. `run_all.jl` calls `simulate_model_family!` (which *does* unpack it), so this path was never exercised. | ✅ fixed |
+| **T6** | Cell 11 (the spline-smoothing diagnostic) still referenced `a_grid` / `values_grid`, locals of the five-line block that the N1 fix collapsed into one `terminal_value_spline` call. Rewritten against `terminal_value_surface` + `valid_rows`. | ✅ fixed |
+| **T7** | `plot_family_counterfactuals` was **defined in cell 31 but called in cells 26–27**. N11 fixed the *variable* ordering; this is the same defect for a *function*. Definition moved ahead of first use. | ✅ fixed |
+| **T8** | `simulate_model_hetero!` runs `@inbounds` loops indexed by the caller-supplied `belief_type`, with no length check — it asserts on the solution arrays but not on this. A caller mismatch reads garbage memory and dies with **`signal 10 (1): Bus error`**, no useful message. Added length and range guards. | ✅ fixed |
+
+**Result: 64/64 code cells execute, exit 0, no NaN/Inf.** College shares vary sensibly
+across arms (32.0%, 14.5%, 7.5%, …). One arm still reports 0% — pre-existing, and worth
+checking at production grids.
+
+`tools/nb_smoketest.py` makes this repeatable:
+
+```bash
+python3 tools/nb_smoketest.py
+```
+
+It is the only check that covers the counterfactuals, the subjective-expectations build
+and the θ arms — `run_all.jl` exercises the baseline path only.
 
 ---
 

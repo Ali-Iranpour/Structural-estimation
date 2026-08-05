@@ -1111,6 +1111,17 @@ function simulate_model_hetero!(
     # ======= Shared setup from the first (base) model =======
     model = parent_models[1]  # assumes shared sim arrays and grids live here
     simN, simT = model.simN, model.T
+    # The loops below are @inbounds, so an out-of-range index reads garbage memory and
+    # crashes with a bus error rather than a BoundsError. Validate the caller-supplied
+    # arrays first -- cheap, and it turns a silent memory fault into a clear message.
+    @assert length(belief_type) == simN
+        "belief_type has $(length(belief_type)) entries but the model simulates simN=$simN agents"
+    @assert all(1 .<= belief_type .<= length(parent_models)) "belief_type holds indices outside 1:$(length(parent_models))"
+    for (bi, pm) in enumerate(parent_models)
+        @assert pm.simN >= simN "parent_models[$bi].simN = $(pm.simN) < simN = $simN"
+        @assert length(pm.sim_p_init) >= simN "parent_models[$bi].sim_p_init is too short"
+    end
+
 
     a_grid, k_grid, hc_grid = model.a_grid, model.k_grid, model.hc_grid
     sim_a, sim_k, sim_hc = model.sim_a, model.sim_k, model.sim_hc
