@@ -58,7 +58,6 @@ mutable struct ConSavLaborCollege_AR1
     # --- Solution arrays (4D: Na, Nk, Np, Nt) ---
     sol_tr_college::Array{Float64, 4}; sol_tr_work::Array{Float64, 4}
     sol_tr_v_college::Array{Float64, 4}; sol_tr_v_work::Array{Float64, 4}
-    sol_exp_college::Array{Float64, 4}; sol_exp_v_college::Array{Float64, 4}
 
     # --- Simulation arrays ---
     sim_c::Matrix{Float64}; sim_h::Matrix{Float64}; sim_a::Matrix{Float64}
@@ -130,7 +129,6 @@ function ConSavLaborCollege_AR1(;
     tr_shape = (Na, Nk, Np, Nt)
     sol_tr_college = fill(NaN, tr_shape); sol_tr_work = fill(NaN, tr_shape)
     sol_tr_v_college = fill(NaN, tr_shape); sol_tr_v_work = fill(NaN, tr_shape)
-    sol_exp_college = fill(NaN, tr_shape); sol_exp_v_college = fill(NaN, tr_shape)
 
     # --- Initialize simulation arrays ---
     sim_shape = (simN, T)
@@ -161,7 +159,6 @@ function ConSavLaborCollege_AR1(;
         Np, p_grid, p_transition, p_ar1, sigma_p,
         sol_c_work, sol_h_work, sol_v_work, sol_c_college, sol_h_college, sol_v_college,
         sol_tr_college, sol_tr_work, sol_tr_v_college, sol_tr_v_work,
-        sol_exp_college, sol_exp_v_college,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
         sim_a_init, sim_k_init, sim_p_init_idx, sim_income, sim_wage,
         draws_uniform_p, w_vec, college_cost, college_boost, kappa, tax_lambda,
@@ -1227,83 +1224,4 @@ end
 
 
 
-# NOTE: this implements the COMMITMENT timing (transfer chosen before eps_0 is observed).
-# Under the timing decided in docs/ERRORS.md Phase 0.5 it is not used for the parent's
-# terminal value and should be deleted when N1 lands. Kept for now, with the same domain
-# and optimizer as the other two branches so it no longer manufactures NaN.
-function optimal_transfer_exp_college!(model::ConSavLaborCollege_AR1)
-    @unpack Na, Nk, a_grid, k_grid, p_transition, Np, Nt, t_weight, delta_P = model
-    π_p   = stationary_dist(p_transition)
-    a_req = compute_min_assets(model)
-
-    # sol_v_college holds NaN where college is infeasible, so build over the feasible
-    # slice only. The transfer lower bound is a_req[1], so the interpolant is never
-    # evaluated below it.
-    i1 = first_feasible_a(model, a_req, 1)
-    i1 === nothing && error("College infeasible at every asset grid point")
-    ag1 = a_grid[i1:end]
-    V1_college = [[extrapolate(interpolate((ag1, k_grid), model.sol_v_college[1, i1:end, :, ip, it],
-                                           Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
-
-    for ia in 1:Na, ik in 1:Nk
-        assets = a_grid[ia]
-        HC     = k_grid[ik]
-
-        tr_lo, tr_hi = a_req[1], assets - delta_P
-        if tr_hi < tr_lo
-            model.sol_exp_college[ia, ik, :, :]   .= NaN
-            model.sol_exp_v_college[ia, ik, :, :] .= NaN
-            continue
-        end
-
-        f(tr) = obj_transfer_exp_college(model, tr, assets, HC, Float64[], V1_college,
-                                         Np, Nt, π_p, t_weight)
-        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)
-
-        model.sol_exp_college[ia, ik, :, :]   .= tr_opt
-        model.sol_exp_v_college[ia, ik, :, :] .= v_opt
-    end
-    return nothing
-end
-
-function obj_transfer_exp_college(
-    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
-    grad::Vector, V1_college::Vector, Np::Int, Nt::Int, π_p::Vector, t_weight::Vector
-)
-    a_terminal = assets - tr
-
-    if a_terminal <= 0.0
-        if length(grad) > 0
-            grad[1] = 0.0
-        end
-        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
-        # finite sentinel that survived every finiteness check and leaked into the
-        # parent's terminal value as a real number.
-        return NaN
-    end
-
-    V_parent = terminal_value(model, HC, a_terminal)
-    # Expectation over AR1 (p) and epsilon (t)
-    V_child = 0.0
-    dV_child_dtr = 0.0
-    for ip in 1:Np
-        for it in 1:Nt
-            interp = V1_college[ip][it]
-            weight = π_p[ip] * t_weight[it]
-            Vj = interp(tr, HC)
-            gradV = Interpolations.gradient(interp, tr, HC)
-            dV_child_dtr += weight * gradV[1]
-            V_child      += weight * Vj
-        end
-    end
-
-    coef = (1-model.mu) + model.mu*model.omega
-    f = coef * V_child + model.mu * V_parent
-
-    if length(grad) > 0
-        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
-        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
-    end
-    return f
-end
 
