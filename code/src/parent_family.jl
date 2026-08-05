@@ -1164,11 +1164,11 @@ function simulate_model_family_hetero!(
     verbose::Bool = true
 )
     # -- Unpack grids/dims --
-    @unpack simN, T, t_college, r, college_cost, college_boost, a_min, t_retire = base_child
+    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = base_child
     @unpack a_grid, k_grid, p_grid, p_transition, Np = base_child
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = base_child
     @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = base_child
-    @unpack Nt, t_weight, t_retire = base_child
+    @unpack Nt, t_weight = base_child
 
     num_bins = length(child_models)
     belief_values = [child_models[m].college_boost for m in 1:num_bins]
@@ -1192,11 +1192,6 @@ function simulate_model_family_hetero!(
         for ip in 1:Np
     ]
 
-    # -- Retirement interpolators (shock-free, i_p=1, i_t=1) --
-    interp_c_retire = [
-        LinearInterpolation((a_grid, k_grid), base_child.sol_c_work[t, :, :, 1, 1]; extrapolation_bc=Flat())
-        for t in 1:T
-    ]
 
     # -- College interpolators (belief-specific) --
     interp_c_college_belief = [
@@ -1258,15 +1253,7 @@ function simulate_model_family_hetero!(
             idx_c = (m, it, t, p_idx)
             idx_h = (m, it, t, p_idx)
 
-            if t >= t_retire
-                # ----- Retirement (shock-free) -----
-                c = interp_c_retire[t](a, k)
-                h = 0.0
-                pen = pension_amount(base_child, k, t)
-                w_pre = wage_func(base_child, k, t, 1.0)
-                sim_wage[i, t] = w_pre / WAGE_SCALING_FACTOR
-                sim_income[i, t] = pen
-            elseif path_choice[i] == :college && t <= t_college
+            if path_choice[i] == :college && t <= t_college
                 # ----- In college -----
                 if t == 1
                     c = interp_c_college_belief[idx_c...](a, k)
@@ -1280,7 +1267,7 @@ function simulate_model_family_hetero!(
                 sim_income[i, t] = 0.0
                 sim_wage[i, t] = 0.0
             else
-                # ----- Working (pre-retirement) -----
+                # ----- Working -----
                 c = interp_c_work[t, p_idx](a, k)
                 h = interp_h_work[t, p_idx](a, k)
                 p_shock = p_grid[p_idx]
@@ -1295,11 +1282,7 @@ function simulate_model_family_hetero!(
 
             # Update states for next period (if t < T)
             if t < T
-                if t >= t_retire
-                    pen = pension_amount(base_child, k, t)
-                    a_next = (1 + r) * a - c + pen + y
-                    k_next = k
-                elseif path_choice[i] == :college
+                if path_choice[i] == :college
                     if t < t_college
                         a_next = (1 + r) * a - c - college_cost + y
                         k_next = k + belief_values[m]
@@ -1318,13 +1301,9 @@ function simulate_model_family_hetero!(
                 sim_k[i, t+1] = k_next
 
                 # Persistent shock update
-                if t < t_retire
-                    p_draw = draws_uniform_p[i, t]
-                    p_trans_probs = p_transition[p_idx, :]
-                    sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
-                else
-                    sim_p_idx[i, t+1] = 1  # Fixed p_shock = 1.0 in retirement
-                end
+                p_draw = draws_uniform_p[i, t]
+                p_trans_probs = p_transition[p_idx, :]
+                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
             end
         end
     end

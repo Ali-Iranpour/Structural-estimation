@@ -17,9 +17,10 @@ Audit of the model code against [`model.txt`](model.txt). Line numbers are curre
 | File | Status |
 |---|---|
 | `code/src/parent_family.jl` | **LIVE** — parent problem |
-| `code/src/child_lifecycle_ret.jl` | **LIVE** — the child module the notebook includes |
+| `code/src/child_lifecycle.jl` | **LIVE, canonical** — the child module the notebook includes. All child-side fixes go here. |
 | `code/transfer_CRRA_wage.ipynb` | **LIVE** — driver |
-| `code/src/child_lifecycle_ar1.jl` | **NOT INCLUDED** — kept for reference. Its issues are latent unless you switch to it. |
+| `code/src/child_lifecycle_ret.jl` | **SUPERSEDED** — reference only, kept until equivalence/integration tests pass. Do not fix. |
+| `code/src/child_lifecycle_ar1.jl` | **SUPERSEDED** — reference only. Do not fix. |
 
 ### Where each error lives
 
@@ -45,15 +46,15 @@ passed at construction, the terminal-value construction, experiment design, and 
 | P2 | Unseeded RNG — counterfactuals lack common random numbers | parent_family + notebook | 🔴 |
 | N10 | Heterogeneous high-resource arms solve work at `y=0.6`, college at `y=1.08` | notebook | 🔴 |
 | N11 | Notebook cannot run top-to-bottom; two results tables read stale globals | notebook | 🔴 |
-| C1 | `-Inf` sentinel reachable → **30% NaN** in the terminal-value array | both child modules | 🔴 |
+| ~~C1~~ | ~~`-Inf` sentinel → 30% NaN~~ — **FIXED** in `child_lifecycle.jl` | — | ✅ |
 | C9 | Child simulation never clamps assets (live module only) | child_lifecycle_ret | 🟠 |
-| C10 | Child solvers never inspect NLopt return codes (7 sites) | both child modules | 🟠 |
-| C11 | Transfer solve extrapolates `Line()`, simulation uses `Flat()` | both child modules | 🟠 |
+| ~~C10~~ | ~~Return codes never inspected~~ — **FIXED**, `check_nlopt!` errors | — | ✅ |
+| C11 | Transfer/simulation extrapolation — **partly fixed** (domains aligned; `Line()` vs `Flat()` remains) | child_lifecycle | 🟡 |
 | C2 | Psychic cost uses `^4`, model says `^2` | both child modules | 🟠 |
-| C3 | Retirement exists in code, not in the model | child_lifecycle_ret | 🟠 |
+| ~~C3~~ | ~~Retirement not in the model~~ — **FIXED**; notebook switched | — | ✅ |
 | N2 | 65 × `@suppress_output` discards all convergence diagnostics | notebook | 🟠 |
 | P3 | Simulated states never clamped; artificial `a ≤ a_max` in the solve | parent_family | 🟠 |
-| C4 | Asymmetric transfer optimization across the discrete choice | both child modules | 🟠 |
+| ~~C4~~ | ~~Asymmetric transfer optimization~~ — **FIXED**, branch-symmetric `maximize_1d` | — | ✅ |
 | C5 | Shock discretization too coarse for the assumed persistence | all | 🟠 |
 | P4 | Objective/gradient inconsistent in `-1e8` penalty branches | parent_family | 🟠 |
 | P5 | Piecewise-linear continuation value under gradient-based SLSQP | all | 🟠 |
@@ -64,7 +65,7 @@ passed at construction, the terminal-value construction, experiment design, and 
 | N7 | Res-vs-Exp arms asymmetric (child y=1.08, parent y=1.2) | notebook | 🟡 |
 | N8 | Model/label order swapped in one figure | notebook | 🟡 |
 | N9 | Tax counterfactual labels do not match the τ values used | notebook | 🟡 |
-| N12 | `ā^P` (min retained parental asset) is a spec addition set to `1e-9` | both child modules | 🟡 |
+| N12 | `ā^P` now an explicit `delta_P = 0.05` — **needs an economic value** | child_lifecycle | 🟡 |
 | P6 | NaN guard unreachable; poisons the backward init chain | parent_family | 🟡 |
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
@@ -912,6 +913,55 @@ it. Add one call per experiment batch:
 write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
                                       mu_1 = -0.04, rho = 1.5, Na = 30, simN = 5000)
 ```
+
+---
+
+## Fixed on branch `fix/remove-retirement` (2026-08-05)
+
+`code/src/child_lifecycle.jl` is now the canonical child module and the notebook includes
+it. `_ret.jl` and `_ar1.jl` are reference-only — **all child-side fixes go to the canonical
+module**.
+
+| item | what changed |
+|---|---|
+| **C3** | Retirement removed. `simulate_model_family_hetero!` in `parent_family.jl` also stripped of `t_retire`/`pension_amount`/`interp_c_retire` — it was a hard blocker, since it `@unpack`ed a field the new module does not have. |
+| **C1** | College feasibility rebuilt. `compute_min_assets` now uses `c_floor`, **the same floor the optimizer enforces** (was `c_min = 0.3` against a `0.01` bound), and returns `a_req[1..t_college+1]` with `a_req[t_college+1] = a_min`. `asset_constraint_college` now imposes `a_{t+1} ≥ a_req[t+1]`, so a student who enters can always finish. |
+| **C1 / item 5** | **No `-Inf` is ever stored.** Infeasible cells hold `NaN` ("not computed"); every college interpolant — value, policy, and transfer — is built over the feasible slice of the asset grid via `first_feasible_a` / `first_feasible_parent_a`, so `NaN` never enters an interpolation. `-Inf` is applied only at the discrete comparison, in both simulators. Verified: **0% `Inf` in every stored array.** |
+| **C10** | `check_nlopt!` added at every solver site: rejects `:FAILURE`/`:INVALID_ARGS`/`:OUT_OF_MEMORY`/`:FORCED_STOP` and any non-finite `minf` or iterate. Numerical failure now **errors**; economic infeasibility is a separate, silent mask. |
+| **C4 / item 8** | `maximize_1d` — coarse grid sweep plus two local refinements, derivative-free, **identical grid and tolerances in both branches**. Replaces SLSQP, which was started at `0.5·tr_hi` / `1e-8` for work and `0.99·tr_hi` / `1e-6` for college. |
+| **N12 / item 4** | Transfer domains are now explicit: work `tr ∈ [0, max(0, a − δ_P)]` (never infeasible; collapses to `{0}` when the parent holds less than `δ_P`), college `tr ∈ [a_req[1], a − δ_P]`. **When `a − δ_P < a_req[1]` the college optimizer is not called** — the branch is declared infeasible. `δ_P` is a named field (`delta_P = 0.05`) instead of an implicit `1e-9`. |
+
+### Verified (Na=20, Nk=20, Nt=6)
+
+```
+array                  %NaN    %Inf    note
+sol_v_work             0.00    0.00
+sol_c_work             0.00    0.00
+sol_tr_v_work          0.00    0.00    work branch never infeasible
+sol_v_college          1.08    0.00    NaN = infeasible
+sol_tr_v_college      20.00    0.00    NaN = infeasible (4 of 20 asset points)
+sol_exp_v_college     20.00    0.00
+ANY Inf anywhere?     false
+```
+
+`a_req = [2.2763, 1.7346, 1.1766, 0.6019, 0.01]`; minimum parental assets for college
+`= 2.3263`; 16 of 20 grid points feasible. Work transfers hit exactly `0` at 66.2% of
+states — previously unreachable, since the lower bound was `1e-6`. College transfers are
+bounded below by `a_req[1]` as intended. The solve completes without `check_nlopt!`
+firing, and `simulate_model_family_hetero!` runs end to end.
+
+### Still open
+
+- **`δ_P = 0.05` is a placeholder.** N12 asks for an economic value; this is not one.
+- **The child asset grid still starts at `a_min = 0.01`, not `0`.** The work branch can now
+  choose `tr = 0`, but the child's own grid does not contain it, so the first child period
+  is evaluated by extrapolation. Including `0` in `a_grid` is the clean fix.
+- **C11 partly stands:** the transfer solve still extrapolates `Line()` while the
+  simulators use `Flat()`. The *domains* now agree; the extrapolation convention does not.
+- **Family college share is 0%** in the standalone test. This predates these changes — it
+  was already 0% immediately after the retirement removal, before items 3/4/5/8 — and the
+  notebook overwrites the initial conditions from the parent solve, so the standalone
+  number is not diagnostic. Worth re-checking after a real run.
 
 ---
 

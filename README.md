@@ -28,8 +28,9 @@ the child's birth to age 18; the child is then followed to age 68.
 │       ├── paths.jl                every path in the project — nothing else hard-codes one
 │       ├── manifest.jl             run provenance (git SHA, versions, parameters)
 │       ├── parent_family.jl        parent problem: struct, solver, simulators
-│       ├── child_lifecycle_ret.jl  child lifecycle WITH retirement (the one used)
-│       └── child_lifecycle_ar1.jl  child lifecycle, no retirement (not included)
+│       ├── child_lifecycle.jl      child lifecycle — CANONICAL, no retirement
+│       ├── child_lifecycle_ret.jl  superseded, reference only
+│       └── child_lifecycle_ar1.jl  superseded, reference only
 │
 ├── docs/
 │   ├── model.txt                   LaTeX model specification from the paper
