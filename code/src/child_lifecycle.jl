@@ -98,9 +98,11 @@ function ConSavLaborCollege_AR1(;
                 # the college feasibility recursion. These were 0.01 and 0.3 respectively,
                 # so the feasibility test excluded states the optimizer could in fact solve.
                 c_floor::Float64=0.01,
-                # a_bar^P: minimum asset the parent retains. Was an implicit 1e-9, which let
+                # a_bar^P: minimum asset the parent retains at the transfer stage. Set
+                # equal to c_floor by decision (2026-08-05): the parent must retain at
+                # least one period's minimum consumption. Was an implicit 1e-9, which let
                 # kappa_terminal*log(a_term) reach about -186. See N12 in docs/ERRORS.md.
-                delta_P::Float64=0.05
+                delta_P::Float64=0.01
                 )
 
     simT = T

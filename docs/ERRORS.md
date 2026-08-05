@@ -50,22 +50,22 @@ passed at construction, the terminal-value construction, experiment design, and 
 | C9 | Child simulation never clamps assets (live module only) | child_lifecycle_ret | 🟠 |
 | ~~C10~~ | ~~Return codes never inspected~~ — **FIXED**, `check_nlopt!` errors | — | ✅ |
 | C11 | Transfer/simulation extrapolation — **partly fixed** (domains aligned; `Line()` vs `Flat()` remains) | child_lifecycle | 🟡 |
-| C2 | Psychic cost uses `^4`, model says `^2` | both child modules | 🟠 |
+| C2 | Psychic cost uses `^4`, model says `^2` — **OUT OF SCOPE by instruction** | child_lifecycle | ⏸️ |
 | ~~C3~~ | ~~Retirement not in the model~~ — **FIXED**; notebook switched | — | ✅ |
 | N2 | 65 × `@suppress_output` discards all convergence diagnostics | notebook | 🟠 |
 | P3 | Simulated states never clamped; artificial `a ≤ a_max` in the solve | parent_family | 🟠 |
 | ~~C4~~ | ~~Asymmetric transfer optimization~~ — **FIXED**, branch-symmetric `maximize_1d` | — | ✅ |
-| C5 | Shock discretization too coarse for the assumed persistence | all | 🟠 |
+| ~~C5~~ | ~~Shock discretization~~ — **RESOLVED: documented approximation** (Phase 0.7) | — | ✅ |
 | P4 | Objective/gradient inconsistent in `-1e8` penalty branches | parent_family | 🟠 |
 | P5 | Piecewise-linear continuation value under gradient-based SLSQP | all | 🟠 |
 | N3 | CEV formula assumes homotheticity the value function lacks | notebook | 🟠 |
 | N4 | θ-experiment baseline uses a different ω than its treatment arms | notebook | 🟠 |
-| N5 | `psi_terminal_belief_bin` computed and never used | notebook | 🟠 |
+| ~~N5~~ | ~~`psi_terminal_belief_bin` unused~~ — **NOT AN ERROR, deliberate choice** | — | ⚪ |
 | ~~N6~~ | ~~Belief correction can drive HC negative~~ — **WITHDRAWN, was wrong** | — | ⚪ |
-| N7 | Res-vs-Exp arms asymmetric (child y=1.08, parent y=1.2) | notebook | 🟡 |
+| ~~N7~~ | ~~Res-vs-Exp arms asymmetric~~ — **NOT AN ERROR, deliberate choice** | — | ⚪ |
 | N8 | Model/label order swapped in one figure | notebook | 🟡 |
 | N9 | Tax counterfactual labels do not match the τ values used | notebook | 🟡 |
-| N12 | `ā^P` now an explicit `delta_P = 0.05` — **needs an economic value** | child_lifecycle | 🟡 |
+| ~~N12~~ | ~~`ā^P` placeholder~~ — **FIXED**: `delta_P = c_floor = 0.01` (Phase 0.5b) | — | ✅ |
 | P6 | NaN guard unreachable; poisons the backward init chain | parent_family | 🟡 |
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
@@ -422,7 +422,21 @@ non-concavity is likely, so the discrete choice can flip for purely numerical re
 **Fix.** It is a 1-D problem — use golden-section or a grid search, or multistart both
 branches identically.
 
-## 🟠 C5 — Shock discretization too coarse
+## ✅ ~~C5~~ — RESOLVED: documented approximation
+
+**Phase 0.7 decision (2026-08-05): keep the stationary AR(1); document it.**
+
+`wage2_styled.do` §3 estimates `u_t = eps_t (transitory) + sum iota (permanent random
+walk)`, with `σ_ε = 0.1335`, `σ_ι = 0.1893`, initial-shock variance `0.2357`. The model
+implements a single stationary AR(1) (`ρ = 0.95`, `σ_p = 0.2`, Tauchen) — no transitory
+component, persistent part stationary rather than a unit root. `σ_p ≈ σ_ι`, so it
+approximates the permanent component and drops the transitory one.
+
+This is now a stated approximation rather than a defect. The paper must say so — the
+current text claims a random walk, which is neither implemented nor Tauchen-discretizable.
+Exact wording in [`SPEC_DECISIONS.md`](SPEC_DECISIONS.md).
+
+### Superseded detail — Shock discretization too coarse
 
 **Line 76:** `p_ar1 = 0.95, sigma_p = 0.2, Np = 5`; **line 98:** `tauchen(Np, p_ar1, sigma_p, 0.0, 3)`.
 Parent: `Np = 3` for `ρ = 0.9` (parent_family.jl:207).
@@ -735,7 +749,13 @@ Related, and unchanged from the earlier audit: because
 still comparable to the parent's 0.65. "Decision by Parent" overstates what the experiment
 does — even at θ = 1 the child keeps weight ω.
 
-## 🟠 N5 — `psi_terminal_belief_bin` computed and never used
+## ⚪ ~~N5~~ — NOT AN ERROR: deliberate modelling choice
+
+**Confirmed by the author (2026-08-05) as intended, not a defect.** Beliefs shift the
+perceived college boost only; the terminal human-capital weight `ψ_term` is deliberately
+held common across belief types. Retained here so the choice is on the record rather than
+looking like an oversight to a future reader.
+
 
 **Cells 40, 77, 78, 79 — line 39:**
 
@@ -773,7 +793,12 @@ This matches `model.txt` eq. (5), `HC = H̃C_{t_c} + b* + (T_E−1)(b* − b_m)`
 wrong if the college length ever changes.
 
 
-## 🟡 N7 — Res-vs-Exp arms asymmetric
+## ⚪ ~~N7~~ — NOT AN ERROR: deliberate modelling choice
+
+**Confirmed by the author (2026-08-05) as intended, not a defect.** The child's `y = 1.08`
+and the parent's `y = 1.2` in the high-resource arm are chosen separately on purpose. Worth
+stating explicitly in the paper so the asymmetry reads as a design choice.
+
 
 - Child model **cell 53 L2**: `y = 1.08`
 - Parent model **cell 54 L16**: `y = 1.2`
@@ -982,14 +1007,20 @@ answer in `model.txt`, then write code once.
 | 0.1 | **N6 — withdrawn.** The belief correction cancels to `k₀ + 4b*`. | ✅ closed |
 | 0.2 | **P8 — resolved.** Stata `Age` is re-indexed to model time; `β_age * t` is correct. | ✅ closed |
 | 0.3 | **P7 (wage half) — resolved.** `2 × mean parental wage` = household earnings. | ✅ closed |
-| 0.4 | **C3 — retirement: remove it.** `code/src/child_lifecycle.jl` written and verified; **not yet wired into the notebook**. | 🟨 built, not switched |
-| 0.5 | **N1 — ε observed before the transfer; `E_ε` outermost.** Convention fixed, see N1. | ✅ decided → implement in 3.3 |
-| 0.5b | **N12 — give `ā^P` an economic value** (currently `1e-9`). | ⬜ **decide** |
-| 0.5c | **C6 — `z₀` at separation: stationary draw, or observed?** Forced by 0.5. | ⬜ **decide** |
-| 0.6 | **Child horizon `T`.** | ⬜ **decide** |
-| 0.7 | **Shock process: stationary AR(1) or random walk?** | ⬜ **decide** |
-| 0.8 | **P7 (φ half): is `(φ₁,φ₂,φ₃)` meant to be normalized?** | ⬜ **decide** |
-| 0.9 | **College length / `V^E` display off-by-one.** | ⬜ **decide** |
+| 0.4 | **C3 — retirement removed.** `child_lifecycle.jl` canonical; notebook switched. | ✅ done |
+| 0.5 | **N1 — ε observed before the transfer; `E_ε` outermost.** | ✅ decided → 3.3 |
+| 0.5b | **N12 — `δ_P = c_floor = 0.01`.** | ✅ done |
+| 0.5c | **C6 — `z₀` drawn from the stationary distribution.** | ✅ decided → 3.3b |
+| 0.6 | **Child horizon `T = 51`** (ages 18–68 inclusive). | ✅ done |
+| 0.7 | **C5 — keep the stationary AR(1) as a documented approximation.** | ✅ decided |
+| 0.8 | **P7b — drop the φ normalization claim** (`φ₂` is a scale, not a share). | ✅ decided |
+| 0.9 | **College length: four years**, ages 18–21. Code right, paper display off by one. | ✅ decided |
+| — | **N5, N7 — deliberate choices, not errors.** | ✅ closed |
+| — | **C2 — out of scope by instruction.** | ⏸️ deferred |
+
+All Phase 0 decisions are frozen in [`SPEC_DECISIONS.md`](SPEC_DECISIONS.md), which also
+lists the eight `model.txt` edits they imply. Those are paper prose and are left for the
+author to apply.
 
 #### 0.4 — Retirement: build from `child_lifecycle_ret.jl`, do not start from `ar1`
 
