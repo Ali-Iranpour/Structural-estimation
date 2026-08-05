@@ -43,7 +43,12 @@ passed at construction, the terminal-value construction, experiment design, and 
 | P1 | Spurious `∂V/∂k` in the labor-supply gradient | parent_family | 🔴 |
 | N1 | College choice taken outside the ε expectation (11 sites) | notebook | 🔴 |
 | P2 | Unseeded RNG — counterfactuals lack common random numbers | parent_family + notebook | 🔴 |
-| C1 | `-Inf` sentinel reachable under the enforced constraint | both child modules | 🟠 |
+| N10 | Heterogeneous high-resource arms solve work at `y=0.6`, college at `y=1.08` | notebook | 🔴 |
+| N11 | Notebook cannot run top-to-bottom; two results tables read stale globals | notebook | 🔴 |
+| C1 | `-Inf` sentinel reachable → **30% NaN** in the terminal-value array | both child modules | 🔴 |
+| C9 | Child simulation never clamps assets (live module only) | child_lifecycle_ret | 🟠 |
+| C10 | Child solvers never inspect NLopt return codes (7 sites) | both child modules | 🟠 |
+| C11 | Transfer solve extrapolates `Line()`, simulation uses `Flat()` | both child modules | 🟠 |
 | C2 | Psychic cost uses `^4`, model says `^2` | both child modules | 🟠 |
 | C3 | Retirement exists in code, not in the model | child_lifecycle_ret | 🟠 |
 | N2 | 65 × `@suppress_output` discards all convergence diagnostics | notebook | 🟠 |
@@ -168,6 +173,11 @@ The child modules do this correctly via the stored `draws_uniform_p`. The `seed:
 constructor kwarg is **never used** — lines 288–291 hardcode `MersenneTwister(1234/5678/9012)`,
 and `rng_p = MersenneTwister(3456)` is created and never referenced.
 
+Strictly this is a **variance and reproducibility** problem, not a bias one — unseeded
+draws do not shift `E[·]`. It stays Critical because every result in the paper is a
+*difference between arms*, and without common random numbers you cannot tell whether a
+plotted gap is a treatment effect or a reshuffle; nor can any number be reproduced.
+
 **Fix.** Pre-draw a seeded `draws_uniform_p::Matrix{Float64}` in the constructor and use
 the existing `discrete_draw`. Seed the Beta draw.
 
@@ -221,6 +231,11 @@ NLopt routinely returns `:FTOL_REACHED` with a NaN iterate, in which case the gu
 fires. There is **no NaN check at all** for `t < T`, where `init = sol_c[t+1, …]` — so one
 NaN propagates backward through the initial-guess chain and corrupts every earlier period.
 
+**Lines 387-389:** when the guard *does* fire it sets `x_opt = init` but **does not
+recompute `minf`**. Line 396 then stores `model.sol_v[...] = -minf` — the value from the
+NaN solution — alongside a policy taken from `init`. Policy and value are inconsistent at
+every such point.
+
 **Line 517:** `other_dict[ret] = …` is only populated in the `t ≤ 7` loop, so
 `print_period_stats` reports "Other: 0.0%" unconditionally for the full-model periods even
 when SLSQP returns `:ROUNDOFF_LIMITED` or `:FAILURE`.
@@ -252,7 +267,7 @@ wage profile **flips sign** over the horizon (+27% vs −10%).
 
 # `code/src/child_lifecycle_ret.jl` — LIVE
 
-## 🟠 C1 — `-Inf` infeasibility sentinel is reachable
+## 🔴 C1 — `-Inf` infeasibility sentinel is reachable → 30% NaN downstream
 
 `compute_min_assets` (**line 513**) uses a hard-coded `c_min = 0.3` (**line 515**) to mark
 college states infeasible, writing `-Inf` at **line 277**. But `asset_constraint_college`
@@ -269,6 +284,35 @@ Also `sol_tr_v_work` (**line 715**) and `sol_tr_v_college` (**line 759**) are fi
 
 **Fix.** Enforce `a_next ≥ a_min_t[t+1]` so no feasible point evaluates the infeasible
 region, and drop the `-Inf` fill. Never linearly interpolate an array containing `-Inf`.
+
+### Measured contamination (verified 2026-08-02)
+
+Solved on `Na=20, Nk=20, Nt=6` with the notebook's parameters, then counted:
+
+| array | % NaN | % Inf |
+|---|---|---|
+| `sol_v_college` | 0.00 | 1.35 |
+| `sol_c_college` | 1.35 | 0.00 |
+| `sol_tr_college` | **5.00** | 0.00 |
+| `sol_tr_v_college` | **5.00** | 25.00 |
+| `sol_exp_college` | **30.00** | 0.00 |
+| `sol_exp_v_college` | **30.00** | 0.00 |
+| all `*_work` arrays | 0.00 | 0.00 |
+
+`sol_exp_v_college` is **exactly the array the notebook feeds into `V_child_interp`**
+(`v_max = safe_maximum.(sol_exp_v_college, sol_tr_v_work)`), and it is **30% NaN**.
+
+Root cause: `optimal_transfer_exp_college!` guards on `assets ≤ 1e-3`
+(child_lifecycle_ret.jl:1069) instead of `assets ≤ a_min_t[1] = 3.354` as
+`optimal_transfer_college!` does (line 757). For assets between those bounds it *does*
+attempt the optimization, and the objective evaluates `V1_college` over the `-Inf` region,
+so NLopt returns NaN — which is then stored unchecked (see C10).
+
+**`safe_maximum` masks this.** Where `sol_exp_v_college` is NaN it silently returns the
+*work* value, so for ~30% of the `(a, HC)` grid the parent's terminal value is the work
+value regardless of whether college would be better. That substitution happens for
+numerical reasons, not economic ones, and produces no warning. This is why C1 is Critical,
+not High: it is not a latent risk, it is contaminating the live terminal value.
 
 ## 🟠 C2 — Psychic cost uses the wrong power
 
@@ -291,6 +335,60 @@ the link from childhood investment to the college margin. One-character fix.
 
 A pension floor raises both `V^W` and `V^E` and shifts the college margin and the optimal
 transfer. Either add retirement to the paper or include `child_lifecycle_ar1.jl` instead.
+
+## 🟠 C9 — Child simulation never clamps assets (live module only)
+
+**child_lifecycle_ret.jl:672** (`simulate_model_child!`) and **:1029**
+(`simulate_model_family!`):
+
+```julia
+sim_a[i, t+1] = a_next        # no floor, no cap
+```
+
+The **not-used** `child_lifecycle_ar1.jl` does clamp, at :567 and :1000:
+
+```julia
+sim_a[i, t+1] = max(a_next, a_min)
+```
+
+So the live module *lost* a guard the older one has. Combined with `Flat()` policy
+extrapolation, simulated children can leave `[a_min, a_max] = [0.01, 50]` and then run on
+constant boundary policies for the rest of the lifecycle. The adult Bellman has no upper
+bound on `a_next` either, so from `a = a_max` any feasible saving choice immediately exits
+the grid.
+
+`sim_k` is never clamped in either module: `k_next = k + h` over 52 periods, and the
+belief correction at N6 can drive it negative.
+
+**Fix.** Clamp to the solution domain in both simulators, and assert that the share of
+clamped observations is negligible — if it is not, the grid is too small.
+
+## 🟠 C10 — Child solvers never inspect NLopt return codes
+
+`ret` is captured at **7 sites** — child_lifecycle_ret.jl:214, 246, 296, 314, 736, 780,
+1089 — and **never examined**. There is no `result_type_name`, no convergence tally, no
+finiteness check. Whatever NLopt last evaluated is written straight into the solution
+arrays.
+
+The parent solver at least counts return codes (however imperfectly, see P6); the child
+solver does not look at all. The measured NaN shares under C1 are the direct consequence.
+
+**Fix.** Check `ret` and `isfinite(minf)` at every site; count and report; error out if the
+converged share falls below a threshold.
+
+## 🟠 C11 — Transfer solve and simulation use different extrapolation
+
+The transfer optimization builds its child-value interpolants with **`Line()`**
+(child_lifecycle_ret.jl:704, 751, 1060) and searches `tr` down to `1e-6`
+(work, :729) or `1e-12` (college, :773, :1082) — far below `a_min = 0.01`. So the value
+that *selects* the transfer is a linear extrapolation off the bottom of the grid.
+
+Every simulation interpolant uses **`Flat()`** instead (:558–:938). The policy actually
+executed at a given transfer is therefore not the policy whose value justified that
+transfer.
+
+**Fix.** Use one extrapolation convention throughout, and bound `tr` below by `a_min` so
+the transfer problem never evaluates outside the child's solution domain.
 
 ## 🟠 C4 — Asymmetric optimization across the discrete choice
 
@@ -404,6 +502,74 @@ v_max = sum(t_weight[it] .* max.(sol_tr_v_college[:,:,:,it],
 
 and drop `optimal_transfer_exp_college!` from the terminal-value path — it implements a
 *commitment* timing (parent picks `tr` before ε) that the prose rules out.
+
+## 🔴 N10 — Heterogeneous high-resource arms solve the work path at the wrong `y`
+
+**Cells 77 and 79.** `base_child` is built with **no `y`**, so it takes the default
+`y = 0.6`:
+
+```julia
+base_child = ConSavLaborCollege_AR1(Na=50, Nk=50, Nt=10, sigma_eps=0.5, rho=1.5,
+    psi_terminal=1.0, kappa_terminal=5.0, omega=0.3, a_max=50.0, w=20.0)   # y = 0.6
+solve_model_work!(base_child); optimal_transfer_work!(base_child)
+```
+
+Each belief-specific `child_model` is then built with **`y = 1.08`** — but its entire work
+solution is assigned from the `y = 0.6` object:
+
+```julia
+child_model = ConSavLaborCollege_AR1(..., college_boost=..., y=1.08)
+child_model.sol_c_work    = base_child.sol_c_work       # solved at y = 0.6
+child_model.sol_h_work    = base_child.sol_h_work
+child_model.sol_v_work    = base_child.sol_v_work
+child_model.sol_tr_v_work = base_child.sol_tr_v_work
+child_model.sol_tr_work   = base_child.sol_tr_work
+```
+
+Consequences within a single agent's problem:
+
+- **College path:** `y = 1.08` for the 4 college years, then `y = 0.6` for ages 22-68,
+  because `solve_model_college!` copies the work arrays for `t > t_college`.
+- **Work path:** `y = 0.6` throughout.
+- The discrete comparison `sol_tr_v_college` (partly `y = 1.08`) against `sol_tr_v_work`
+  (`y = 0.6`) gives college a resource bonus the work alternative never receives, so
+  enrolment is **mechanically tilted toward college**.
+
+Cells 38, 40 and 78 are **not** affected — there `child_model` takes the default `y`, so it
+matches `base_child`. The bug is specific to the two cells where `y = 1.08` was added to
+`child_model` and not to `base_child`.
+
+This also contradicts the non-heterogeneous resource experiment (cell 53), which correctly
+re-solves the whole child problem — work path included — at the raised `y`.
+
+**Fix.** Pass the same `y` to `base_child`, or drop the copying and solve the work path per
+arm. Note the copy is by reference, not `deepcopy`: the belief models share one array
+object. Harmless today because nothing writes to them afterwards, but fragile.
+
+## 🔴 N11 — The notebook cannot run top-to-bottom
+
+Static check of first-assignment vs first-use across cells in order:
+
+| variable | first assigned | first used | |
+|---|---|---|---|
+| `batch_dir` | cell 27 | **cell 26** | used one cell early |
+| `model_parent_hetro` | **never** | cell 43 | |
+| `final_assets` | **never** | cells 43, 50 | |
+| `final_hc` | **never** | cells 43, 50 | |
+
+Cell 42 assigns `final_assets_het`, `final_hc_het`, `belief_type_het`. Cells 43 and 50 read
+`final_assets`, `final_hc`, `model_parent_hetro` — a rename that was never propagated.
+Those names exist nowhere in this notebook; they are leftovers from
+`transfer_model_AR1.ipynb`.
+
+On a clean kernel these three cells raise `UndefVarError`. They only ever succeeded because
+the notebook was run out of order with stale globals in scope — which means **the belief
+summary table (cell 43) and the belief DataFrame (cell 50) were computed from variables
+belonging to a different model run.** Both are results tables.
+
+**Fix.** Rename the uses to `final_assets_het` / `final_hc_het` / the correct model object,
+move `batch_dir` above cell 26, then run the notebook on a fresh kernel top to bottom and
+confirm it completes. Until it does, no stored output can be trusted.
 
 ## 🟠 N2 — Convergence diagnostics discarded
 
@@ -625,15 +791,82 @@ write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
 
 ---
 
-## Suggested order
+## Fix roadmap
 
-1. **P1** — two lines; every parental policy for `t ≤ 16` is currently wrong.
-2. **P2** — until counterfactuals share random numbers you cannot tell whether any other
-   fix changed anything.
-3. **N1** — the ε-timing fix; changes every reported number.
-4. **C1, P3, X1** — the domain and feasibility bugs, plus the assertion that would have
-   caught them.
-5. **N2, P4, P6** — optimizer hygiene: whether the reported policies are optima at all.
-6. **C2, C3, N4, N5, N6, N7, N8** — specification and experiment-design corrections.
-7. **C5, P5** — accuracy and speed, which then make X1 affordable.
-8. **M1** + provenance — persist tables and wire in `write_manifest`.
+Ordered so that each phase makes the next one verifiable. **Do not re-run counterfactuals
+for the paper until Phase 2 is complete** — before that you cannot tell whether a change in
+output came from a fix or from noise.
+
+### Phase 0 — Make the notebook runnable and honest  *(hours)*
+
+Nothing below can be validated while the notebook only works out of order and every solver
+failure is invisible.
+
+| | Issue | Why first |
+|---|---|---|
+| 1 | **N11** | Fix the stale names and cell order; run on a fresh kernel top to bottom. Two results tables are currently built from another run's globals. |
+| 2 | **N2** | Stop suppressing `print_period_stats`; return the stats and assert a minimum converged share. |
+| 3 | **C10** | Check `ret` and `isfinite(minf)` at all 7 child solver sites. |
+| 4 | **P6** | Move the NaN guard first, recompute `minf` on fallback, populate `other_dict` in all three loops. |
+
+Exit criterion: a clean top-to-bottom run that reports convergence for every solve and
+raises on NaN.
+
+### Phase 1 — Stop the silent contamination  *(days)*
+
+| | Issue | Why |
+|---|---|---|
+| 5 | **C1** | 30% of `sol_exp_v_college` is NaN and `safe_maximum` hides it. Enforce `a_next ≥ a_min_t[t+1]`; drop the `-Inf` fill; align the guard in `optimal_transfer_exp_college!`. |
+| 6 | **C9, P3** | Clamp simulated states in both child simulators and the parent; assert the clamped share is negligible. |
+| 7 | **C11** | One extrapolation convention; bound `tr` below by `a_min`. |
+| 8 | **X1** | Add the diagnostics that would have caught 5-7: simulated-domain coverage, NaN/Inf counts, boundary shares. Cheap, and it turns the rest of this list into a test suite. |
+
+Exit criterion: no NaN or Inf in any solution array; no simulated state outside its grid.
+
+### Phase 2 — Correct the economics  *(days)*
+
+| | Issue | Why |
+|---|---|---|
+| 9 | **P1** | Two lines. Measured effect: `h_p` +23.6%, `e_p` +63.3%, `τ_p` −60.4%. |
+| 10 | **P2** | Seed the RNG and use common random numbers. Until this is done no counterfactual difference is interpretable. |
+| 11 | **N1** | ε-timing: `E_ε[max(·,·)]`, not `max(E_ε[·],·)`. Changes every reported number. |
+| 12 | **N10** | Pass matching `y` to `base_child` in cells 77/79. |
+| 13 | **C2** | `(HC+1)^2`, not `^4`. |
+| 14 | **P4** | Remove the `-1e8` penalty branches; keep the domain feasible via constraints. |
+
+Exit criterion: re-run the baseline and confirm the policy functions are smooth, monotone
+in assets, and interior.
+
+### Phase 3 — Experiment design and reporting  *(days)*
+
+| | Issue |
+|---|---|
+| 15 | **N4** — equalise ω across the θ arms |
+| 16 | **N5** — pass `psi_terminal_belief_bin` |
+| 17 | **N6** — floor the belief correction |
+| 18 | **N7** — make the Res-vs-Exp arms symmetric |
+| 19 | **N3** — replace the CEV with something valid for a non-homothetic `V`, or drop it |
+| 20 | **N8, N9** — fix the swapped figure labels and the stale τ labels |
+| 21 | **M1** + provenance — write tables to `output/tables/`, wire in `write_manifest` |
+
+### Phase 4 — Accuracy and specification  *(weeks; decisions needed)*
+
+| | Issue | Needs a decision from you |
+|---|---|---|
+| 22 | **C5** | Rouwenhorst, `N ≥ 7`; and reconcile ρ with the paper's "random walk" |
+| 23 | **P5** | Cubic / shape-preserving continuation value; type the interpolator vector |
+| 24 | **C3** | Retirement is in the code, not the paper — add it to the paper or switch modules |
+| 25 | **P8** | Confirm the `Age` normalisation against the Stata script |
+| 26 | **P7** | Normalise φ or drop the claim; source the `BothCollege` share |
+| 27 | **C6, C7, C8** | Stationary-vs-median initial state; `findfirst` guard; duplicate code |
+
+### Dependency notes
+
+- **P1 before P2** is fine — they are independent. But **P2 before any counterfactual
+  re-run**, or you cannot attribute the change.
+- **C1 before N1.** N1 rewrites how the terminal value is assembled; doing it while 30% of
+  the input is NaN means you cannot tell whether the fix worked.
+- **N11 before everything.** A notebook that cannot run in order cannot validate any fix.
+- **X1 pays for itself immediately** — most of Phase 1 and 2 becomes checkable rather than
+  eyeballed.
+
