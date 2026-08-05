@@ -60,13 +60,13 @@ passed at construction, the terminal-value construction, experiment design, and 
 | N3 | CEV formula assumes homotheticity the value function lacks | notebook | 🟠 |
 | N4 | θ-experiment baseline uses a different ω than its treatment arms | notebook | 🟠 |
 | N5 | `psi_terminal_belief_bin` computed and never used | notebook | 🟠 |
-| N6 | Belief correction can drive human capital negative | child modules + notebook | 🟠 |
+| ~~N6~~ | ~~Belief correction can drive HC negative~~ — **WITHDRAWN, was wrong** | — | ⚪ |
 | N7 | Res-vs-Exp arms asymmetric (child y=1.08, parent y=1.2) | notebook | 🟡 |
 | N8 | Model/label order swapped in one figure | notebook | 🟡 |
 | N9 | Tax counterfactual labels do not match the τ values used | notebook | 🟡 |
 | P6 | NaN guard unreachable; poisons the backward init chain | parent_family | 🟡 |
-| P7 | φ weights not normalized; `BothCollege` share hardcoded | parent_family | 🟡 |
-| P8 | Verify `Age` units in the wage equation | parent_family | 🟡 |
+| P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
+| ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
 | M1 | Tables are never written to disk | notebook | 🟡 |
 | C6 | `stationary_dist` used in solve, median state in simulation | both child modules | 🟡 |
 | C7 | `findfirst` can return `nothing` | both child modules | ⚪ |
@@ -249,19 +249,33 @@ when SLSQP returns `:ROUNDOFF_LIMITED` or `:FAILURE`.
   normalization is not a free rescaling.
 - **Line 291:** `Bernoulli(0.3)` — the `BothCollege` share is hardcoded and should be
   sourced to the estimation sample.
-- **Line 756:** `return 2 * exp(log_wage) * …` — the `2 ×` makes it the household total,
-  contradicting "wages are defined as the mean across the two parents".
+- **Line 756:** `return 2 * exp(log_wage) * …` — **RESOLVED, intentional.** The Stata
+  regression is on `Wage_Mean = (Wage_Mother + Wage_Father)/2` (wage2_styled.do:107), so
+  `2 × mean` is household earnings when both parents supply `h_p` hours. Documentation
+  fix only: `model.txt` should state that `h_p` is hours *per parent* and that household
+  labor income is `2 · w̄ · h_p`.
 - **Line 207:** `Np = 3` for `ρ = 0.9`. See C5.
 
-## 🟡 P8 — Verify `Age` units in the wage equation
+## ⚪ ~~P8~~ — RESOLVED: the `Age` units are correct
 
-**Line 751:** `model.β_age * t` uses the model period `t ∈ 1..17`. This is correct **only
-if** the Stata `Age` variable was normalized (e.g. `age − 25`).
+Verified against `data_cleaning/Initial_Distributions/Code/wage2_styled.do`:
 
-Evidence favours normalized: the implied peak `β₂/(2|β₃|) = 0.0230108/0.0008638 ≈ 26.6`
-reads as actual age **51.6** under that assumption (a textbook wage peak), versus **26.6**
-under raw age (implausible). Confirm against the regression script — if raw, the parental
-wage profile **flips sign** over the horizon (+27% vs −10%).
+```stata
+global Age_S_model 26 ;                          /* line 73  */
+replace Age = Age - $Age_S_model + 1 ;           /* line 132 */
+reg Log_Wage Both_College Age Age_2 Age_2_Edu Age_Edu, vce(robust) ;   /* line 320 */
+```
+
+`Age` in the regression **is** re-indexed so biological age 26 → model period 1. Therefore
+`model.β_age * t` with `t ∈ 1..17` (parent_family.jl:751) is exactly right, and the
+regression at line 320 matches `wage_func` term for term (constant + 5 regressors).
+
+The implied peak `β₂/(2|β₃|) ≈ 26.6` is in model periods, i.e. **biological age 51.6** — a
+textbook wage peak, confirming the normalization.
+
+**No code change.** Documentation only: `model.txt` eq. (wage_log) writes `Age_{it}`
+unqualified and should state that it is model time, `= biological age − 25`.
+
 
 ---
 
@@ -636,17 +650,29 @@ human-capital weight, **that channel is silently off**.
 
 **Fix.** Pass `psi_terminal = psi_terminal_belief_bin[m]`.
 
-## 🟠 N6 — Belief correction can drive human capital negative
+## ⚪ ~~N6~~ — WITHDRAWN (the belief correction is correct)
 
-`k_next = k + college_boost_true + 3 * (college_boost_true - belief_values[m])`
-(ar1:1138; same form in `simulate_model_family_hetero!`, parent_family.jl:1160).
+**This finding was wrong and is retracted.** The graduation correction cancels exactly:
 
-The `3` is correctly `T_E − 1` per `model.txt`. But `college_boost_belief_bin` spans
-`[0.125, 4.875]` around a truth of 2.0, so the top bin gives
-`k + 2 + 3(2 − 4.875) = k − 6.6` → negative human capital, then `Line()`-extrapolated
-policies below the grid and `w = w₀(1 + α·HC)` with negative `HC`.
+```
+k_1..k_3 :  k₀ + b_m,  k₀ + 2b_m,  k₀ + 3b_m        (t < t_college)
+k_4      :  k₃ + b* + 3(b* − b_m)
+         =  k₀ + 3b_m + b* + 3b* − 3b_m
+         =  k₀ + 4b*                                  independent of b_m
+```
 
-**Fix.** Floor at `k_min`, or bound the belief grid so the correction cannot go negative.
+Verified numerically for `b_m ∈ {0.125, 1.0, 2.0, 3.5, 4.875}` with `b* = 2.0`: every
+belief lands on `k₀ + 8.0`, and no intermediate value is negative. The original claim
+applied the correction to `k₀` instead of to `k_{t_college}`, which already carries three
+accumulated `b_m` increments.
+
+This matches `model.txt` eq. (5), `HC = H̃C_{t_c} + b* + (T_E−1)(b* − b_m)`, and the code's
+`3` is correctly `T_E − 1`.
+
+**One residual ⚪ item:** the multiplier is hardcoded as `3` rather than `t_college - 1`
+(child_lifecycle_ar1.jl:1138, parent_family.jl:1160). Correct at `t_college = 4`; silently
+wrong if the college length ever changes.
+
 
 ## 🟡 N7 — Res-vs-Exp arms asymmetric
 
@@ -793,80 +819,216 @@ write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
 
 ## Fix roadmap
 
-Ordered so that each phase makes the next one verifiable. **Do not re-run counterfactuals
-for the paper until Phase 2 is complete** — before that you cannot tell whether a change in
-output came from a fix or from noise.
+Each phase makes the next one verifiable. **Do not re-run counterfactuals for the paper
+until Phase 3 is complete.**
 
-### Phase 0 — Make the notebook runnable and honest  *(hours)*
+---
 
-Nothing below can be validated while the notebook only works out of order and every solver
-failure is invisible.
+### Phase 0 — Freeze the specification  *(decisions, not code)*
 
-| | Issue | Why first |
+Every item below determines *which* code is worth repairing. Settle them first, record the
+answer in `model.txt`, then write code once.
+
+| # | Decision | Status |
 |---|---|---|
-| 1 | **N11** | Fix the stale names and cell order; run on a fresh kernel top to bottom. Two results tables are currently built from another run's globals. |
-| 2 | **N2** | Stop suppressing `print_period_stats`; return the stats and assert a minimum converged share. |
-| 3 | **C10** | Check `ret` and `isfinite(minf)` at all 7 child solver sites. |
-| 4 | **P6** | Move the NaN guard first, recompute `minf` on fallback, populate `other_dict` in all three loops. |
+| 0.1 | **N6 — withdrawn.** The belief correction cancels to `k₀ + 4b*`. | ✅ closed |
+| 0.2 | **P8 — resolved.** Stata `Age` is re-indexed to model time; `β_age * t` is correct. | ✅ closed |
+| 0.3 | **P7 (wage half) — resolved.** `2 × mean parental wage` = household earnings. | ✅ closed |
+| 0.4 | **C3 — retirement: remove it.** | ⬜ **implement** |
+| 0.5 | **N1 — ε timing: observed BEFORE transfer and enrolment.** | ⬜ **implement** |
+| 0.6 | **Child horizon `T`.** | ⬜ **decide** |
+| 0.7 | **Shock process: stationary AR(1) or random walk?** | ⬜ **decide** |
+| 0.8 | **P7 (φ half): is `(φ₁,φ₂,φ₃)` meant to be normalized?** | ⬜ **decide** |
+| 0.9 | **College length / `V^E` display off-by-one.** | ⬜ **decide** |
 
-Exit criterion: a clean top-to-bottom run that reports convergence for every solve and
-raises on NaN.
+#### 0.4 — Retirement: build from `child_lifecycle_ret.jl`, do not start from `ar1`
 
-### Phase 1 — Stop the silent contamination  *(days)*
+`model.txt` says there is no retirement stage, so retirement comes out. But the *starting
+point* matters, and the intuitive choice is the expensive one:
 
-| | Issue | Why |
+| feature | `_ret.jl` | `_ar1.jl` |
 |---|---|---|
-| 5 | **C1** | 30% of `sol_exp_v_college` is NaN and `safe_maximum` hides it. Enforce `a_next ≥ a_min_t[t+1]`; drop the `-Inf` fill; align the guard in `optimal_transfer_exp_college!`. |
-| 6 | **C9, P3** | Clamp simulated states in both child simulators and the parent; assert the clamped share is negligible. |
-| 7 | **C11** | One extrapolation convention; bound `tr` below by `a_min`. |
-| 8 | **X1** | Add the diagnostics that would have caught 5-7: simulated-domain coverage, NaN/Inf counts, boundary shares. Cheap, and it turns the rest of this list into a test suite. |
+| `after_tax_income` (progressive tax) | 8 refs | **0** |
+| `d_after_tax_dh` (its derivative) | 3 refs | **0** |
+| `WAGE_SCALING_FACTOR` named const | 6 refs | **0** (four bare `0.584` literals) |
+| `tax_lambda` field | 5 refs | **0** |
+| `sim_a` sized `T+1` | ✅ | ❌ (`T`) |
+| `max(a_next, a_min)` clamp | **0** | 2 sites |
+| retirement block | ~61 lines | none |
 
-Exit criterion: no NaN or Inf in any solution array; no simulated state outside its grid.
+Starting from `_ar1.jl` means re-implementing the entire progressive-tax system across ~22
+reference sites — and `_ar1.jl` still has the flat `(1-τ)` baked into `wage_func:424`, which
+is a *specification* error, not just a missing feature.
 
-### Phase 2 — Correct the economics  *(days)*
+**Recommendation:** copy `child_lifecycle_ret.jl` → `child_lifecycle.jl`, delete the ~61
+retirement lines (`t_retire`, `h_avg`, `util_retire`, `pension_amount`,
+`asset_constraint_retire`, `create_interpolator_retire`, `value_of_retirement`, and the two
+retirement branches in each simulator), and port the two `max(a_next, a_min)` lines from
+`_ar1.jl`. Then retire both old modules to `archive/`.
 
-| | Issue | Why |
+Net: delete ~61 lines + add 2, versus port ~22 sites and fix a tax specification.
+
+#### 0.5 — ε timing: adopt "observed before the transfer"
+
+Your prose is unambiguous:
+
+> "Conditional on this decision, the parent chooses the level of altruistic transfer, `tr`.
+> **This choice is made after all the uncertainties in the period are realized.**"
+
+and `V^{CD}_{T_L}(a, HC, ε₀, m) = max_tr E_z[·]` conditions on `ε₀`, consistent with it.
+
+The **only** object that disagrees is the displayed `V^{CD}_{T_L-1} = max_tr E_{ε₀,z}[·]`,
+which puts the max outside the ε-expectation — that is a *commitment* timing where the
+parent sets the transfer before the taste shock is known. It contradicts the prose, and it
+also double-counts: eq. (T_L−1) then applies `E_{ε₀}` again to an object that already
+integrated ε.
+
+**Adopt "ε before", and replace the displayed equation with**
+
+```
+V^CD_{T_L-1}(a, HC, m) = E_{ε₀}[ V^CD_{T_L}(a, HC, ε₀, m) ]
+```
+
+i.e. the `T_L−1` object is simply the ε-expectation of the `T_L` object, not a separate
+maximization. Then eq. (T_L−1) takes `E_z` only.
+
+This is also the cheapest option in code and the one the forward simulator already
+implements:
+
+- keep `optimal_transfer_college!` (ε-specific `tr`) and `optimal_transfer_work!` — already correct
+- build the parent's terminal value as
+  `v_max = Σ_it t_weight[it] · max.(sol_tr_v_college[:,:,:,it], sol_tr_v_work[:,:,:,1])`
+- **delete `optimal_transfer_exp_college!`** — it implements the commitment timing you are
+  rejecting, and it is the source of the 30% NaN in C1
+- `simulate_model_family!` needs no change
+
+#### 0.6 — Child horizon (nobody has flagged this)
+
+`model.txt`: the child is followed from 18 to death at 68. Ages 18…68 inclusive is
+**51 periods**.
+
+| module | `T` | implied terminal age |
 |---|---|---|
-| 9 | **P1** | Two lines. Measured effect: `h_p` +23.6%, `e_p` +63.3%, `τ_p` −60.4%. |
-| 10 | **P2** | Seed the RNG and use common random numbers. Until this is done no counterfactual difference is interpretable. |
-| 11 | **N1** | ε-timing: `E_ε[max(·,·)]`, not `max(E_ε[·],·)`. Changes every reported number. |
-| 12 | **N10** | Pass matching `y` to `base_child` in cells 77/79. |
-| 13 | **C2** | `(HC+1)^2`, not `^4`. |
-| 14 | **P4** | Remove the `-1e8` penalty branches; keep the domain feasible via constraints. |
+| `child_lifecycle_ret.jl` | 52 | **69** ❌ |
+| `child_lifecycle_ar1.jl` | 50 | **67** ❌ |
 
-Exit criterion: re-run the baseline and confirm the policy functions are smooth, monotone
-in assets, and interior.
+Neither matches. Decide `T = 51` (or restate the paper) before solving anything, because
+`T` shifts every backward-induction value.
 
-### Phase 3 — Experiment design and reporting  *(days)*
+#### 0.7 — Shock process
 
-| | Issue |
-|---|---|
-| 15 | **N4** — equalise ω across the θ arms |
-| 16 | **N5** — pass `psi_terminal_belief_bin` |
-| 17 | **N6** — floor the belief correction |
-| 18 | **N7** — make the Res-vs-Exp arms symmetric |
-| 19 | **N3** — replace the CEV with something valid for a non-homothetic `V`, or drop it |
-| 20 | **N8, N9** — fix the swapped figure labels and the stale τ labels |
-| 21 | **M1** + provenance — write tables to `output/tables/`, wire in `write_manifest` |
+`model.txt` says "we assume these shocks follow a random walk: `z_t = ρz_{t-1} + ε`".
+A random walk means `ρ = 1`. The code uses `ρ = 0.9` (parent) and `0.95` (child), and
+Tauchen **cannot** discretize a unit root (infinite unconditional variance).
 
-### Phase 4 — Accuracy and specification  *(weeks; decisions needed)*
+Either estimate and report `ρ`, or commit to a unit root and change the discretization.
+Note `wage2_styled.do` identifies shock variances from *second* differences (lines 55+),
+which is the standard permanent-transitory decomposition — that suggests a unit-root
+permanent component plus a transitory one, i.e. the code's single stationary AR(1) may be
+the wrong object entirely. **Check what the do-file actually estimates before choosing.**
 
-| | Issue | Needs a decision from you |
+#### 0.8 — φ normalization
+
+`model.txt` says `(φ₁,φ₂,φ₃)` are "strictly positive and normalized to sum to one". The
+code has `1.0 + 20.0 + 0.03 = 21.03`. Under CRRA this is not a free rescaling — it
+interacts with `ρ` and with the scale of the terminal value. Either renormalize and
+re-anchor, or drop the sentence.
+
+#### 0.9 — College length
+
+The prose says four years, entering the labor market at 22. The `V^E` display has a case at
+`t = 22` whose continuation is `V^W_{23}` — five years. The code implements four
+(`t_college = 4`, ages 18–21). **Fix the paper's third case to `t = 21`.**
+
+#### Also confirm
+
+The excerpt you circulated has `V^P = ψ log HC − κ log a_term − ω V^C` and
+`(1−θ)V^C − θV^P`. `docs/model.txt` has **`+`** in all three places. Confirm your working
+draft has not picked up sign errors — as written, those minuses invert the entire objective.
+
+**Exit criterion:** `model.txt` updated, decisions recorded, and `docs/MODEL.md` re-mapped
+to the chosen specification.
+
+---
+
+### Phase 1 — Make every run deterministic and observable  *(hours)*
+
+| # | Issue | Action |
 |---|---|---|
-| 22 | **C5** | Rouwenhorst, `N ≥ 7`; and reconcile ρ with the paper's "random walk" |
-| 23 | **P5** | Cubic / shape-preserving continuation value; type the interpolator vector |
-| 24 | **C3** | Retirement is in the code, not the paper — add it to the paper or switch modules |
-| 25 | **P8** | Confirm the `Age` normalisation against the Stata script |
-| 26 | **P7** | Normalise φ or drop the claim; source the `BothCollege` share |
-| 27 | **C6, C7, C8** | Stationary-vs-median initial state; `findfirst` guard; duplicate code |
+| 1.1 | **N11** | Fix `batch_dir` ordering and the `final_assets`/`final_hc`/`model_parent_hetro` → `*_het` renames. Verify on a **small grid** first, not a production solve. |
+| 1.2 | **P2** | Seed everything and establish common random numbers across arms: initial conditions, parent shocks, child shocks, taste shocks, belief draws. |
+| 1.3 | **C10 + P6** | At every optimization site check return code, `isfinite(minf)`, `all(isfinite, xopt)`, constraint violation, distance from bounds. Never keep a stale `minf` after replacing `x_opt`. |
+| 1.4 | **N2** | Return structured diagnostics instead of printing; stop suppressing. |
+| 1.5 | **X1 (minimal)** | NaN/Inf counts per array; Bellman constraint violations; simulated states outside grids; boundary shares; finite-difference gradient agreement. |
+
+**Exit criterion:** a deterministic small-grid run that either completes cleanly or fails
+loudly at the exact state responsible.
+
+---
+
+### Phase 2 — Repair the child/transfer numerical domain  *(days)*
+
+| # | Issue | Action |
+|---|---|---|
+| 2.1 | **C1** | Remove the `-Inf` contamination. Also resolve the deeper inconsistency: `c_min = 0.3` versus the optimizer's `c ≥ 0.01` excludes economically feasible college states. |
+| 2.2 | **C11** | Transfer solve and simulation must evaluate the same value function over the same asset domain. Either include zero in the grid or impose one justified lower bound. |
+| 2.3 | **C4** | Same bounded optimizer, bounds, tolerances and search strategy for both alternatives. It is one-dimensional — golden-section or grid-plus-refinement is safer than SLSQP. |
+| 2.4 | **C9** | Impose consistent domains for `a_next` **and** `k_next`; expand grids where boundary shares are material. Clamp only floating-point-sized violations — clipping economically meaningful states silently rewrites the transition law. |
+| 2.5 | **P3** | Same treatment on the parent side. Do not simultaneously cap `a_next ≤ a_max` in the solver and let the simulation exceed it. |
+
+**Exit criterion:** no non-finite values; no material clipping; negligible upper-grid
+binding; transfer values and simulated policies agree state by state.
+
+---
+
+### Phase 3 — Correct the central economic equations  *(days)*
+
+| # | Issue | Note |
+|---|---|---|
+| 3.1 | **P1** | Two lines. Could be done earlier, but its full-model effect is only measurable once the terminal value is clean. |
+| 3.2 | **C2** | `(HC+1)^2`, not `^4`. |
+| 3.3 | **N1** | Implement the Phase-0.5 timing everywhere: backward terminal value, transfer policy, enrolment policy, forward simulator must share one information set. |
+| 3.4 | **N10** | Re-solve the work path at the treatment `y` in cells 77/79. Copying baseline work policies into a high-`y` child model is invalid. |
+| 3.5 | **P4** | Remove the `-1e8` penalty branches; objective and gradient must always describe the same function. |
+| 3.6 | **C3** | Implement the Phase-0.4 retirement decision. |
+
+**Exit criterion:** baseline policies satisfy feasibility and gradient tests, and the
+backward and forward discrete-choice rules agree state by state.
+
+---
+
+### Phase 4 — Numerical accuracy  *(weeks)*
+
+| # | Issue | Note |
+|---|---|---|
+| 4.1 | **C5** | Compare Tauchen vs Rouwenhorst at N = 7, 9, 11. Match moments and persistence; do not pick by convention. |
+| 4.2 | **C6** | Align the initial shock distribution: if transfer values integrate the stationary distribution, simulation must draw from it; if the state is observed, transfer policies must condition on it. |
+| 4.3 | **P5** | Do **not** blindly swap linear for unrestricted cubic. Compare: linear + derivative-free optimizer; shape-preserving (Schumaker); smooth + monotonicity checks. |
+| 4.4 | **X1 (full)** | Bellman residuals, grid-refinement comparisons, simulation-domain coverage, monotonicity/concavity, Monte Carlo standard errors, enrolment/transfer stability across grids. |
+
+**Exit criterion:** key moments and policy functions stable under grid and shock refinement.
+
+---
+
+### Phase 5 — Counterfactual design and reporting  *(days)*
+
+| # | Issue | Note |
+|---|---|---|
+| 5.1 | **N4** | Equalize ω across the θ arms. |
+| 5.2 | **N5** | Passing `psi_terminal_belief_bin` to the college models is **not sufficient** while the work-transfer value is copied from a shared `base_child`. Recompute the belief-specific work transfer value too. Interacts with N10. |
+| 5.3 | **N7** | Make the resource arms symmetric, or state why they differ. |
+| 5.4 | — | Other experiment-definition defects: "High φ₂" *reduces* φ₂ from 20 to 15; the σ₄ slope experiment also moves its intercept; `R_1_baseline = 0.05` differs from the constructor's `0.06`. |
+| 5.5 | **N3** | Replace or remove the invalid CEV. |
+| 5.6 | **N8, N9** | Fix labels **after** treatment definitions are final. |
+| 5.7 | **M1** | Write tables to `output/tables/`; wire in `write_manifest` (seeds, commit, parameters). |
+
+---
 
 ### Dependency notes
 
-- **P1 before P2** is fine — they are independent. But **P2 before any counterfactual
-  re-run**, or you cannot attribute the change.
-- **C1 before N1.** N1 rewrites how the terminal value is assembled; doing it while 30% of
-  the input is NaN means you cannot tell whether the fix worked.
-- **N11 before everything.** A notebook that cannot run in order cannot validate any fix.
-- **X1 pays for itself immediately** — most of Phase 1 and 2 becomes checkable rather than
-  eyeballed.
-
+- **Phase 0 before everything.** 0.4 and 0.5 decide which Bellman problem you are repairing.
+- **N11 before any fix can be validated** — a notebook that cannot run in order cannot verify anything.
+- **P2 before any counterfactual re-run**, or you cannot attribute a change to a fix.
+- **C1 before N1.** N1 rewrites how the terminal value is assembled; doing that while 30% of the input is NaN means you cannot tell whether it worked.
+- **X1 (minimal) early.** It converts most of Phases 2-3 from eyeballing into checkable assertions.
+- **N5 after N10** — they share the `base_child` copying defect.
