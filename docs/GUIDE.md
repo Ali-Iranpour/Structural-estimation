@@ -65,6 +65,11 @@ m.V_child_interp = V_child_interp1   # built from the child solve
 solve_model!(m); simulate_model!(m)
 ```
 
+> ⚠️ **Before trusting a run.** The accuracy diagnostics currently understate the
+> problem: `check_simulation` filters out non-finite states before computing off-grid
+> shares (X3), and nothing measures whether the *solver* leaves the grid (C16 — 3.59% of
+> stored asset transitions do). See [`ERRORS.md`](ERRORS.md).
+
 ### One reproducible run
 
 ```bash
@@ -190,20 +195,17 @@ Note the notebook overrides several of these at construction (`Na=50, Nk=50, Nt=
 
 ## Known issues
 
-The full audit — every error, its severity, and the exact file and line — is in
-[`ERRORS.md`](ERRORS.md). **Nothing in it has been fixed.**
+The full audit is in [`ERRORS.md`](ERRORS.md): **20 open** (7 high, 9 medium, 3 low,
+1 deferred), plus a Resolved log of what has been fixed.
 
 The three that most affect results:
 
-1. 🔴 **Spurious `∂V/∂k` in the labor-supply gradient** (`parent_family.jl:636, 678`).
-   `k` is the fixed `BothCollege` indicator, so `∂k'/∂h_p = 0`, but both gradients still
-   add `dV_dk_sum` — the whole lifetime value gap between education types. Drives `h_p`
-   to its bound for all `t ≤ 16`.
-2. 🔴 **College choice taken outside the ε expectation** (11 sites in the notebook).
-   `max(E_ε[V^E], V^W)` instead of `E_ε[max(V^E(ε), V^W)]`. Understates the option value
-   of college, and disagrees with what `simulate_model_family!` actually does.
-3. 🔴 **Unseeded RNG in the parent simulation** (`parent_family.jl:941, 1091`).
-   Counterfactual arms do not share random numbers.
+1. 🟠 **X3** — `check_simulation` drops non-finite states before computing off-grid shares,
+   so a 96%-NaN simulation reports "0% outside".
+2. 🟠 **C16** — the work solver has no upper domain constraint; 3.59% of stored asset and
+   5.00% of human-capital transitions leave the solved grid, invisible to the simulation.
+3. 🟠 **M2** — the notebook's 17 child-model constructions all use `a_max = 50`, the grid
+   already measured as inadequate; only `run_all.jl` uses 100.
 
 ---
 

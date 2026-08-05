@@ -129,7 +129,18 @@ and re-run before committing a new Manifest.
 ## Known limitations
 
 [`docs/ERRORS.md`](docs/ERRORS.md) carries the full list — every finding with its severity,
-file and line — followed by a phased fix roadmap. The three that most affect results: a
-spurious `∂V/∂k` term in the labor-supply gradient, the college choice being taken outside
-the taste-shock expectation, and unseeded RNG in the parent simulation (so counterfactual
-arms do not share random numbers). None are fixed.
+file and line — followed by the improvement backlog and an ordered work plan.
+
+**20 findings are open: 7 high, 9 medium, 3 low, 1 deferred.** The three that matter most
+before trusting any output:
+
+1. **X3** — `check_simulation` drops non-finite states *before* computing off-grid shares,
+   so a 96%-NaN simulation reports "0% outside". The diagnostics can return green on a
+   broken run.
+2. **C16** — the work solver constrains only `a' >= a_min`; **3.59%** of stored asset
+   transitions and **5.00%** of human-capital transitions leave the solved grid. Forward
+   simulation reports 0.00%, so this is invisible today.
+3. **M2** — the notebook runs every counterfactual on `a_max = 50`, the grid already
+   measured as too small; only `run_all.jl` uses the corrected 100.
+
+A green `run_all.jl` does **not** currently mean a sound solution.

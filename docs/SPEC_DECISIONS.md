@@ -57,6 +57,11 @@ not implement and Tauchen cannot discretize.
 
 ## Required `model.txt` edits
 
+> **Status: none of the eight have been applied.** Edit 6 is tracked as finding **D1** in
+> [`ERRORS.md`](ERRORS.md) — `model.txt:185` still places the max outside `E_eps`, i.e. it
+> still describes the commitment timing the code no longer implements.
+
+
 These are paper-prose changes. They are listed rather than applied, so the wording stays
 yours.
 
