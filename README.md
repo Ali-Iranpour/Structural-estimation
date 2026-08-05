@@ -118,8 +118,8 @@ and re-run before committing a new Manifest.
 
 ## Known limitations
 
-[`docs/ERRORS.md`](docs/ERRORS.md) carries the full list, ordered by severity. The
-full list is ordered by severity with a phased fix roadmap. The
-three that most affect results: a spurious `∂V/∂k` term in the labor-supply gradient, the
-college choice being taken outside the taste-shock expectation, and unseeded RNG in the
-parent simulation (so counterfactual arms do not share random numbers). None are fixed.
+[`docs/ERRORS.md`](docs/ERRORS.md) carries the full list — every finding with its severity,
+file and line — followed by a phased fix roadmap. The three that most affect results: a
+spurious `∂V/∂k` term in the labor-supply gradient, the college choice being taken outside
+the taste-shock expectation, and unseeded RNG in the parent simulation (so counterfactual
+arms do not share random numbers). None are fixed.
