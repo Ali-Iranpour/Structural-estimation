@@ -43,16 +43,16 @@ passed at construction, the terminal-value construction, experiment design, and 
 |---|---|---|---|
 | P1 | Spurious `∂V/∂k` in the labor-supply gradient | parent_family | 🔴 |
 | N1 | College choice taken outside the ε expectation (11 sites) | notebook | 🔴 |
-| P2 | Unseeded RNG — counterfactuals lack common random numbers | parent_family + notebook | 🔴 |
+| ~~P2~~ | ~~Unseeded RNG~~ — **FIXED**: seeded, common random numbers (Phase 1) | — | ✅ |
 | N10 | Heterogeneous high-resource arms solve work at `y=0.6`, college at `y=1.08` | notebook | 🔴 |
-| N11 | Notebook cannot run top-to-bottom; two results tables read stale globals | notebook | 🔴 |
+| ~~N11~~ | ~~Notebook cannot run top-to-bottom~~ — **FIXED** (Phase 1) | — | ✅ |
 | ~~C1~~ | ~~`-Inf` sentinel → 30% NaN~~ — **FIXED** in `child_lifecycle.jl` | — | ✅ |
 | C9 | Child simulation never clamps assets (live module only) | child_lifecycle_ret | 🟠 |
 | ~~C10~~ | ~~Return codes never inspected~~ — **FIXED**, `check_nlopt!` errors | — | ✅ |
 | C11 | Transfer/simulation extrapolation — **partly fixed** (domains aligned; `Line()` vs `Flat()` remains) | child_lifecycle | 🟡 |
 | C2 | Psychic cost uses `^4`, model says `^2` — **OUT OF SCOPE by instruction** | child_lifecycle | ⏸️ |
 | ~~C3~~ | ~~Retirement not in the model~~ — **FIXED**; notebook switched | — | ✅ |
-| N2 | 65 × `@suppress_output` discards all convergence diagnostics | notebook | 🟠 |
+| ~~N2~~ | ~~Diagnostics suppressed~~ — **FIXED**: returned + hard floor (Phase 1) | — | ✅ |
 | P3 | Simulated states never clamped; artificial `a ≤ a_max` in the solve | parent_family | 🟠 |
 | ~~C4~~ | ~~Asymmetric transfer optimization~~ — **FIXED**, branch-symmetric `maximize_1d` | — | ✅ |
 | ~~C5~~ | ~~Shock discretization~~ — **RESOLVED: documented approximation** (Phase 0.7) | — | ✅ |
@@ -66,7 +66,7 @@ passed at construction, the terminal-value construction, experiment design, and 
 | N8 | Model/label order swapped in one figure | notebook | 🟡 |
 | N9 | Tax counterfactual labels do not match the τ values used | notebook | 🟡 |
 | ~~N12~~ | ~~`ā^P` placeholder~~ — **FIXED**: `delta_P = c_floor = 0.01` (Phase 0.5b) | — | ✅ |
-| P6 | NaN guard unreachable; poisons the backward init chain | parent_family | 🟡 |
+| ~~P6~~ | ~~NaN guard unreachable~~ — **FIXED**: validity checked first, errors (Phase 1) | — | ✅ |
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
 | M1 | Tables are never written to disk | notebook | 🟡 |
@@ -74,7 +74,7 @@ passed at construction, the terminal-value construction, experiment design, and 
 | C7 | `findfirst` can return `nothing` | both child modules | ⚪ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⚪ |
 | C12 | `sim_a[:, T+1]` never written — child terminal assets are all NaN | both child modules | ⚪ |
-| X1 | No accuracy diagnostics anywhere | all | 🟠 |
+| X1 | Accuracy diagnostics — **minimal set added** (Phase 1); full set still open | all | 🟡 |
 
 ---
 
@@ -987,6 +987,22 @@ firing, and `simulate_model_family_hetero!` runs end to end.
   was already 0% immediately after the retirement removal, before items 3/4/5/8 — and the
   notebook overwrites the initial conditions from the parent solve, so the standalone
   number is not diagnostic. Worth re-checking after a real run.
+
+---
+
+## Phase 1 complete (2026-08-05) — deterministic and observable
+
+| item | what changed |
+|---|---|
+| **N11** | `batch_dir` is now defined in cell 26 (it was used there and assigned in 27; 27 reuses it via `@isdefined`). Cells 43 and 50 renamed to the `*_het` variables cell 42 actually defines — `final_assets` → `final_assets_het`, `final_hc` → `final_hc_het`, `model_parent_hetro` → `model_parent_het`. Verified by static first-assign/first-use scan: **no variable is used before assignment, and none of the stale names remain anywhere.** |
+| **P2** | `seed` is now honoured (it was accepted and ignored — the four RNGs were hardcoded to 1234/5678/9012/3456). AR(1) paths come from a pre-drawn `draws_uniform_p` stored in the struct, via the existing `discrete_draw`; **zero `sample(...)` calls against the global RNG remain**. Verified: same seed → identical draws *and* identical initial conditions; different seed → different draws. Counterfactual arms built with one seed now share random numbers. |
+| **P6** | Validity is checked **first**, not in an `elseif` after the converged/maxeval branches, so a result reporting `:FTOL_REACHED` with a NaN iterate can no longer slip through. The old fallback replaced `x_opt` with `init` **without recomputing `minf`**, storing a value that did not match its policy; it now errors instead. `other_dict` is populated in all three loops, so "Other: 0.0%" is no longer printed unconditionally. |
+| **N2** | `solve_model!` returns a `Vector{NamedTuple}` of per-period diagnostics and **throws** if the converged share falls below `min_converged` (default 0.95). Printing alone was useless because the notebook wraps every counterfactual in `@suppress_output`; a return value plus a hard floor cannot be suppressed. Verified: 17 period records returned, min converged share 0.984, and an impossible floor raises. |
+| **X1 (minimal)** | New `code/src/diagnostics.jl`: `check_solution` (NaN/Inf per array, with college NaN allow-listed as *infeasible* and `Inf` never allowed anywhere), `check_simulation` (share of states outside the grids), `check_boundary` (policies pinned at a bound), `check_gradient` (analytic vs central differences), `run_all_checks`. Wired into the notebook's include cell. |
+
+`check_gradient` on `obj_last_period_full` returns a worst relative error of **1.9e-07**,
+confirming that objective is consistent — which is exactly the test that would have caught
+P1, where the gradient describes a different function from the objective.
 
 ---
 

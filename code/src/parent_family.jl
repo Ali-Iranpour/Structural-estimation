@@ -162,6 +162,8 @@ mutable struct Parent_child_interaction_age_specific_AR1
     sim_k_init::Vector{Float64}   # Initial capital         [simN]
     sim_hc_init::Vector{Float64}  # Initial human capital   [simN]
     sim_p_init::Vector{Int}    # Initial AR1 shocks      [Np, simN]
+    draws_uniform_p::Matrix{Float64}  # Pre-drawn uniforms for the AR(1) path [simN, simT]
+    seed::Int                         # Seed actually used (the kwarg was previously ignored)
 
     # --- Wage vector (for each period) ---
     w_vec::Vector{Float64}        # Wage per period         [T]
@@ -283,14 +285,21 @@ function Parent_child_interaction_age_specific_AR1(;
 
     # Initial conditions
 
-    rng_a  = MersenneTwister(1234)
-    rng_k  = MersenneTwister(5678)
-    rng_hc = MersenneTwister(9012)
-    rng_p  = MersenneTwister(3456)
+    # All randomness is seeded off the `seed` kwarg, which was previously accepted and
+    # then ignored (these seeds were hardcoded). Arms constructed with the same seed share
+    # initial conditions AND shock paths -- common random numbers -- so a difference
+    # between arms is a treatment effect rather than a reshuffle.
+    rng_a  = MersenneTwister(seed)
+    rng_k  = MersenneTwister(seed + 1)
+    rng_hc = MersenneTwister(seed + 2)
+    rng_p  = MersenneTwister(seed + 3)
     sim_a_init = rand(rng_a, LogNormal(0.2962227, 1.401793), simN)
     sim_k_init = Float64.(rand(rng_k, Bernoulli(0.3), simN))  # 70% zeros, 30% ones
     sim_hc_init = rand(rng_hc, simN) .* 1;
     sim_p_init = fill(ceil(Int, Np/2), simN)
+    # Pre-drawn uniforms for the AR(1) transition: reproducible, and identical across arms.
+    # Previously `sample(...)` was called against the GLOBAL RNG.
+    draws_uniform_p = rand(rng_p, simN, simT)
 
 
 
@@ -312,7 +321,7 @@ function Parent_child_interaction_age_specific_AR1(;
     sol_c, sol_i, sol_h, sol_t, sol_e, sol_v, sol_tr, sol_t_asset,
     simN, simT,
     sim_c, sim_h, sim_t, sim_e, sim_a, sim_i, sim_k, sim_hc, sim_wage, sim_income, sim_tr, sim_t_asset, sim_p,
-    sim_a_init, sim_k_init, sim_hc_init, sim_p_init,
+    sim_a_init, sim_k_init, sim_hc_init, sim_p_init, draws_uniform_p, seed,
     w_vec, nothing, β0, β_bothcollege, β_age, β_age2, β_age2_capital, β_age_capital)
 end
 
@@ -331,7 +340,20 @@ const AMIN = 0.0    # Minimum asset level
 # --------------------------
 # Model Solver
 # --------------------------
-function solve_model!(model::Parent_child_interaction_age_specific_AR1)
+"""
+    solve_model!(model; min_converged = 0.95, verbose = true)
+
+Backward induction for the parent problem.
+
+Returns a `Vector{NamedTuple}` of per-period solver diagnostics and **throws** if the
+converged share in any period falls below `min_converged`. Printing alone was not enough:
+the notebook wraps every counterfactual in `@suppress_output`, which sent
+`print_period_stats` to /dev/null, so 30+ models were solved with no idea how many grid
+points converged. A returned value plus a hard floor cannot be suppressed.
+"""
+function solve_model!(model::Parent_child_interaction_age_specific_AR1;
+                      min_converged::Float64 = 0.95, verbose::Bool = true)
+    diagnostics = NamedTuple[]
     T, Na, Nk, Nhc, Np = model.T, model.Na, model.Nk, model.Nhc, model.Np
     a_grid, k_grid, hc_grid, p_grid = model.a_grid, model.k_grid, model.hc_grid, model.p_grid
 
@@ -380,13 +402,20 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
 
         push!(itercounts, opt.numevals)
         rt = result_type_name(ret)
+        # Validity is checked FIRST. Previously this sat in an elseif after the
+        # converged/maxeval branches, so a result reporting :FTOL_REACHED with a NaN
+        # iterate slipped through; and the fallback replaced x_opt without recomputing
+        # minf, storing a value that did not match the stored policy.
+        if any(!isfinite, x_opt) || !isfinite(minf)
+            error("Non-finite solver result at t=$t, i_a=$i_a, i_k=$i_k, i_hc=$i_hc, " *
+                  "i_p=$i_p (ret=$ret, minf=$minf, x=$x_opt)")
+        end
         if rt == "converged"
             converge_count += 1
         elseif rt == "maxeval"
             maxeval_count += 1
-        elseif any(isnan, x_opt)
-            println("Warning: NaN in solution at t=$t, i_a=$i_a, i_k=$i_k, i_hc=$i_hc")
-            x_opt = init
+        else
+            other_dict[ret] = get(other_dict, ret, 0) + 1
         end
         total += 1
 
@@ -399,7 +428,8 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
         model.sol_t_asset[t, i_a, i_k, i_hc, i_p] = 0.0
         model.sol_v[t, i_a, i_k, i_hc, i_p] = -minf
     end
-    print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+    push!(diagnostics, record_period!(t, converge_count, maxeval_count, other_dict,
+                                      itercounts, total, min_converged, verbose))
 
     # ----- Earlier periods (t = T-1 down to 8) -----
     for t in (T-1):-1:8
@@ -446,11 +476,17 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
             (minf, x_opt, ret) = optimize(opt, init)
             
             push!(itercounts, opt.numevals)
+            if any(!isfinite, x_opt) || !isfinite(minf)
+                error("Non-finite solver result at t=$t, i_a=$i_a, i_k=$i_k, i_hc=$i_hc, " *
+                      "i_p=$i_p (ret=$ret, minf=$minf, x=$x_opt)")
+            end
             rt = result_type_name(ret)
             if rt == "converged"
                 converge_count += 1
             elseif rt == "maxeval"
                 maxeval_count += 1
+            else
+                other_dict[ret] = get(other_dict, ret, 0) + 1
             end
             total += 1
 
@@ -463,7 +499,8 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
             model.sol_t_asset[t, i_a, i_k, i_hc, i_p] = 0.0
             model.sol_v[t, i_a, i_k, i_hc, i_p] = -minf
         end
-        print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+        push!(diagnostics, record_period!(t, converge_count, maxeval_count, other_dict,
+                                          itercounts, total, min_converged, verbose))
     end
 
     # ----- Parent-only periods (t = 7 down to 1) -----
@@ -527,10 +564,12 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
             model.sol_t_asset[t, i_a, i_k, i_hc, i_p] = 0.0
             model.sol_v[t, i_a, i_k, i_hc, i_p] = -minf
         end
-        print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+        push!(diagnostics, record_period!(t, converge_count, maxeval_count, other_dict,
+                                          itercounts, total, min_converged, verbose))
     end
-end
 
+    return diagnostics
+end
 # ------------------------------------------------
 # Supporting functions 
 # ------------------------------------------------
@@ -895,6 +934,30 @@ function result_type_name(ret)
     end
 end
 
+"""
+    record_period!(...)
+
+Build the per-period diagnostic record, print it when `verbose`, and throw if the
+converged share is below `min_converged`.
+"""
+function record_period!(t, converge_count, maxeval_count, other_dict, itercounts, total,
+                        min_converged::Float64, verbose::Bool)
+    share = total == 0 ? 1.0 : converge_count / total
+    rec = (period = t, total = total, converged = converge_count,
+           converged_share = share, maxeval = maxeval_count,
+           other = sum(values(other_dict); init = 0),
+           other_codes = copy(other_dict),
+           mean_iters = isempty(itercounts) ? 0.0 : mean(itercounts))
+    verbose && print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+    if share < min_converged
+        error("Period $t: only $(round(100*share, digits=1))% of $(total) grid points " *
+              "converged (floor $(round(100*min_converged, digits=1))%). " *
+              "maxeval=$maxeval_count, other=$(rec.other) $(other_dict). " *
+              "Refusing to return a solution built on failed optimizations.")
+    end
+    return rec
+end
+
 function print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
     avg_iter = round(mean(itercounts), digits=2)
     println("Period $t: Converged: $(round(converge_count/total*100, digits=1))%, Maxeval: $(round(maxeval_count/total*100, digits=1))%, Other: $(round(sum(values(other_dict))/total*100, digits=1))%, Avg iters: $avg_iter")
@@ -938,8 +1001,8 @@ function simulate_model!(model::Parent_child_interaction_age_specific_AR1)
         sim_p[i, 1] = model.sim_p_init[i]  # Initial shock state
         for t in 1:simT-1
             current_state = sim_p[i, t]
-            next_state = sample(1:model.Np, Weights(model.p_transition[current_state, :]))
-            sim_p[i, t+1] = next_state
+            sim_p[i, t+1] = discrete_draw(model.p_transition[current_state, :],
+                                          model.draws_uniform_p[i, t])
         end
     end
 
@@ -1088,7 +1151,8 @@ function simulate_model_hetero!(
         sim_p[i, 1] = (hasfield(typeof(pm), :sim_p_init) && length(pm.sim_p_init) >= i) ? pm.sim_p_init[i] : model.sim_p_init[i]
         for t in 1:simT-1
             current = sim_p[i, t]
-            sim_p[i, t+1] = sample(1:pm.Np, Weights(pm.p_transition[current, :]))
+            sim_p[i, t+1] = discrete_draw(pm.p_transition[current, :],
+                                          model.draws_uniform_p[i, t])
         end
     end
 
