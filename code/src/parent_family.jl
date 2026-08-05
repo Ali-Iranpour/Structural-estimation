@@ -336,6 +336,19 @@ const TOL_CONSTR = 1e-8
 const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
 const AMIN = 0.0    # Minimum asset level
 
+# P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
+# and h_p are all held positive by box bounds, whereas leisure_c = 1 - t_p - i_c is a
+# NONLINEAR constraint, which SLSQP is free to violate at trial points.
+#
+# The old code returned a flat -1e8 there while still computing the gradient from the
+# smooth formula, so objective and gradient described different functions and the line
+# search accepted steps that worsened the objective. Instead the objective is floored and
+# the gradient is floored to match: below LEISURE_FLOOR the objective is constant in
+# leisure, so its derivative is exactly zero. Same function, same derivative, everywhere.
+const LEISURE_FLOOR = 1e-8
+@inline safe_leisure(l::Float64) = max(l, LEISURE_FLOOR)
+@inline d_safe_leisure(l::Float64) = l > LEISURE_FLOOR ? 1.0 : 0.0
+
 
 """
     snap_parent(x, lo, hi; tol = 1e-10)
@@ -611,10 +624,12 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
 
         # Partial derivatives of utility
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_di_c = (1 - model.mu_vector[t]) * model.lambda_1_vector[t] / leisure_c * (-1)
+        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
+                     safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
         dutil_de_p = 0.0
         dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
-        dutil_dt_p = (1 - model.mu_vector[t]) * model.lambda_1_vector[t] / leisure_c * (-1)
+        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
+                     safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
 
         # Partial derivatives of HC_next
         dHC_next_dt_p = HC_next * model.sigma_1_vector[t] / t_p
@@ -679,12 +694,17 @@ end
     if length(grad) > 0
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
         dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
-        term_leisure_c = (1 - model.mu_vector[t]) * model.lambda_1_vector[t] / leisure_c * (-1)
+        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
+                          safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
         grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da_sum * (-1)
         grad[2] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_4_vector[t] / i_c)
         grad[3] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
-        grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da_sum * marginal + dV_dk_sum)
+        # P1: no dV_dk_sum. `k` is the fixed BothCollege indicator (k_next = capital), so
+        # d k_next / d h_p = 0. The term was a leftover from when k was parental human
+        # capital accumulating by learning-by-doing; it told the optimizer that working
+        # more makes you college-educated.
+        grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da_sum * marginal)
         grad[5] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
     return f
@@ -726,7 +746,9 @@ end
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
         grad[1] = model.phi_1_vector[t] * (c_p ^ (-model.rho)) - model.beta_vector[t] * dV_da_sum
         grad[2] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
-        grad[3] = -model.phi_2_vector[t] * (h_p ^ model.eta) + model.beta_vector[t] * (marginal * dV_da_sum + dV_dk_sum)
+        # P1: no dV_dk_sum -- see obj_work_period_full.
+        grad[3] = -model.phi_2_vector[t] * (h_p ^ model.eta) +
+                  model.beta_vector[t] * (marginal * dV_da_sum)
         grad[4] = model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
     return util_now + model.beta_vector[t] * V_next
@@ -739,23 +761,21 @@ end
 @inline function util_total(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64,
                             t_p::Float64, i_c::Float64, HC::Float64, t::Int)
     leisure_c = 1.0 - t_p - i_c
-    if c <= 0.0 || i_c <= 0.0 || leisure_c <= 0.0
-        return -1e8
-    end
+    # c and i_c are held positive by box bounds; leisure_c is not (see LEISURE_FLOOR).
+    @assert c > 0.0 && i_c > 0.0 "util_total: box bounds violated (c=$c, i_c=$i_c)"
     rho = model.rho
     eta = model.eta
     u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
     disutil_h = - model.phi_2_vector[t] * (h_p ^ (1.0 + eta) / (1.0 + eta))
     u_parent = u_cons + disutil_h
-    u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) + 
-            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log(leisure_c) + model.lambda_2_vector[t] * log(HC))
+    u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) +
+            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log(safe_leisure(leisure_c)) +
+                                        model.lambda_2_vector[t] * log(HC))
     return u_parent + u_child
 end
 
 @inline function util_parent(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64, t_p::Float64, HC::Float64, t::Int)
-    if c <= 0.0
-        return -1e8
-    end
+    @assert c > 0.0 "util_parent: box bound violated (c=$c)"
     rho = model.rho
     eta = model.eta
     u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
@@ -770,9 +790,9 @@ end
 # ------------------------------------------------
 
 @inline function HC_technology_full(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, i_c::Float64, t::Int)
-    if t_p <= 0.0 || e_p <= 0.0
-        return -1e8
-    end
+    # P4: returning -1e8 as a human-capital LEVEL was doubly wrong -- it is not a value,
+    # and it was then multiplied by sigma/t_p inside the gradient. Bounds keep t_p, e_p > 0.
+    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_full: box bounds violated (t_p=$t_p, e_p=$e_p)"
     return exp(log(model.R_vector[t]) +
         model.sigma_1_vector[t] * log(t_p) +
         model.sigma_2_vector[t] * log(e_p) +
@@ -781,9 +801,8 @@ end
 end
 
 @inline function HC_technology_parentonly(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, t::Int)
-    if t_p <= 0.0 || e_p <= 0.0
-        return -1e8 
-    end
+    # P4: see HC_technology_full.
+    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_parentonly: box bounds violated (t_p=$t_p, e_p=$e_p)"
     return exp(log(model.R_vector[t]) +
             model.sigma_1_vector[t] * log(t_p) +
             model.sigma_2_vector[t] * log(e_p) + 

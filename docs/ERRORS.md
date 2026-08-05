@@ -41,10 +41,10 @@ passed at construction, the terminal-value construction, experiment design, and 
 
 | # | Issue | File | Severity |
 |---|---|---|---|
-| P1 | Spurious `∂V/∂k` in the labor-supply gradient | parent_family | 🔴 |
-| N1 | College choice taken outside the ε expectation (11 sites) | notebook | 🔴 |
+| ~~P1~~ | ~~Spurious `∂V/∂k`~~ — **FIXED** (Phase 3) | — | ✅ |
+| ~~N1~~ | ~~College choice outside the ε expectation~~ — **FIXED** (Phase 3) | — | ✅ |
 | ~~P2~~ | ~~Unseeded RNG~~ — **FIXED**: seeded, common random numbers (Phase 1) | — | ✅ |
-| N10 | Heterogeneous high-resource arms solve work at `y=0.6`, college at `y=1.08` | notebook | 🔴 |
+| ~~N10~~ | ~~Heterogeneous arms mismatched `y`~~ — **FIXED** (Phase 3) | — | ✅ |
 | ~~N11~~ | ~~Notebook cannot run top-to-bottom~~ — **FIXED** (Phase 1) | — | ✅ |
 | ~~C1~~ | ~~`-Inf` sentinel → 30% NaN~~ — **FIXED** in `child_lifecycle.jl` | — | ✅ |
 | ~~C9~~ | ~~Child simulation never clamps~~ — **FIXED**: `snap` + reported excursions (Phase 2) | — | ✅ |
@@ -56,7 +56,7 @@ passed at construction, the terminal-value construction, experiment design, and 
 | ~~P3~~ | ~~Parent states unclamped~~ — **FIXED**: `snap_parent` + reported excursions (Phase 2) | — | ✅ |
 | ~~C4~~ | ~~Asymmetric transfer optimization~~ — **FIXED**, branch-symmetric `maximize_1d` | — | ✅ |
 | ~~C5~~ | ~~Shock discretization~~ — **RESOLVED: documented approximation** (Phase 0.7) | — | ✅ |
-| P4 | Objective/gradient inconsistent in `-1e8` penalty branches | parent_family | 🟠 |
+| ~~P4~~ | ~~Objective/gradient inconsistent~~ — **FIXED** (Phase 3) | — | ✅ |
 | P5 | Piecewise-linear continuation value under gradient-based SLSQP | all | 🟠 |
 | N3 | CEV formula assumes homotheticity the value function lacks | notebook | 🟠 |
 | N4 | θ-experiment baseline uses a different ω than its treatment arms | notebook | 🟠 |
@@ -70,10 +70,11 @@ passed at construction, the terminal-value construction, experiment design, and 
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
 | M1 | Tables are never written to disk | notebook | 🟡 |
-| C6 | `stationary_dist` in solve vs median state in simulation — **required by the N1 timing** | both child modules | 🟠 |
+| ~~C6~~ | ~~Stationary solve vs median simulation~~ — **FIXED** (Phase 3) | — | ✅ |
 | C7 | `findfirst` can return `nothing` | both child modules | ⚪ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⚪ |
-| C12 | `sim_a[:, T+1]` never written — child terminal assets are all NaN | both child modules | ⚪ |
+| C12 | `sim_a[:, T+1]` never written — child terminal assets all NaN | child_lifecycle | ⚪ |
+| N13 | Parent and child share one asset grid; `a=0` is a model singularity | child_lifecycle | 🟡 |
 | X1 | Accuracy diagnostics — **minimal set added** (Phase 1); full set still open | all | 🟡 |
 
 ---
@@ -1031,6 +1032,44 @@ labor at bounds       lower 0.00%   upper 0.00%
 Asset excursions fell from **57.6%** (measured before Phase 2) to **0.12%**, inside the
 1% tolerance. Work transfers select exactly `0` at 66.2% of states — now an on-grid point
 rather than an extrapolation.
+
+---
+
+## Phase 3 complete (2026-08-05) — the central economic equations
+
+| item | what changed |
+|---|---|
+| **P1** | `dV_dk_sum` deleted from `obj_work_period_full` `grad[4]` and `obj_work_period_parentonly` `grad[3]`. `k` is the fixed `BothCollege` indicator, so `∂k'/∂h_p = 0`. **Verified**: `check_gradient` on `obj_work_period_full` now agrees with central differences to **1.07e-08** — before the fix objective and gradient described different functions. |
+| **N1** | New `terminal_value_surface` / `terminal_value_spline` implement the Phase-0.5 timing, `E_ε[ max_d ( max_tr E_z[W_d] ) ]`, from the ε-specific `sol_tr_v_college[:,:,:,it]` and the ε-free `sol_tr_v_work`. Replaced at **all 11 notebook sites**; zero `safe_maximum.(sol_exp_v_college, ...)` remain in code. **Verified**: the new value exceeds the old `max(E_ε[·],·)` at every state — mean `+0.0305`, max `+0.4298`, strictly higher at **36%** of states — exactly the Jensen direction, confirming the old construction understated the option value of college. |
+| **C6** | The child's initial shock is drawn from `stationary_dist(p_transition)` — the distribution the transfer problem integrates over — instead of everyone starting at the median state. **Verified**: empirical `z₀` frequencies `[0.040, 0.190, 0.485, 0.245, 0.040]` against stationary `[0.036, 0.239, 0.449, 0.239, 0.036]`, max deviation 0.049 at `simN=400` (sampling noise). |
+| **N10** | `base_child` in cells 77 and 79 now carries the treatment `y=1.08`. Previously it took the default `0.6`, so the work path — and the post-college continuation, which copies the work arrays — was solved at baseline resources while college ran at the treatment, handing college a bonus work never received. **Verified**: `y` now matches between `base_child` and `child_model` in all five cells that build both. |
+| **P4** | The `-1e8` penalty branches are gone from `util_total`, `util_parent`, `HC_technology_full` and `HC_technology_parentonly`. `c`, `i_c`, `e_p`, `t_p`, `h_p` are held positive by box bounds, so those are now assertions. Child leisure is the one quantity SLSQP *can* drive non-positive (`leisure_c = 1 − t_p − i_c` is a **nonlinear** constraint), so it is floored in the objective **and identically in the gradient** — below `LEISURE_FLOOR` the objective is constant in leisure and its derivative is exactly zero. Same function, same derivative, everywhere. **Verified**: parent converged share rose from 0.984 to **1.000**. |
+
+### End-to-end (child Na=20/Nk=20/Nt=6, parent Na=10/Nk=2/Nhc=10)
+
+```
+terminal surface   valid rows 2:20, finite 100%, range [-26.36, -3.87]   no -1e12 sentinel
+parent solve       17 periods, min converged share 1.000
+parent simulation  100% finite, 0.00% of states outside the grid
+```
+
+### 🟡 N13 — new: parent and child share one asset grid
+
+Surfaced by this phase. The transfer arrays are indexed on the **child's** asset grid but
+represent **parental** assets at the separation stage. With `a_min = 0` (needed so the work
+branch's `tr = 0` is on-grid), row 1 is `a = 0`, where the parent cannot retain `δ_P`,
+`a_term → 0`, and `κ_term·log(a_term)` diverges. That is a genuine singularity of the
+model, not a numerical artefact.
+
+Handled for now by dropping the singular row: `terminal_value_surface` marks it `NaN` and
+`terminal_value_spline` fits over `valid_rows` only. The clean fix is the one already
+suggested — **separate the parental-asset grid from the child-asset grid**, since parental
+resources and the child's transfer need not share a support. The parent grid would then
+start above `δ_P` and never contain the singularity.
+
+Also in this phase: the `-1e12` sentinel in the transfer objectives became `NaN`, so it can
+no longer survive a finiteness check and leak into the parent's terminal value as a real
+number.
 
 ---
 

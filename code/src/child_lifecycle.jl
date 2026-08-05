@@ -142,7 +142,13 @@ function ConSavLaborCollege_AR1(;
     rng = MersenneTwister(seed)
     sim_a_init = rand(rng, simN) .* 20
     sim_k_init = rand(rng, simN) .* 5
-    sim_p_init_idx = fill(ceil(Int, Np/2), simN) # Start at median persistent shock
+    # C6 (Phase 0.5c): draw the initial child shock from the STATIONARY distribution --
+    # the same distribution the transfer problem integrates over. Starting everyone at the
+    # median state meant the transfer was optimal against a distribution no simulated child
+    # was drawn from.
+    sim_p_init_idx = let pi_p = stationary_dist(p_transition), u = rand(rng, simN)
+        [discrete_draw(pi_p, u[i]) for i in 1:simN]
+    end
 
     draws_uniform_p = rand(rng, sim_shape...)
     w_vec = fill(w, T)
@@ -758,6 +764,86 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     return model, path_choice, eps_indices
 end
 
+# ========== Parent's terminal value ==========
+
+"""
+    terminal_value_surface(m) -> Matrix (Na x Nk)
+
+The parent's period-`T` continuation value, assembled with the timing frozen in Phase 0.5:
+
+    E_{eps_0} [ max_{d,tr} E_{z_0} [ W_d(tr; eps_0, z_0) ] ]
+
+`eps_0` is observed at the half period and `z_0` is not, so enrolment and the transfer
+condition on `eps_0` but not on realized `z_0`. The nesting is the substance -- this is
+NOT `max_{d,tr} E_{eps_0,z_0}[W_d]`, which would select the transfer before the preference
+shock is seen.
+
+Building blocks already exist:
+  * `sol_tr_v_college[:, :, ip, it]` = max_tr E_{z_0}[W_E | eps_it]   (eps-specific)
+  * `sol_tr_v_work[:, :, ip, 1]`     = max_tr E_{z_0}[W_W]            (no eps)
+`max.` is the max over `d`; the `t_weight` sum is `E_{eps_0}`.
+
+`-Inf` is applied only here, at the discrete comparison, for states where college is
+infeasible -- never stored in an interpolated array.
+"""
+function terminal_value_surface(m::ConSavLaborCollege_AR1; ip::Int = 1)
+    a_col_min = min_parent_assets_for_college(m)
+    out = zeros(m.Na, m.Nk)
+    for it in 1:m.Nt
+        w = m.t_weight[it]
+        for ik in 1:m.Nk, ia in 1:m.Na
+            vw = m.sol_tr_v_work[ia, ik, ip, 1]
+            vc = m.a_grid[ia] >= a_col_min ? m.sol_tr_v_college[ia, ik, ip, it] : -Inf
+            isnan(vc) && (vc = -Inf)          # NaN marks infeasible; -Inf only at the max
+            if !isfinite(vw) && !isfinite(vc)
+                # Neither branch is defined here. At a <= delta_P the parent cannot retain
+                # its floor, a_term -> 0, and kappa_term*log(a_term) diverges: a genuine
+                # singularity of the model, not a numerical artefact. Marked NaN so
+                # terminal_value_spline can drop the row rather than fit through it.
+                out[ia, ik] = NaN
+            else
+                out[ia, ik] += w * max(vc, vw)
+            end
+        end
+    end
+    return out
+end
+
+"""
+    terminal_value_spline(m; s = 10.0, ip = 1)
+
+The parent's terminal continuation value as a `Spline2D` over `(a, HC)`, built with the
+Phase-0.5 timing (see `terminal_value_surface`).
+
+The spline is fitted over the **valid** rows of the asset grid only. At parental assets
+at or below `delta_P` the parent cannot retain its floor, `a_term -> 0`, and
+`kappa_term * log(a_term)` diverges: that is a genuine singularity of the model, not a
+numerical artefact, and the grid should not carry it. Those rows are excluded rather than
+filled with a sentinel.
+
+Returns the spline; `valid_rows(m)` gives the indices used.
+"""
+function terminal_value_spline(m::ConSavLaborCollege_AR1; s::Float64 = 10.0, ip::Int = 1)
+    V  = terminal_value_surface(m; ip = ip)
+    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Na]
+    ia0 = findfirst(ok)
+    ia0 === nothing && error("Terminal value is non-finite at every asset grid point")
+    all(ok[ia0:end]) || error("Terminal value has interior non-finite rows: $(findall(.!ok))")
+    return Spline2D(m.a_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s)
+end
+
+"""
+    valid_rows(m) -> UnitRange
+
+Asset-grid rows over which the parent's terminal value is finite (assets above `delta_P`).
+"""
+function valid_rows(m::ConSavLaborCollege_AR1)
+    V  = terminal_value_surface(m)
+    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Na]
+    ia0 = findfirst(ok)
+    return ia0 === nothing ? (1:0) : (ia0:m.Na)
+end
+
 # ========== Transfer-stage helpers ==========
 
 """
@@ -893,7 +979,10 @@ function obj_transfer_work(
         if length(grad) > 0
             grad[1] = 0.0
         end
-        return -1e12
+        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
+        # finite sentinel that survived every finiteness check and leaked into the
+        # parent's terminal value as a real number.
+        return NaN
     end
 
     V_parent = terminal_value(model, HC, a_terminal)
@@ -929,7 +1018,10 @@ function obj_transfer_college(
         if length(grad) > 0
             grad[1] = 0.0
         end
-        return -1e12
+        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
+        # finite sentinel that survived every finiteness check and leaked into the
+        # parent's terminal value as a real number.
+        return NaN
     end
 
     V_parent = terminal_value(model, HC, a_terminal)
@@ -1184,7 +1276,10 @@ function obj_transfer_exp_college(
         if length(grad) > 0
             grad[1] = 0.0
         end
-        return -1e12
+        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
+        # finite sentinel that survived every finiteness check and leaked into the
+        # parent's terminal value as a real number.
+        return NaN
     end
 
     V_parent = terminal_value(model, HC, a_terminal)
