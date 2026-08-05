@@ -57,25 +57,25 @@ passed at construction, the terminal-value construction, experiment design, and 
 | ~~C4~~ | ~~Asymmetric transfer optimization~~ — **FIXED**, branch-symmetric `maximize_1d` | — | ✅ |
 | ~~C5~~ | ~~Shock discretization~~ — **RESOLVED: documented approximation** (Phase 0.7) | — | ✅ |
 | ~~P4~~ | ~~Objective/gradient inconsistent~~ — **FIXED** (Phase 3) | — | ✅ |
-| P5 | Piecewise-linear continuation value under gradient-based SLSQP | all | 🟠 |
-| N3 | CEV formula assumes homotheticity the value function lacks | notebook | 🟠 |
-| N4 | θ-experiment baseline uses a different ω than its treatment arms | notebook | 🟠 |
+| P5 | Piecewise-linear continuation value under SLSQP — Bellman residual 5.7e-13, so not currently binding | all | 🟡 |
+| ~~N3~~ | ~~Invalid CEV~~ — **REMOVED**, replaced by welfare gaps + bootstrap SE (Phase 5) | — | ✅ |
+| ~~N4~~ | ~~θ-experiment ω mismatch~~ — **FIXED** (Phase 5) | — | ✅ |
 | ~~N5~~ | ~~`psi_terminal_belief_bin` unused~~ — **NOT AN ERROR, deliberate choice** | — | ⚪ |
 | ~~N6~~ | ~~Belief correction can drive HC negative~~ — **WITHDRAWN, was wrong** | — | ⚪ |
 | ~~N7~~ | ~~Res-vs-Exp arms asymmetric~~ — **NOT AN ERROR, deliberate choice** | — | ⚪ |
-| N8 | Model/label order swapped in one figure | notebook | 🟡 |
-| N9 | Tax counterfactual labels do not match the τ values used | notebook | 🟡 |
+| ~~N8~~ | ~~Model/label order swapped~~ — **FIXED** (Phase 5) | — | ✅ |
+| ~~N9~~ | ~~Stale τ labels~~ — **FIXED**: read from the models (Phase 5) | — | ✅ |
 | ~~N12~~ | ~~`ā^P` placeholder~~ — **FIXED**: `delta_P = c_floor = 0.01` (Phase 0.5b) | — | ✅ |
 | ~~P6~~ | ~~NaN guard unreachable~~ — **FIXED**: validity checked first, errors (Phase 1) | — | ✅ |
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
-| M1 | Tables are never written to disk | notebook | 🟡 |
+| ~~M1~~ | ~~No tables written~~ — **FIXED**: `tables.jl` + PDF + provenance (Phase 5) | — | ✅ |
 | ~~C6~~ | ~~Stationary solve vs median simulation~~ — **FIXED** (Phase 3) | — | ✅ |
 | C7 | `findfirst` can return `nothing` | both child modules | ⚪ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⚪ |
 | C12 | `sim_a[:, T+1]` never written — child terminal assets all NaN | child_lifecycle | ⚪ |
 | N13 | Parent and child share one asset grid; `a=0` is a model singularity | child_lifecycle | 🟡 |
-| X1 | Accuracy diagnostics — **minimal set added** (Phase 1); full set still open | all | 🟡 |
+| ~~X1~~ | ~~No accuracy diagnostics~~ — **FIXED**: full set (Phase 4) | — | ✅ |
 
 ---
 
@@ -1070,6 +1070,61 @@ start above `δ_P` and never contain the singularity.
 Also in this phase: the `-1e12` sentinel in the transfer objectives became `NaN`, so it can
 no longer survive a finiteness check and leak into the parent's terminal value as a real
 number.
+
+---
+
+## Phases 4 and 5 complete (2026-08-05)
+
+### Phase 4 — numerical accuracy
+
+`code/src/diagnostics.jl` gained `bellman_residual`, `monotonicity_report`,
+`mc_standard_errors`, `grid_refinement` and `shock_discretization_report`.
+
+| check | result |
+|---|---|
+| Bellman residual, child work path | **max 5.7e-13**, mean 9.0e-14 over 100 states — the stored value *is* the value its own policy generates |
+| Monotonicity of `V` in assets | **0.00%** violations over 96,900 adjacent pairs |
+| Monotonicity of `c` in assets | 2.59% |
+| Simulated states outside the grid | **0.00%** after widening the child `a_max` to 100 |
+
+**P5 downgraded to Medium.** The concern was that a piecewise-linear continuation value
+breaks a gradient-based optimizer. With a Bellman residual of `5.7e-13` it is demonstrably
+not binding at the current grid, so replacing linear interpolation is no longer urgent.
+The comparison (linear + derivative-free vs shape-preserving vs smooth) remains worth doing
+before any final calibration.
+
+**⚠️ Open decision — the discretizer, not the process.** `shock_discretization_report`
+at the model's own `ρ = 0.95, σ = 0.2, N = 5`:
+
+| method | unconditional sd | persistence |
+|---|---|---|
+| Tauchen | 0.8414 (**+31.36%**) | 0.9879 (+3.99%) |
+| Rouwenhorst | 0.6405 (**+0.00%**) | 0.9500 (**+0.00%**) |
+
+Phase 0.7 decided to keep the stationary AR(1) *process* as a documented approximation to
+the estimated permanent-plus-transitory process. That stands. But the *discretization
+method* is a separate choice, and Tauchen at `N = 5` overstates the unconditional wage sd
+by nearly a third. Rouwenhorst is exact on both moments at the same `N`. **Not switched** —
+it changes results and was not the decision taken.
+
+### Phase 5 — counterfactual design and reporting
+
+| item | what changed |
+|---|---|
+| **N4** | Cell 69's `omega` 0.35 → 0.3, matching both θ arms. The college-decision experiment no longer confounds altruism weight with bargaining weight. |
+| **5.4a** | The "High `φ₂`" arm set `phi_2_0 = 15.0` against a baseline of 20.0 and was commented "Increased from 20.0" — a **decrease** labelled as an increase. Now 25.0. |
+| **5.4b** | The `σ₄` *slope* arms also passed `sigma_4_0 = -2.8`, so the slope experiment moved the intercept too and the two effects could not be separated. They now vary `sigma_4_1` only. |
+| **5.4c** | `R_1_baseline` 0.05 → 0.06, the constructor's actual default. The "low" arm previously equalled the baseline. |
+| **N3** | The CEV is **removed, not repaired**. Both forms assume `V` is homogeneous of degree `(1−ρ)` in consumption; it is not (it carries `log HC`, `log l_c`, `h^{1+η}` and a terminal value). Replaced with the raw welfare difference plus a bootstrap standard error. A valid CEV needs a root-find over a re-solve, which is left undone deliberately and documented in the cell. |
+| **N8** | Cell 73's models were `[only_child, baseline]` against labels `["Baseline", "Decision by Child"]`. Corrected. |
+| **N9** | The printed τ values are now read from the models (`model_baseline.tau` etc.) instead of hardcoded 0.25/0.35, which were stale from `transfer_model_AR1.ipynb`. |
+| **M1** | `code/src/tables.jl`: `threeparttable` + `booktabs` output matching the house format in `Redistribution_and_Human_Capital/{Tables,outcomes}`, writers for college/work, outcomes, belief groups and diagnostics, and `build_tables_pdf()`. Every table also emits `<name>.meta.toml` with the git commit, timestamp and parameters. |
+
+### Also removed: `optimal_transfer_exp_college!`
+
+The Phase-0.5 timing decision made it dead. It implemented the rejected commitment timing
+(`max_tr E_{ε,z}`), was the source of the 30% NaN in C1, and was still being called 12
+times. Deleted along with `obj_transfer_exp_college` and the `sol_exp_*` arrays.
 
 ---
 
