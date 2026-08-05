@@ -15,7 +15,7 @@ The model starts with a 2-parents family at the birth of their child. It follows
  = \phi_{1}\frac{c_t^{1-\rho}}{1-\rho} + \phi_{2}\frac{h_t^{1+\eta}}{1+\eta}    + \phi_{3}\,\ln HC_{t},  \label{eq:parent-util}
 \end{equation}
 
-Here, $c_{p,t}$ denotes parental consumption, $l_{p,t}$ parental leisure, and $HC_t$ the child’s cognitive skills (or “ability”) measured at the start of period $t$. The preference weights $(\phi_1,\phi_2,\phi_3)$ are strictly positive and normalized to sum to one. The child’s period-$t$ utility is then specified as:
+Here, $c_{p,t}$ denotes parental consumption, $l_{p,t}$ parental leisure, and $HC_t$ the child’s cognitive skills (or “ability”) measured at the start of period $t$. The preference weights $(\phi_1,\phi_2,\phi_3)$ are strictly positive. They are \emph{not} normalized to sum to one: $\phi_2$ scales the disutility of labor rather than a budget share, so the three are not commensurable and their sum has no interpretation. The calibration uses $(\phi_1,\phi_2,\phi_3) = (1,\, 20,\, 0.03)$. The child’s period-$t$ utility is then specified as:
 
 \begin{equation}
   U_{c,t}
@@ -59,7 +59,7 @@ This schedule implies that during childhood ($t \leq 7$), parents have full cont
      + y - T(w_t\, h_t)
      + b_t - c_{p,t} - e_{p,t}, \qquad a_{t+1} \geq 0,
 \end{equation}
-where $a_{t}$ denotes household assets at the beginning of period $t$, $r$ is the interest rate, $w_t$ is the hourly wage rate, $h_{p,t}$ is parental labor supply, $T(y)$ is the progressive taxation, $b_t$ represents non-labor income or transfers, $c_{p,t}$ is parental consumption, and $e_{p,t}$ is parental educational expenditure on the child. The non-negativity condition, $a_{t+1} \geq 0$, rules out borrowing. In order to model parental wages $w_t$, We collapse the mother and father into a single representative household, both age and wages are defined as the mean across the two parents. The wage equation is specified as: 
+where $a_{t}$ denotes household assets at the beginning of period $t$, $r$ is the interest rate, $w_t$ is the hourly wage rate, $h_{p,t}$ is parental labor supply \emph{per parent} --- household labor income is $2 \cdot \bar{w}_t \cdot h_{p,t}$, with $\bar{w}$ the mean parental wage --- $T(y)$ is the progressive taxation, $b_t$ represents non-labor income or transfers, $c_{p,t}$ is parental consumption, and $e_{p,t}$ is parental educational expenditure on the child. The non-negativity condition, $a_{t+1} \geq 0$, rules out borrowing. In order to model parental wages $w_t$, We collapse the mother and father into a single representative household, both age and wages are defined as the mean across the two parents. The wage equation is specified as: 
 
 \begin{equation}
 \begin{aligned}
@@ -74,11 +74,13 @@ where $a_{t}$ denotes household assets at the beginning of period $t$, $r$ is th
 \label{eq:wage_log}
 \end{equation}
 
-Average wage of household $i$ in period $t$ is denoted $w_{it}$, and $\text{BothCollege}_i$ is an indicator equal to one if both parents hold a college degree. The quadratic age terms capture the hump-shaped life-cycle profile, while the interaction terms allow the slope and curvature to differ across education groups. The empirical estimates corresponding to Equation~\eqref{eq:wage_log} are reported in Table~\ref{tab:wage_estimates}. The error term $z_{it}$ represents a persistent stochastic shock following an AR(1) process. Following the empirical wage literature, we assume these shocks follow a random walk:
+Average wage of household $i$ in period $t$ is denoted $w_{it}$, and $\text{BothCollege}_i$ is an indicator equal to one if both parents hold a college degree. $\text{Age}_{it}$ is measured in \emph{model time}, $=$ biological age $-\,25$, so period $1$ corresponds to parental age $26$; the estimation sample is re-indexed the same way. The quadratic age terms capture the hump-shaped life-cycle profile, while the interaction terms allow the slope and curvature to differ across education groups. The empirical estimates corresponding to Equation~\eqref{eq:wage_log} are reported in Table~\ref{tab:wage_estimates}. The error term $z_{it}$ represents a persistent stochastic shock. The estimated residual process is a permanent random walk plus a transitory component, with $\sigma_\iota = 0.189$ and $\sigma_\varepsilon = 0.134$. For tractability the model approximates it with a single \emph{stationary} AR(1) and omits the transitory component:
 \begin{equation}
-    z_{it} = \rho z_{i,t-1} + \varepsilon_{it}, 
-    \qquad \varepsilon_{it} \sim \mathcal{N}(0,\sigma^2).
+    z_{it} = \rho z_{i,t-1} + \varepsilon_{it},
+    \qquad \varepsilon_{it} \sim \mathcal{N}(0,\sigma^2),
+    \qquad \rho = 0.95, \quad \sigma = 0.2,
 \end{equation}
+discretized onto a finite state space by Tauchen's method. The approximation is deliberate: $\rho < 1$ makes the shock stationary, so the transfer problem can integrate over a well-defined ergodic distribution.
 
 
 
@@ -173,28 +175,26 @@ The child’s terminal value reflects a discrete choice between college ($E$) an
 In the separation period at $T_L$, the family chooses the transfer to the child by solving:
 \begin{equation}
     V_{T_L}^{\mathrm{CD}}(a_{T_L}, HC_{T_L}, \epsilon_0, m) =
-\max_{0 \leq tr \leq a_{T_L}} \left\{
+\max_{0 \leq tr \leq a_{T_L} - \bar{a}^P} \left\{
 \mathbb{E}_{z_{T_L}} \left[
 (1 - \theta) V_{T_L}^C(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m)
 + \theta V_{T_L}^P(tr, HC_{T_L}, \epsilon_0, m)
 \right]
 \right\}
 \end{equation}
-where $V_{T_L}^C$ and $V_{T_L}^P$ are the child’s and parent’s value functions, respectively, as functions of the transfer $tr$ and the college/work choice $d$. At period $T_L-1$, the value function also takes expectations over the preference shock because it was not realized on that period, like we see in equation (\ref{eq:T_L_1}):
+where $V_{T_L}^C$ and $V_{T_L}^P$ are the child’s and parent’s value functions, respectively, as functions of the transfer $tr$ and the college/work choice $d$. $\bar{a}^P$ is the minimum asset the parent retains after transferring, set to one period's minimum consumption; without it the parent's terminal value $\kappa \log(a_{T_L} - tr)$ diverges at $tr = a_{T_L}$. At period $T_L-1$ the preference shock has not yet been realized, so the value function takes the expectation over $\epsilon_0$ of the period-$T_L$ value --- it does \emph{not} re-optimize:
 \begin{equation}
+\label{eq:T_L_1}
     V_{T_L-1}^{\mathrm{CD}}(a_{T_L}, HC_{T_L}, m) =
-    \max_{0 \leq tr \leq a_{T_L}} \left\{
-        \mathbb{E}_{\epsilon_0,\, z_{T_L}} \left[
-            (1 - \theta) V_{T_L}^C(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m)
-            + \theta V_{T_L}^P(tr, HC_{T_L}, \epsilon_0, m)
-        \right]
-    \right\}
+        \mathbb{E}_{\epsilon_0} \left[ V_{T_L}^{\mathrm{CD}}(a_{T_L}, HC_{T_L}, \epsilon_0, m) \right]
 \end{equation}
+The nesting is the substance. Writing $\max_{tr} \mathbb{E}_{\epsilon_0,\, z_{T_L}}[\cdot]$ instead would place the maximum \emph{outside} the $\epsilon_0$ expectation, which is a commitment timing: the family would have to fix the transfer before seeing the preference shock, and the $\epsilon_0$ expectation would be taken twice. The timing above is
+$\mathbb{E}_{\epsilon_0}\!\left[\max_{d,\, tr} \mathbb{E}_{z_{T_L}}[\cdot]\right]$: $\epsilon_0$ is observed at the half period, enrollment and the transfer condition on it, and only $z_{T_L}$ remains unresolved when they are chosen. This is what the code implements.
 
 The optimal enrollment and transfer choice are:
 \begin{equation}
     d^*(a_{T_L}, HC_{T_L}, \epsilon_0) =
-     \arg\max_{0 \leq tr \leq a_{T_L}}\left\{
+     \arg\max_{0 \leq tr \leq a_{T_L} - \bar{a}^P}\left\{
             \mathbb{E}_{z_{T_L}} \left[
                 (1-\theta)\, V_{T_L}^C(tr, HC_{T_L}, \epsilon_0, z_{T_L}, m)
                 + \theta\, V_{T_L}^P(tr, a_{T_L}, HC_{T_L}, \epsilon_0, m)
@@ -301,13 +301,13 @@ V^E_t(a_t, HC_t, \epsilon_0, z_t) =
   \max_{c_t}
   \left\{ U^E(c_t, HC_t)
       + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^E_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
-  \right\}, & 18 < t < 22 \\[5ex]
+  \right\}, & 18 < t < 21 \\[5ex]
 
   \displaystyle
   \max_{c_t}
   \left\{U^E(c_t, HC_t)
       + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^W_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
-  \right\}, & t = 22
+  \right\}, & t = 21
 \end{cases}
 \end{equation}
 At entry ($t=T_L$), a one-time preference shock $\epsilon_0$ is realized. In the terminal college year ($t=T_E$), the continuation value transitions into the work path.
