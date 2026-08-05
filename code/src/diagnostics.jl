@@ -65,6 +65,7 @@ function check_solution(m; throw_on_fail::Bool = true, verbose::Bool = true)
         "sol_v_college"     => m.sol_v_college,
         "sol_c_college"     => m.sol_c_college,
         "sol_tr_college"    => m.sol_tr_college,
+        "sol_h_college"     => m.sol_h_college,
         "sol_tr_v_college"  => m.sol_tr_v_college;
         # College arrays: NaN marks states from which college cannot be completed.
         # sol_tr_work/sol_tr_v_work: NaN only at a = 0, where the parent cannot retain
@@ -77,6 +78,77 @@ function check_solution(m; throw_on_fail::Bool = true, verbose::Bool = true)
 end
 
 """
+    check_feasibility_mask(m; throw_on_fail = true)
+
+Verify that NaN in the college arrays lands **exactly** where the model says college is
+infeasible, and nowhere else (X4).
+
+`check_solution` allows NaN blanket-wide per array, so a solver failure *inside* the
+feasible region would pass. This compares the observed NaN pattern against `a_req` from
+`compute_min_assets`: a NaN at a feasible state, or a finite value at an infeasible one,
+is reported.
+"""
+function check_feasibility_mask(m; throw_on_fail::Bool = true, verbose::Bool = true)
+    a_req = compute_min_assets(m)
+    unexpected_nan = 0; unexpected_finite = 0; tot = 0
+    for t in 1:m.t_college, ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Na
+        feasible = m.a_grid[ia] >= a_req[t]
+        v = m.sol_v_college[t, ia, ik, ip, 1]
+        tot += 1
+        if feasible && isnan(v)
+            unexpected_nan += 1
+        elseif !feasible && !isnan(v)
+            unexpected_finite += 1
+        end
+    end
+    res = (unexpected_nan = unexpected_nan, unexpected_finite = unexpected_finite, checked = tot)
+    verbose && @printf("college NaN mask vs a_req: %d NaN at feasible states, %d finite at infeasible (of %d)\n",
+                       unexpected_nan, unexpected_finite, tot)
+    if unexpected_nan > 0 || unexpected_finite > 0
+        msg = "College NaN pattern does not match the feasibility mask: " *
+              "$unexpected_nan NaN at feasible states, $unexpected_finite finite at infeasible states."
+        throw_on_fail ? error(msg) : @warn msg
+    end
+    return res
+end
+
+"""
+    check_solver_domain(m; tol_share = 0.01)
+
+Share of **stored solution** transitions that leave the solved grid (C16).
+
+The work solver constrains only `a' >= a_min`; nothing bounds `a'` above or `k'` at all,
+so the continuation value is evaluated off-grid by extrapolation. Forward simulation can
+report 0% while the *solution itself* left the domain, which is why this is measured
+separately from `check_simulation`.
+"""
+function check_solver_domain(m; tol_share::Float64 = 0.01, throw_on_fail::Bool = true,
+                             verbose::Bool = true)
+    na = 0; nk = 0; tot = 0
+    for t in 1:(m.T - 1), ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Na
+        c = m.sol_c_work[t, ia, ik, ip, 1]; h = m.sol_h_work[t, ia, ik, ip, 1]
+        (isfinite(c) && isfinite(h)) || continue
+        w_pre = wage_func(m, m.k_grid[ik], t, m.p_grid[ip])
+        a_n = (1 + m.r) * m.a_grid[ia] + after_tax_income(m, w_pre, h) - c + m.y
+        k_n = m.k_grid[ik] + h
+        tot += 1
+        (a_n > m.a_max || a_n < m.a_min) && (na += 1)
+        (k_n > m.k_max || k_n < m.k_grid[1]) && (nk += 1)
+    end
+    res = (assets = na / max(tot, 1), hc = nk / max(tot, 1), checked = tot)
+    verbose && @printf("stored work transitions off-grid: assets %.2f%%   HC %.2f%%   (of %d)\n",
+                       100res.assets, 100res.hc, tot)
+    worst = max(res.assets, res.hc)
+    if worst > tol_share
+        msg = "Stored solution transitions leave the grid: $(round(100worst, digits=2))% " *
+              "(tolerance $(round(100tol_share, digits=2))%). The continuation value is " *
+              "being extrapolated. Widen the grids or add upper-domain constraints."
+        throw_on_fail ? error(msg) : @warn msg
+    end
+    return res
+end
+
+"""
     check_simulation(m; tol_share = 0.01)
 
 Share of simulated states outside their solution grid. Beyond the grid the policy is a
@@ -86,16 +158,27 @@ never solved. Fails above `tol_share`.
 function check_simulation(m; tol_share::Float64 = 0.01, throw_on_fail::Bool = true,
                           verbose::Bool = true)
     a, k = vec(m.sim_a), vec(m.sim_k)
-    a, k = filter(isfinite, a), filter(isfinite, k)
-    below_a = count(<(m.a_min), a) / max(length(a), 1)
-    above_a = count(>(m.a_max), a) / max(length(a), 1)
-    above_k = count(>(m.k_max), k) / max(length(k), 1)
-    below_k = count(<(m.k_grid[1]), k) / max(length(k), 1)
-    res = (below_a = below_a, above_a = above_a, below_k = below_k, above_k = above_k)
+    na_a, na_k = length(a), length(k)
+
+    # X3: non-finite entries are VIOLATIONS, not values to be filtered away. Previously
+    # this filtered first and divided by the survivors, so a sim_a that was 96% NaN
+    # reported "0.00% outside" and passed -- masking C12 and any NaN-producing failure.
+    nonfinite_a = count(!isfinite, a) / max(na_a, 1)
+    nonfinite_k = count(!isfinite, k) / max(na_k, 1)
+
+    # shares are over ALL entries, so they cannot be inflated by a shrinking denominator
+    below_a = count(x -> isfinite(x) && x < m.a_min,     a) / max(na_a, 1)
+    above_a = count(x -> isfinite(x) && x > m.a_max,     a) / max(na_a, 1)
+    below_k = count(x -> isfinite(x) && x < m.k_grid[1], k) / max(na_k, 1)
+    above_k = count(x -> isfinite(x) && x > m.k_max,     k) / max(na_k, 1)
+    res = (below_a = below_a, above_a = above_a, below_k = below_k, above_k = above_k,
+           nonfinite_a = nonfinite_a, nonfinite_k = nonfinite_k)
     if verbose
         @printf("simulated states outside the grid:\n")
-        @printf("  assets  below a_min %.2f%%   above a_max %.2f%%\n", 100below_a, 100above_a)
-        @printf("  HC      below k_min %.2f%%   above k_max %.2f%%\n", 100below_k, 100above_k)
+        @printf("  assets  below a_min %.2f%%   above a_max %.2f%%   non-finite %.2f%%\n",
+                100below_a, 100above_a, 100nonfinite_a)
+        @printf("  HC      below k_min %.2f%%   above k_max %.2f%%   non-finite %.2f%%\n",
+                100below_k, 100above_k, 100nonfinite_k)
     end
     worst = maximum(values(res))
     if worst > tol_share
@@ -174,10 +257,14 @@ function run_all_checks(m; throw_on_fail::Bool = true, verbose::Bool = true)
     verbose && println("\n--- simulation ---")
     sim = all(isnan, m.sim_a) ? nothing :
           check_simulation(m; throw_on_fail = throw_on_fail, verbose = verbose)
+    verbose && println("\n--- solver domain (C16) ---")
+    dom = check_solver_domain(m; throw_on_fail = throw_on_fail, verbose = verbose)
+    verbose && println("\n--- feasibility mask (X4) ---")
+    msk = check_feasibility_mask(m; throw_on_fail = throw_on_fail, verbose = verbose)
     verbose && println("\n--- boundaries ---")
     bnd = check_boundary(m; throw_on_fail = false, verbose = verbose)
     verbose && println("\nall checks passed")
-    return (solution = sol, simulation = sim, boundary = bnd)
+    return (solution = sol, simulation = sim, solver_domain = dom, mask = msk, boundary = bnd)
 end
 
 # =============================================================================

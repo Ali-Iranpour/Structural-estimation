@@ -232,7 +232,7 @@ end
 function solve_model_work!(model::ConSavLaborCollege_AR1)
     @unpack T, Na, Nk, Np, a_grid, k_grid, p_grid = model
     @unpack sol_c_work, sol_h_work, sol_v_work = model
-    @unpack y = model
+    @unpack y, c_floor = model
 
     # ---- Final period (t = T): work, consume everything, no bequest ----
     for i_p in 1:Np, i_k in 1:Nk, i_a in 1:Na
@@ -291,14 +291,17 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
             c_hi = max((1.0 + model.r) * assets + after_tax_income(model, w_pre_t, 1.0) + y, 0.02)
 
             opt = Opt(:LD_SLSQP, 2)
-            lower_bounds!(opt, [0.01, 1e-3])
+            lower_bounds!(opt, [c_floor, 1e-3])   # C17: the configured floor, not a literal
             upper_bounds!(opt, [c_hi, 1.0])
             ftol_rel!(opt, 1e-8)
             maxeval!(opt, 1000)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 1e-6)
+            # C16: keep the stored transition inside the solved grid
+            inequality_constraint!(opt, (x, grad) -> asset_constraint_work_upper(x, grad, model, assets, capital, t, p_shock), 1e-6)
+            inequality_constraint!(opt, (x, grad) -> hc_constraint_work_upper(x, grad, model, capital), 1e-6)
             min_objective!(opt, obj_wrapper)
 
-            init = [clamp(sol_c_work[t + 1, i_a, i_k, i_p, 1], 0.01, c_hi), 0.4]
+            init = [clamp(sol_c_work[t + 1, i_a, i_k, i_p, 1], c_floor, c_hi), 0.4]
             (minf, x_opt, ret) = optimize(opt, init)
             check_nlopt!(ret, minf, x_opt, "work t=$t ia=$i_a ik=$i_k ip=$i_p")
             sol_c_work[t, i_a, i_k, i_p, :] .= x_opt[1]
@@ -488,6 +491,33 @@ end
 # ================================
 # Constraints
 # ================================
+# C16: a' must also stay BELOW a_max, and k' below k_max. Constraining only a' >= a_min
+# let the solver pick transitions off the top of the grid -- measured at 3.59% of stored
+# asset transitions and 5.00% of HC transitions -- where the continuation value is a
+# `Line()` extrapolation. Forward simulation reported 0%, so nothing caught it.
+@inline function asset_constraint_work_upper(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
+    assets::Float64, capital::Float64, t::Int, p_shock::Float64)
+    c, h = x[1], x[2]
+    w_pre = wage_func(model, capital, t, p_shock)
+    a_next = (1.0 + model.r) * assets + after_tax_income(model, w_pre, h) - c + model.y
+    g = a_next - model.a_max
+    if length(grad) > 0
+        grad[1] = -1.0
+        grad[2] = d_after_tax_dh(model, w_pre, h)
+    end
+    return g
+end
+
+# k' = k + h <= k_max. Linear in h, so the gradient is constant.
+@inline function hc_constraint_work_upper(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
+    capital::Float64)
+    if length(grad) > 0
+        grad[1] = 0.0
+        grad[2] = 1.0
+    end
+    return capital + x[2] - model.k_max
+end
+
 @inline function asset_constraint_work(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
     assets::Float64, capital::Float64, t::Int, p_shock::Float64)
     c, h = x[1], x[2]
@@ -618,9 +648,12 @@ end
 # --------------------------
 # Helper for Simulation
 # --------------------------
+# C7: `findfirst` returns `nothing` when the cumulative weights fall a floating-point
+# hair short of the draw. Fall back to the last state rather than propagating `nothing`
+# into an array index.
 function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
     cdf = cumsum(probs)
-    return findfirst(x -> x >= draw, cdf)
+    return something(findfirst(x -> x >= draw, cdf), length(cdf))
 end
 
 # --------------------------
@@ -678,7 +711,8 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     # -- 2. Assign a taste shock node to each agent for t == 1 --
     cum_weights = cumsum(t_weight)
     rng = MersenneTwister(123)  # Reproducible
-    eps_indices = [findfirst(w -> w ≥ rand(rng), cum_weights) for _ in 1:simN]
+    # C7: see discrete_draw -- cum_weights[end] can be 1 - eps.
+    eps_indices = [something(findfirst(w -> w ≥ rand(rng), cum_weights), Nt) for _ in 1:simN]
 
     # -- 3. Initial path choice (stochastic via taste node) --
     path_choice = Vector{Symbol}(undef, simN)
@@ -744,6 +778,12 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
                 # visible for check_simulation rather than silently clipped.
                 sim_a[i, t+1] = snap(a_next, a_min, model.a_max)
                 sim_k[i, t+1] = snap(k_next, k_grid[1], model.k_max)
+            else
+                # C12: the terminal period consumes everything and leaves no bequest, so
+                # end-of-life assets are 0 by construction. This column was never written
+                # and stayed NaN, which X3 then hid. sim_k has only T columns, so only
+                # assets are recorded here.
+                sim_a[i, t+1] = 0.0
 
                 p_draw = draws_uniform_p[i, t]
                 p_trans_probs = p_transition[p_idx, :]
@@ -1128,7 +1168,8 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     # -- 2. Assign a taste shock node to each agent for t == 1 --
     cum_weights = cumsum(t_weight)
     rng = MersenneTwister(123)  # Reproducible
-    eps_indices = [findfirst(w -> w ≥ rand(rng), cum_weights) for _ in 1:simN]
+    # C7: see discrete_draw -- cum_weights[end] can be 1 - eps.
+    eps_indices = [something(findfirst(w -> w ≥ rand(rng), cum_weights), Nt) for _ in 1:simN]
 
     # -- 3. Initial path choice based on parent's transfer decision --
     path_choice = Vector{Symbol}(undef, simN)
@@ -1204,6 +1245,12 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
                 # visible for check_simulation rather than silently clipped.
                 sim_a[i, t+1] = snap(a_next, a_min, model.a_max)
                 sim_k[i, t+1] = snap(k_next, k_grid[1], model.k_max)
+            else
+                # C12: the terminal period consumes everything and leaves no bequest, so
+                # end-of-life assets are 0 by construction. This column was never written
+                # and stayed NaN, which X3 then hid. sim_k has only T columns, so only
+                # assets are recorded here.
+                sim_a[i, t+1] = 0.0
 
                 # Transition for persistent shock
                 p_draw = draws_uniform_p[i, t]
