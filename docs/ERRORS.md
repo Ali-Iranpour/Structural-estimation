@@ -85,17 +85,71 @@ grad[3] = -model.phi_2_vector[t] * (h_p ^ model.eta) +
           model.beta_vector[t] * (marginal * dV_da_sum + dV_dk_sum)
 ```
 
-`k_grid = range(0.0, 1.0, length=2)`, so the k-direction gradient equals
-`V(BothCollege=1) − V(BothCollege=0)` — the entire lifetime value gap between education
-types, a large positive constant. It is added to the hours FOC at every grid point,
-driving `h_p` to its upper bound for all `t ≤ 16`.
+Since `k_grid = range(0.0, 1.0, length=2)`, the k-direction gradient is the level gap
+`V(BothCollege=1) − V(BothCollege=0)`. Stated plainly, the gradient tells the optimizer
+that **working more makes you college-educated**: with `h_p ∈ [0,1]`, it credits full-time
+work with the entire lifetime value of converting a non-college household into a college one.
 
-`obj_last_period_full` (line 630s, `grad[4] = dutil_dh_p + β*(dV_da*marginal)`) is
-**correct**, which confirms this is an incomplete edit from when `k` was parental human
-capital, not a deliberate choice.
+### Measured effect (verified 2026-08-02)
 
-**Fix.** Delete `dV_dk_sum` from both gradients. Two lines. Every parental labor-supply
-and consumption policy for `t ≤ 16` changes.
+Gradient decomposition of `∂f/∂h_p` at `t=12`:
+
+| state (a, BC, HC) | `∂U/∂h` | `β·∂V/∂a·wage` | **`β·∂V/∂k` (bug)** | total (buggy) | total (correct) |
+|---|---|---|---|---|---|
+| (1.31, 0, 1.53) | −3.851 | +2.483 | **+2.2** | +0.8 | −1.369 |
+| (13.45, 0, 1.53) | −3.273 | +1.933 | **+1.5** | +0.2 | −1.340 |
+| (42.06, 1, 1.53) | −1.682 | +1.312 | **+0.7** | +0.3 | −0.370 |
+
+The bug term is the *same order of magnitude* as the legitimate terms, not overwhelming —
+but it **flips the sign of the total**, so the optimizer is told "work more" where the
+truth is "work less".
+
+A/B solve, identical model, only these two lines changed:
+
+| policy | buggy | fixed | bias |
+|---|---|---|---|
+| `h_p` labor supply | 0.3577 | 0.2894 | **+23.6%** |
+| `c_p` consumption | 3.7180 | 4.3741 | **−15.0%** |
+| `e_p` education spending | 0.3722 | 0.2280 | **+63.3%** |
+| `τ_p` parental care time | 0.1542 | 0.3895 | **−60.4%** |
+
+**The worst damage is not labor supply.** `e_p` and `τ_p` are the two human-capital
+investment inputs (`σ₂ log e_p`, `σ₁ log τ_p`). The bug tilts the entire
+time-versus-money investment margin — the mechanism the paper is about. Plausible chain,
+measured but not itself verified: the parent works more, has less time for the child, and
+substitutes purchased inputs for parental time.
+
+Bias by period, mean `h_p`:
+
+```
+  t     buggy    fixed     diff
+   1    0.3443   0.2396   +0.1047
+   7    0.3482   0.2622   +0.0860
+  12    0.3522   0.2978   +0.0544
+  16    0.3929   0.3684   +0.0245
+  17    0.4180   0.4180   +0.0000   <- terminal period identical
+```
+
+`t=17` is **exactly identical** because `obj_last_period_full` never had the term — its
+`grad[4] = dutil_dh_p + β*(dV_da*marginal)` is already correct. One function being right
+while the other two are wrong confirms this is an incomplete edit from when `k` was
+parental human capital, not a deliberate choice.
+
+The bias **grows going backwards** (+0.02 at `t=16` → +0.10 at `t=1`): each period's wrong
+policy produces a wrong `V_t`, which becomes the next iteration's continuation value, so
+the error compounds through the backward induction. The childhood periods are worst hit.
+
+*Caveat:* measured on a coarse grid (`Na=10, Nhc=10`) with a stand-in terminal value
+`1·log(HC) + 5·log(a)` shaped like the real one, because a full solve takes hours.
+Direction and rough magnitude should hold; exact percentages will differ on the real
+30×2×30×3 grid. Re-run the comparison after fixing.
+
+An earlier version of this document claimed the bug drives `h_p` to its upper bound. It
+does not — `h_p` stays interior (max 0.618 both with and without the bug). The effect is a
+shifted interior optimum.
+
+**Fix.** Delete `+ dV_dk_sum` from both gradients. The accumulator itself can stay, though
+removing it saves a gradient call per shock state.
 
 ## 🔴 P2 — Unseeded RNG (with the notebook)
 
