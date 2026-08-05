@@ -57,13 +57,13 @@ not implement and Tauchen cannot discretize.
 
 ## Required `model.txt` edits
 
-> **Status: none of the eight have been applied.** Edit 6 is tracked as finding **D1** in
-> [`ERRORS.md`](ERRORS.md) — `model.txt:185` still places the max outside `E_eps`, i.e. it
-> still describes the commitment timing the code no longer implements.
+> **Status: all eight applied to [`model.txt`](model.txt) on 2026-08-06.** Edits 6 (D1) and
+> 2 (P7) were tracked as open findings; the other six were listed here but left `model.txt`
+> describing a model the code does not implement, so they went in with them.
 
-
-These are paper-prose changes. They are listed rather than applied, so the wording stays
-yours.
+These are paper-prose changes and the wording below is a suggestion, not a requirement —
+**reword freely.** What must not change is the content: each one corrects a place where
+`model.txt` contradicted the code.
 
 **1. Wage shock — replace the random-walk sentence** (§Time and Budget Constraints):
 
