@@ -627,7 +627,7 @@ end
 # Simulation (AR1 Shock Only + Shock-free Retirement)
 # --------------------------
 function simulate_model_child!(model::ConSavLaborCollege_AR1)
-    @unpack simN, T, t_college, r, college_cost, college_boost = model
+    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition = model
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
     @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = model
