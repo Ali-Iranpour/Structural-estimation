@@ -59,6 +59,40 @@ m.V_child_interp = V_child_interp1   # built from the child solve
 solve_model!(m); simulate_model!(m)
 ```
 
+### One reproducible run
+
+```bash
+cd code && julia --project=.. run_all.jl            # production grids
+cd code && julia --project=.. run_all.jl --quick    # smoke test, ~20 s
+```
+
+Solves the child lifecycle and the parent problem, simulates, runs every accuracy
+diagnostic, writes all LaTeX tables to `output/tables/`, and compiles them into
+`output/reports/all_tables.pdf`.
+
+Reproducible by construction: every RNG is seeded from one `SEED` constant;
+`Project.toml`/`Manifest.toml` pin the package set; each table emits a `.meta.toml` with
+the git commit, timestamp and parameters; and the PDF wrapper is generated from whatever
+`.tex` files are on disk, so it can never go stale against the tables.
+
+### LaTeX tables
+
+`code/src/tables.jl` emits `threeparttable` + `booktabs` tables in the same format as
+`Redistribution_and_Human_Capital/{Tables,outcomes}` — `\toprule\toprule` … `\midrule`
+… `\bottomrule\bottomrule`, `[H]` placement, `\tnote{}` footnotes. Each file is
+`\input`-able straight into the paper.
+
+| writer | produces |
+|---|---|
+| `table_college_work(path_choice, name)` | counts and shares, like `base_college_work_choice.tex` |
+| `table_outcomes(models, labels, name)` | end-of-family outcomes, like `resource_summary.tex` |
+| `table_belief_groups(...)` | per-belief-group means, like `hetero_table.tex` |
+| `table_diagnostics(pairs, name)` | numerical diagnostics |
+| `write_table(name; ...)` | the generic builder for anything else |
+| `build_tables_pdf()` | every `.tex` in `output/tables/` into one PDF |
+
+The paper's preamble needs `booktabs`, `threeparttable` and `float`.
+
 ### Writing output
 
 Never build a path by hand. `paths.jl` gives you:

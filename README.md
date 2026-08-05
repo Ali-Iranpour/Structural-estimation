@@ -23,10 +23,13 @@ the child's birth to age 18; the child is then followed to age 68.
 ```
 .
 ├── code/
-│   ├── transfer_CRRA_wage.ipynb    driver: solve, simulate, counterfactuals, figures
+│   ├── run_all.jl                  ONE reproducible end-to-end run (--quick to smoke test)
+│   ├── transfer_CRRA_wage.ipynb    interactive driver: counterfactuals, figures
 │   └── src/
 │       ├── paths.jl                every path in the project — nothing else hard-codes one
 │       ├── manifest.jl             run provenance (git SHA, versions, parameters)
+│       ├── diagnostics.jl          accuracy checks: Bellman residuals, domains, gradients
+│       ├── tables.jl               LaTeX tables (threeparttable) + PDF build
 │       ├── parent_family.jl        parent problem: struct, solver, simulators
 │       ├── child_lifecycle.jl      child lifecycle — CANONICAL, no retirement
 │       ├── child_lifecycle_ret.jl  superseded, reference only
@@ -42,8 +45,8 @@ the child's birth to age 18; the child is then followed to age 68.
 │
 ├── output/
 │   ├── figures/                    81 PDFs — tracked in git
-│   ├── tables/                     tracked in git
-│   ├── reports/                    tracked in git
+│   ├── tables/                     .tex + .meta.toml provenance — tracked in git
+│   ├── reports/                    all_tables.pdf — tracked in git
 │   └── data/                       solved models, simulation dumps — git-ignored
 │
 ├── tools/
@@ -82,8 +85,14 @@ git clone <repo> && cd Structural-estimation
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-Then open `code/transfer_CRRA_wage.ipynb` with the IJulia (Julia 1.11) kernel and run
-cells in order. See [`docs/GUIDE.md`](docs/GUIDE.md) for load order, runtime, and caveats.
+Then either run everything non-interactively:
+
+```bash
+cd code && julia --project=.. run_all.jl
+```
+
+or open `code/transfer_CRRA_wage.ipynb` with the IJulia (Julia 1.11) kernel and run cells
+in order. See [`docs/GUIDE.md`](docs/GUIDE.md) for load order, runtime, and caveats.
 
 ---
 
