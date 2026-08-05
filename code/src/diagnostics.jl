@@ -115,8 +115,11 @@ constraint, not the economics, is setting the policy.
 function check_boundary(m; tol_share::Float64 = 0.05, throw_on_fail::Bool = false,
                         verbose::Bool = true)
     h = filter(isfinite, vec(m.sol_h_work))
-    lo = count(x -> x <= 1e-3 + 1e-9, h) / max(length(h), 1)
-    hi = count(x -> x >= 1.0 - 1e-9,  h) / max(length(h), 1)
+    # h_lo mirrors the solver's box bound in child_lifecycle.jl. Kept as a named constant
+    # here rather than a bare literal so the two cannot drift apart silently.
+    h_lo, h_hi = 1e-3, 1.0
+    lo = count(x -> x <= h_lo + 1e-9, h) / max(length(h), 1)
+    hi = count(x -> x >= h_hi - 1e-9, h) / max(length(h), 1)
     verbose && @printf("labor at bounds: lower %.2f%%   upper %.2f%%\n", 100lo, 100hi)
     if max(lo, hi) > tol_share
         msg = "Labor policy pinned at a bound for $(round(100max(lo,hi), digits=2))% of states."
@@ -194,6 +197,9 @@ optimizer did not actually solve the problem at those states.
 """
 function bellman_residual(m; n_sample::Int = 500, rng = MersenneTwister(1), verbose::Bool = true)
     res = Float64[]
+    # Interpolators are built once per period, not once per sample: the loop previously
+    # constructed Np of them at every draw (2500 builds at n_sample = 500).
+    interps = Dict{Int,Any}()
     for _ in 1:n_sample
         t   = rand(rng, 1:(m.T - 1))
         ia  = rand(rng, 2:m.Na); ik = rand(rng, 2:m.Nk); ip = rand(rng, 1:m.Np)
@@ -204,7 +210,9 @@ function bellman_residual(m; n_sample::Int = 500, rng = MersenneTwister(1), verb
         w_pre  = wage_func(m, k, t, z)
         a_next = (1 + m.r) * a + after_tax_income(m, w_pre, h) - c + m.y
         k_next = k + h
-        interp = create_interpolator(m, m.sol_v_work, t + 1)
+        interp = get!(interps, t) do
+            create_interpolator(m, m.sol_v_work, t + 1)
+        end
         EV = sum(m.p_transition[ip, jp] * interp[jp](a_next, k_next) for jp in 1:m.Np)
         rhs = util_work(m, c, h) + m.beta * EV
         push!(res, abs(V - rhs) / (1 + abs(V)))

@@ -27,14 +27,10 @@ Format a number for a LaTeX cell. `--` for non-finite, optional thousands separa
 """
 function fmt_num(x; digits::Int = 2, thousands::Bool = false)
     (x === nothing || (x isa Real && !isfinite(x))) && return "--"
-    # digits = 0 must give "1712", not "1712.0": Float64 printing always keeps a decimal.
-    s = digits == 0 ? string(round(Int, float(x))) : string(round(float(x), digits = digits))
-    # round() drops trailing zeros; pad so a column lines up
-    if digits > 0
-        parts = split(s, ".")
-        frac = length(parts) == 2 ? parts[2] : ""
-        s = parts[1] * "." * rpad(frac, digits, '0')
-    end
+    # Printf, not string(round(...)): Julia prints large Float64 in scientific notation,
+    # so string(round(1234567.891, digits=2)) is "1.23456789e6" and the thousands grouping
+    # below then produces garbage. Printf always gives plain fixed-point.
+    s = digits == 0 ? @sprintf("%.0f", float(x)) : Printf.format(Printf.Format("%.$(digits)f"), float(x))
     if thousands
         neg = startswith(s, "-"); body = neg ? s[2:end] : s
         ip, fp = split(body, "."; limit = 2)[1], (occursin(".", body) ? split(body, "."; limit = 2)[2] : "")
@@ -267,7 +263,9 @@ Returns the PDF path, or `nothing` if no LaTeX engine is available.
 function build_tables_pdf(; filename::AbstractString = "all_tables",
                           engine::AbstractString = "pdflatex", clean::Bool = true)
     texdir = tabpath()
-    files  = sort(filter(f -> endswith(f, ".tex"), readdir(texdir)))
+    # Exclude the wrapper itself: it is written INTO texdir, so a stale copy left by a
+    # failed run would otherwise be \input into its own successor -- infinite recursion.
+    files  = sort(filter(f -> endswith(f, ".tex") && f != filename * ".tex", readdir(texdir)))
     if isempty(files)
         @warn "No .tex files in $texdir — nothing to compile"
         return nothing
