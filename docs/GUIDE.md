@@ -13,10 +13,14 @@ code that implements it is in [`MODEL.md`](MODEL.md).
 
 | File | What it is |
 |---|---|
-| `code/transfer_CRRA_wage.ipynb` | **Driver notebook.** Solves, simulates, runs all counterfactuals, writes figures. |
+| `code/run_all.jl` | **One reproducible end-to-end run.** Solve, simulate, diagnose, tables, PDF. |
+| `code/transfer_CRRA_wage.ipynb` | Interactive driver: counterfactuals and figures. |
 | `code/src/parent_family.jl` | **Parent problem.** Struct, constructor, backward-induction solver, objectives, constraints, simulators. Extracted from the notebook — edit the model *here*. |
-| `code/src/child_lifecycle_ret.jl` | **Child lifecycle, with retirement.** This is the module the notebook includes. |
-| `code/src/child_lifecycle_ar1.jl` | Child lifecycle, *no* retirement. Kept for reference; **not** currently included by the notebook. |
+| `code/src/child_lifecycle.jl` | **Child lifecycle — CANONICAL.** No retirement, progressive tax. All child-side fixes go here. |
+| `code/src/child_lifecycle_ret.jl` | Superseded (had retirement). Reference only — do not fix. |
+| `code/src/child_lifecycle_ar1.jl` | Superseded (flat tax). Reference only — do not fix. |
+| `code/src/diagnostics.jl` | Accuracy checks: Bellman residuals, domains, monotonicity, gradients. |
+| `code/src/tables.jl` | LaTeX tables (`threeparttable`) and the PDF build. |
 | `code/src/paths.jl` | **Every path in the project.** Nothing else hard-codes a folder name. |
 | `code/src/manifest.jl` | Run provenance: `write_manifest(dir; params...)`. |
 | `model.txt` | LaTeX model specification from the paper. |
@@ -38,21 +42,23 @@ Open `code/transfer_CRRA_wage.ipynb` with the IJulia (Julia 1.11) kernel and run
 order. Load order matters:
 
 1. Cell 3 — package imports
-2. Cell 4 — `paths.jl`, `manifest.jl`, `child_lifecycle_ret.jl`, then construct and
-   solve the child model
+2. Cell 4 — `paths.jl`, `manifest.jl`, `diagnostics.jl`, `child_lifecycle.jl`, then
+   construct and solve the child model
 3. Cell 6 — `include("src/parent_family.jl")` — **must come after step 2**, because
    `parent_family.jl` names `ConSavLaborCollege_AR1` in its type signatures
 4. Everything after — parent solve, simulation, counterfactuals, plots
 
-A full run solves ~20 belief-specific parent models on a 30×2×30×3 grid with 5-variable
-NLopt problems at each point, plus the child lifecycle. Budget hours, not minutes.
+`run_all.jl` at production grids (child 50×50×10, parent 30×2×30, `simN` 5000) takes
+about **half a minute**. The notebook additionally solves ~20 belief-specific parent
+models for the subjective-expectations experiment, which is the expensive part.
 
 To work with the model outside the notebook (from `code/`):
 
 ```julia
 include("src/paths.jl")
 include("src/manifest.jl")
-include("src/child_lifecycle_ret.jl")
+include("src/diagnostics.jl")
+include("src/child_lifecycle.jl")
 include("src/parent_family.jl")
 m = Parent_child_interaction_age_specific_AR1(Na=30, Nk=2, Nhc=30, simN=5000)
 m.V_child_interp = V_child_interp1   # built from the child solve
@@ -123,17 +129,19 @@ write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
   capital; it does not accumulate (`k_next = capital`). It enters only through the wage
   equation. The grid is `Nk = 2`.
 - `HC` — child's cognitive skill
-- `z` — AR(1) wage shock (Tauchen, `Np = 3`)
+- `z` — AR(1) wage shock (Tauchen, `Np = 3`). See ERRORS.md Phase 4: Rouwenhorst matches
+  the target moments exactly where Tauchen overstates the sd by 31% — an open decision.
 
 Three regimes: `t = 1..7` parents decide alone (4 controls); `t = 8..16` the child bargains
 and study time is added (5 controls); `t = 17` terminal, continuation is the college/transfer
 value `V_child_interp`.
 
-**Child problem** (`code/src/child_lifecycle_ret.jl`), `T = 52` periods from age 18:
+**Child problem** (`code/src/child_lifecycle.jl`), `T = 51` periods, ages 18–68:
 
-- college path, `t_college = 4` years, then the work path
+- college path, `t_college = 4` years (ages 18–21), then the work path
 - work path with progressive tax and learning-by-doing `HC_{t+1} = HC_t + h_t`
-- retirement from `t_retire = 42`, pension = 0.5 × after-tax notional earnings
+- **no retirement** — removed in Phase 0.4 to match `model.txt`
+- terminal period: works and consumes everything, no bequest
 
 **Wage equations.** Parents use the estimated profile
 `ln w = β₀ + β_BC·BothCollege + β_age·t + β_age2·t² + interactions + z`.
@@ -162,11 +170,12 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 | `Np`, `p_ar1`, `sigma_p` | 3, 0.9, 0.1 | AR(1) wage shock |
 | β wage coefficients | see constructor | from the Stata wage regression |
 
-**Child** — `ConSavLaborCollege_AR1` (in `code/src/child_lifecycle_ret.jl`)
+**Child** — `ConSavLaborCollege_AR1` (in `code/src/child_lifecycle.jl`)
 
 | Param | Value | Meaning |
 |---|---|---|
-| `T`, `t_college`, `t_retire` | 52, 4, 42 | horizon; college years; retirement period |
+| `T`, `t_college` | 51, 4 | horizon (ages 18–68); college years |
+| `c_floor`, `delta_P` | 0.01, 0.01 | consumption floor (= optimizer bound); min retained parental asset |
 | `rho`, `eta`, `phi` | 1.5, 2.0, 18.0 | CRRA; inverse Frisch; labor disutility scale |
 | `kappa` | 5.0 | psychic cost of college |
 | `college_cost`, `college_boost` | 1.2, 2.0 | annual cost; annual HC increment `b*` |
