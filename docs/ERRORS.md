@@ -69,7 +69,11 @@ passed at construction, the terminal-value construction, experiment design, and 
 | ~~P6~~ | ~~NaN guard unreachable~~ — **FIXED**: validity checked first, errors (Phase 1) | — | ✅ |
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
-| ~~M1~~ | ~~No tables written~~ — **FIXED**: `tables.jl` + PDF + provenance (Phase 5) | — | ✅ |
+| M1 | Tables: `run_all.jl` writes 3; **the notebook still writes none** | notebook | 🟡 |
+| T1 | `fmt_num` emitted scientific notation ≥1e6 — **FIXED** | — | ✅ |
+| T2 | `build_tables_pdf` could `\input` a stale copy of itself — **FIXED** | — | ✅ |
+| T3 | Dead `safe_maximum` / `AMIN` in `parent_family.jl` — **FIXED** | — | ✅ |
+| T4 | `bellman_residual` rebuilt interpolators per sample — **FIXED** | — | ✅ |
 | ~~C6~~ | ~~Stationary solve vs median simulation~~ — **FIXED** (Phase 3) | — | ✅ |
 | C7 | `findfirst` can return `nothing` | both child modules | ⚪ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⚪ |
@@ -1125,6 +1129,30 @@ it changes results and was not the decision taken.
 The Phase-0.5 timing decision made it dead. It implemented the rejected commitment timing
 (`max_tr E_{ε,z}`), was the source of the 30% NaN in C1, and was still being called 12
 times. Deleted along with `obj_transfer_exp_college` and the `sol_exp_*` arrays.
+
+---
+
+## Deep code audit (2026-08-05) — including the code added in Phases 1–5
+
+Swept all six `src/` modules, `run_all.jl` and the notebook. Four defects found, all in
+code added during this work; three fixed, one gap reopened.
+
+| # | Finding | Status |
+|---|---|---|
+| **T1** | `fmt_num` used `string(round(x, digits))`, which Julia prints in **scientific notation** for large `Float64`: `fmt_num(1234567.891; digits=2, thousands=true)` returned `"1.23456789e6"` and the thousands grouping then produced garbage. Not yet triggered (terminal assets ≈ 20) but a landmine for any table with a value ≥ 1e6. Now uses `Printf`. | ✅ fixed |
+| **T2** | `build_tables_pdf` globbed `*.tex` **before** writing its own wrapper into the same directory. A wrapper left behind by a failed run would be `\input` into its successor — infinite recursion. Now excluded by name. | ✅ fixed |
+| **T3** | `safe_maximum` and `AMIN` were dead in `parent_family.jl` after N1 removed the last caller. Deleted. | ✅ fixed |
+| **T4** | `bellman_residual` constructed `Np` interpolators inside the sampling loop — 2,500 builds at `n_sample = 500`. Now cached per period. | ✅ fixed |
+| **M1** | **Reopened.** `run_all.jl` writes three tables with provenance, but the **notebook writes none** — 0 `table_*` and 0 `write_manifest` calls in code. The counterfactuals live in the notebook, so their results still reach the paper only as figures. Marking M1 fixed on the strength of `run_all.jl` alone was an over-claim. | 🟡 open |
+
+Also confirmed clean: the canonical `child_lifecycle.jl` carries no trace of the removed
+retirement/commitment machinery; the notebook calls no function that no longer exists; the
+child solver imposes **no** artificial `a_next ≤ a_max` cap (unlike the parent, which still
+does — that asymmetry is deliberate, the child relies on grid coverage plus
+`check_simulation`).
+
+Verified after the fixes: `run_all.jl --quick` still gives Bellman residual 5.7e-13,
+converged share 1.0000, 0.00% of states outside the grid, 3 tables, PDF built.
 
 ---
 

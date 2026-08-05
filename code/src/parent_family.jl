@@ -42,20 +42,6 @@ end
 #   (was notebook cell 8)
 # -----------------------------------------------------------------------------
 
-function safe_maximum(x, y)
-    # Both x and y are scalars (floats)
-    if isnan(x) || x == -Inf
-        if isnan(y) || y == -Inf
-            return NaN
-        else
-            return y
-        end
-    elseif isnan(y) || y == -Inf
-        return x
-    else
-        return max(x, y)
-    end
-end
 
 
 # -----------------------------------------------------------------------------
@@ -334,7 +320,6 @@ end
 # === Put near the top of your file ===
 const TOL_CONSTR = 1e-8
 const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
-const AMIN = 0.0    # Minimum asset level
 
 # P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
 # and h_p are all held positive by box bounds, whereas leisure_c = 1 - t_p - i_c is a
