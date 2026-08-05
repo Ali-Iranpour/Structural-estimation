@@ -555,6 +555,12 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             (minf, x_opt, ret) = optimize(opt, init)
 
             push!(itercounts, opt.numevals)
+            # P6: this loop stored results unchecked; only the terminal and adolescence
+            # loops were guarded, so P6 was only partially fixed.
+            if any(!isfinite, x_opt) || !isfinite(minf)
+                error("Non-finite solver result at t=$t, i_a=$i_a, i_k=$i_k, i_hc=$i_hc, " *
+                      "i_p=$i_p (ret=$ret, minf=$minf, x=$x_opt)")
+            end
             rt = result_type_name(ret)
             if rt == "converged"
                 converge_count += 1
@@ -631,13 +637,21 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
         grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da * marginal)  # ∂f/∂h_p
         grad[5] = dutil_dt_p + model.beta_vector[t] * dV_dHC * dHC_next_dt_p  # ∂f/∂t_p
 
-        # Handle NaN in gradients
+        # P4: no finite sentinel. Returning -1e12 with a -1e12 gradient produced a value
+        # every downstream finiteness check accepts, laundering a NaN gradient into a
+        # "valid" result. A NaN here means the objective was evaluated where it is not
+        # defined -- a bug to surface, not a state to price.
         if any(isnan, grad)
-            grad .= -1e12
-            return -1e12
+            error("obj_last_period_full non-finite gradient at c_p=$c_p, i_c=$i_c, " *
+                  "e_p=$e_p, h_p=$h_p, t_p=$t_p (grad=$grad)")
         end
     end
 
+    # Checked unconditionally: NLopt may request a value without a gradient.
+    if !isfinite(f)
+        error("obj_last_period_full non-finite value at c_p=$c_p, i_c=$i_c, e_p=$e_p, " *
+              "h_p=$h_p, t_p=$t_p (f=$f)")
+    end
 
     return f
 end
@@ -1205,10 +1219,13 @@ function simulate_model_hetero!(
             sim_h[i, t] = interp[(m, t, p_state, :h)](a, k, hc)
             sim_t[i, t] = interp[(m, t, p_state, :t)](a, k, hc)
 
-            wage = wage_func(model, k, t, p_shock)
+            # P9: wage and tax come from the belief-specific `pm`, not the base model.
+            # Policies were already taken from `pm`; mixing them is harmless only while
+            # every belief model shares wage and tax parameters.
+            wage = wage_func(pm, k, t, p_shock)
             sim_wage[i, t] = wage / WAGE_SCALING_FACTOR  # Store true wage (not scaled)
             labor_pre = wage * sim_h[i, t]
-            after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+            after_tax = pm.tax_lambda * labor_pre ^ (1 - pm.tau)
             sim_income[i, t] = after_tax  # Store after-tax income
 
             sim_a[i, t+1] = snap_parent((1.0 + pm.r) * a + sim_income[i, t] + pm.y -
@@ -1310,7 +1327,9 @@ function simulate_model_family_hetero!(
     # -- Draw taste shock nodes --
     cum_weights = cumsum(t_weight)
     rng = MersenneTwister(2222)
-    eps_indices = [clamp(findfirst(w -> w ≥ rand(rng), cum_weights), 1, Nt) for _ in 1:simN]
+    # C7: clamp(nothing, ...) is a MethodError, so the old guard did not guard.
+    eps_indices = [clamp(something(findfirst(w -> w ≥ rand(rng), cum_weights), Nt), 1, Nt)
+                   for _ in 1:simN]
 
     # -- Assign initial path and transfer --
     path_choice = Vector{Symbol}(undef, simN)
@@ -1393,8 +1412,11 @@ function simulate_model_family_hetero!(
                     a_next = (1 + r) * a + sim_income[i, t] - c + y
                     k_next = k + h
                 end
-                sim_a[i, t+1] = max(a_next, a_min)
-                sim_k[i, t+1] = k_next
+                # C15: snap only float-sized violations, matching both child simulators.
+                # `max(a_next, a_min)` rewrote the budget law by replacing a genuinely
+                # negative asset with a_min, and left the upper domain unguarded.
+                sim_a[i, t+1] = snap_parent(a_next, a_min, base_child.a_max)
+                sim_k[i, t+1] = snap_parent(k_next, base_child.k_grid[1], base_child.k_max)
 
                 # Persistent shock update
                 p_draw = draws_uniform_p[i, t]
