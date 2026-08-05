@@ -1347,11 +1347,13 @@ function simulate_model_family_hetero!(
     ]
 
     # -- Draw taste shock nodes --
-    cum_weights = cumsum(t_weight)
-    rng = MersenneTwister(2222)
+    # N15: was MersenneTwister(2222) against the child simulators' 123, so a homogeneous
+    # and a heterogeneous run of the same model assigned different agents to different
+    # taste-shock nodes. Both now read base_child's one stored draw set.
+    cum_weights = cumsum(t_weight); cum_weights ./= cum_weights[end]
     # C7: clamp(nothing, ...) is a MethodError, so the old guard did not guard.
-    eps_indices = [clamp(something(findfirst(w -> w ≥ rand(rng), cum_weights), Nt), 1, Nt)
-                   for _ in 1:simN]
+    eps_indices = [clamp(something(findfirst(w -> w ≥ base_child.draws_uniform_t[i], cum_weights), Nt), 1, Nt)
+                   for i in 1:simN]
 
     # -- Assign initial path and transfer --
     path_choice = Vector{Symbol}(undef, simN)

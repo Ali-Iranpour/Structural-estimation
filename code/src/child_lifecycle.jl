@@ -71,6 +71,11 @@ mutable struct ConSavLaborCollege_AR1
     sim_a_init::Vector{Float64}; sim_k_init::Vector{Float64}; sim_p_init_idx::Vector{Int}
     sim_income::Matrix{Float64}; sim_wage::Matrix{Float64}
     draws_uniform_p::Matrix{Float64}
+    # N15: ONE stored set of taste-shock draws, seeded from `seed`. The three simulators
+    # used to draw their own -- MersenneTwister(123) in the two child simulators and
+    # MersenneTwister(2222) in the heterogeneous parent one -- so arms that should have
+    # differed only in the parameter under study also differed in who drew which eps.
+    draws_uniform_t::Vector{Float64}
     w_vec::Vector{Float64}; college_cost::Float64; college_boost::Float64
     kappa::Float64 # parameter for psychic cost
     tax_lambda::Float64          # Progressive tax level parameter (HSV/Benabou)
@@ -181,6 +186,7 @@ function ConSavLaborCollege_AR1(;
     end
 
     draws_uniform_p = rand(rng, sim_shape...)
+    draws_uniform_t = rand(rng, simN)      # N15: shared across every simulator
     w_vec = fill(w, T)
 
     return ConSavLaborCollege_AR1(
@@ -194,7 +200,7 @@ function ConSavLaborCollege_AR1(;
         sol_tr_college, sol_tr_work, sol_tr_v_college, sol_tr_v_work,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
         sim_a_init, sim_k_init, sim_p_init_idx, sim_income, sim_wage,
-        draws_uniform_p, w_vec, college_cost, college_boost, kappa, tax_lambda,
+        draws_uniform_p, draws_uniform_t, w_vec, college_cost, college_boost, kappa, tax_lambda,
         c_floor, delta_P
     )
 end
@@ -754,10 +760,12 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     ]
 
     # -- 2. Assign a taste shock node to each agent for t == 1 --
-    cum_weights = cumsum(t_weight)
-    rng = MersenneTwister(123)  # Reproducible
-    # C7: see discrete_draw -- cum_weights[end] can be 1 - eps.
-    eps_indices = [something(findfirst(w -> w ≥ rand(rng), cum_weights), Nt) for _ in 1:simN]
+    # N15: cum_weights normalized to end at exactly 1, and drawn from the model's ONE
+    # stored draw set rather than a locally seeded RNG.
+    cum_weights = cumsum(t_weight); cum_weights ./= cum_weights[end]
+    # C7: see discrete_draw -- cum_weights[end] can still be 1 - eps after rounding.
+    eps_indices = [something(findfirst(w -> w ≥ model.draws_uniform_t[i], cum_weights), Nt)
+                   for i in 1:simN]
 
     # -- 3. Initial path choice (stochastic via taste node) --
     path_choice = Vector{Symbol}(undef, simN)
@@ -1228,10 +1236,12 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     ]
 
     # -- 2. Assign a taste shock node to each agent for t == 1 --
-    cum_weights = cumsum(t_weight)
-    rng = MersenneTwister(123)  # Reproducible
-    # C7: see discrete_draw -- cum_weights[end] can be 1 - eps.
-    eps_indices = [something(findfirst(w -> w ≥ rand(rng), cum_weights), Nt) for _ in 1:simN]
+    # N15: cum_weights normalized to end at exactly 1, and drawn from the model's ONE
+    # stored draw set rather than a locally seeded RNG.
+    cum_weights = cumsum(t_weight); cum_weights ./= cum_weights[end]
+    # C7: see discrete_draw -- cum_weights[end] can still be 1 - eps after rounding.
+    eps_indices = [something(findfirst(w -> w ≥ model.draws_uniform_t[i], cum_weights), Nt)
+                   for i in 1:simN]
 
     # -- 3. Initial path choice based on parent's transfer decision --
     path_choice = Vector{Symbol}(undef, simN)
