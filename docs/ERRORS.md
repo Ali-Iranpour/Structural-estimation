@@ -64,13 +64,15 @@ passed at construction, the terminal-value construction, experiment design, and 
 | N7 | Res-vs-Exp arms asymmetric (child y=1.08, parent y=1.2) | notebook | 🟡 |
 | N8 | Model/label order swapped in one figure | notebook | 🟡 |
 | N9 | Tax counterfactual labels do not match the τ values used | notebook | 🟡 |
+| N12 | `ā^P` (min retained parental asset) is a spec addition set to `1e-9` | both child modules | 🟡 |
 | P6 | NaN guard unreachable; poisons the backward init chain | parent_family | 🟡 |
 | P7 | φ weights not normalized; `BothCollege` share hardcoded (`2×` **resolved**) | parent_family | 🟡 |
 | ~~P8~~ | ~~Verify `Age` units~~ — **RESOLVED, code correct** | — | ⚪ |
 | M1 | Tables are never written to disk | notebook | 🟡 |
-| C6 | `stationary_dist` used in solve, median state in simulation | both child modules | 🟡 |
+| C6 | `stationary_dist` in solve vs median state in simulation — **required by the N1 timing** | both child modules | 🟠 |
 | C7 | `findfirst` can return `nothing` | both child modules | ⚪ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⚪ |
+| C12 | `sim_a[:, T+1]` never written — child terminal assets are all NaN | both child modules | ⚪ |
 | X1 | No accuracy diagnostics anywhere | all | 🟠 |
 
 ---
@@ -432,7 +434,7 @@ discretize at all (infinite unconditional variance).
 **Fix.** Rouwenhorst with `N ≥ 7`; normalize `p_grid = exp.(z .- σ_z²/2)`; reconcile ρ with
 the paper.
 
-## 🟡 C6 — Stationary distribution in solve, median state in simulation
+## 🟠 C6 — Stationary distribution in solve, median state in simulation
 
 `optimal_transfer_work!` / `_college!` (**lines 699, 747**) take the expectation over the
 AR(1) state using `stationary_dist(p_transition)` (**line 874**), but the simulation starts
@@ -442,6 +444,21 @@ distribution the simulated child is not drawn from.
 
 `stationary_dist` itself (**line 874**) uses `eigen(P')` + `argmax(real(vals))`, which is
 fragile; solving `(I − P')π = 0` with a normalization is more robust.
+
+**Raised to High by the N1 timing decision.** Under "enrolment and transfer depend on `ε₀`
+but not realized `z₀`", the transfer is optimal *against a distribution of `z₀`*. That is
+only coherent if the simulation draws `z₀` from that same distribution. Either draw the
+initial child shock from `stationary_dist`, or — if `z₀` is meant to be observed at
+separation — make the transfer policy condition on it, which changes the timing again.
+Pick one; the current combination is neither.
+
+## ⚪ C12 — `sim_a[:, T+1]` is never written
+
+Both simulators guard the transition on `if t < T`, so `sim_a` is filled for columns
+`1..T` while the array is allocated with `T+1` columns. The final column stays `NaN`
+(measured: exactly `1/(T+1)` of the array). The child consumes everything at `T`, so the
+economically correct value is `0`, but `sim_a[:, end]` currently returns `NaN` to anything
+that reads it.
 
 ## ⚪ C7 — `findfirst` can return `nothing`
 
@@ -483,7 +500,43 @@ instead.
 
 Notebook references are **cell N, line M** (line within that cell).
 
-## 🔴 N1 — College choice taken outside the ε expectation
+## 🔴 N1 — Information timing: ε integrated in the wrong place
+
+### The convention (DECIDED 2026-08-05)
+
+The family observes the preference shock `ε₀` at the separation half-period, but the
+child's initial wage shock `z₀` is still unresolved. Enrolment and the transfer may
+therefore condition on `ε₀` but **not** on realized `z₀`:
+
+```
+Half period T_L        V^CD(a,HC,ε₀,m) =  max      E_{z₀}[ (1-θ)V₁^d + θV^{P,d} ]
+                                        d∈{E,W}
+                                        0≤tr≤a-ā^P
+
+Last parent period     continuation   =  E_{ε₀}[ V^CD(a',HC',ε₀,m) ]
+t = 17
+```
+
+so the object the parent's `t=17` problem needs is
+
+```
+        E_{ε₀} [  max_{d,tr}  E_{z₀} [ W_d(tr; ε₀, z₀) ] ]
+```
+
+**The nesting is the whole point.** It is *not* `max_{d,tr} E_{ε₀,z₀}[W_d]`, which would
+select the transfer before the preference shock is observed.
+
+Expanding with the parental specification (`V^P = ψ log HC + κ log a_term + ω V^C`), and
+noting that `V^{P,d}` depends on `z₀` only through the altruism term:
+
+```
+V^CD = max_{d,tr} { [(1-θ) + θω]·E_{z₀}[V₁^d] + θψ log HC + θκ log(a-tr) }
+```
+
+which matches `coef = (1-mu) + mu*omega` in `obj_transfer_work` / `obj_transfer_college`,
+with `terminal_value` supplying the other two terms.
+
+### What the code does instead
 
 **11 sites:** cell 10 L1 · cell 38 L51 · cell 40 L72 · cell 53 L21 · cell 61 L21 ·
 cell 69 L20 · cell 70 L21 · cell 71 L21 · cell 77 L72 · and 2 more in cells 78–79.
@@ -492,30 +545,75 @@ cell 69 L20 · cell 70 L21 · cell 71 L21 · cell 77 L72 · and 2 more in cells 
 v_max = safe_maximum.(child_model.sol_exp_v_college, child_model.sol_tr_v_work)
 ```
 
-`sol_exp_v_college` comes from `optimal_transfer_exp_college!` (ret:1055), which has
-**already integrated ε** (`weight = π_p[ip] * t_weight[it]`). So this computes
+`sol_exp_v_college` comes from `optimal_transfer_exp_college!` (ret:1055), which weights by
+`π_p[ip] * t_weight[it]` — it integrates ε **inside** the `max` over `tr`.
 
-  `max{ E_ε[V^E], V^W }`  instead of  `E_ε[ max{V^E(ε), V^W} ]`.
+**The defect is asymmetric.** Only the college branch is wrong:
 
-`model.txt` puts the max **inside**: `V^C = max{V^E(ε₀), V^W}`, with the transfer chosen
-after uncertainty resolves. By Jensen this understates the option value of college and
-biases take-up downward, most where the two alternatives are close — the margin that
-identifies your parameters.
+| branch | code computes | should be |
+|---|---|---|
+| work | `max_tr E_{z₀}[W_W]` | same ✅ — `W_W` has no ε |
+| college | `max_tr E_{ε,z₀}[W_E]` ❌ | `max_tr E_{z₀}[W_E \| ε]` |
+| across `d` | `max` applied to the ε-averaged college value ❌ | `E_ε` applied after the `max` |
+
+Two separate errors compound: the transfer is chosen under commitment, and the discrete
+`max` sits on the wrong side of `E_ε`. By Jensen the second understates the option value of
+college, most where the alternatives are close — the margin that identifies the parameters.
+
+A consequence: `values_grid = v_max[:, :, p_mid, t_mid]` is a single surface with **no ε
+dimension**, so the parent never sees an ε-varying continuation to take an expectation over.
 
 **And the code contradicts itself:** `simulate_model_family!` (ret:888) compares
 `sol_tr_v_college_interp[it][ip]` against work **per agent, for that agent's ε** — the
-correct rule. The backward induction was solved against a terminal value the simulated
-child never faces.
+correct rule under the adopted convention. The backward induction was solved against a
+terminal value the simulated child never faces.
 
-**Fix.** The ε-specific building block already exists (`sol_tr_v_college[:,:,ip,it]`):
+### Fix
+
+The ε-specific building block already exists — `optimal_transfer_college!` loops over `it`
+and stores `sol_tr_v_college[ia,ik,:,it] = max_tr E_{z₀}[W_E | ε_it]`, which is exactly the
+inner object. Nothing new is needed:
 
 ```julia
 v_max = sum(t_weight[it] .* max.(sol_tr_v_college[:,:,:,it],
                                  sol_tr_v_work[:,:,:,1]) for it in 1:Nt)
 ```
 
-and drop `optimal_transfer_exp_college!` from the terminal-value path — it implements a
-*commitment* timing (parent picks `tr` before ε) that the prose rules out.
+`max.(·,·)` is the `max_d`; `Σ_it t_weight[it]·(·)` is `E_{ε₀}`. Then **delete
+`optimal_transfer_exp_college!`** — it implements the rejected commitment timing and is the
+source of the 30% NaN in C1 (one deletion closes two findings).
+
+The work branch needs no change. The forward simulator needs no change.
+
+### Consistency requirements this convention imposes
+
+- **C6 is no longer optional.** "Depends on `ε₀` but not realized `z₀`" only holds if the
+  simulation draws `z₀` from the same distribution the transfer integrated over. The solve
+  uses `stationary_dist`; the simulation puts every child at the median state.
+- **N12 (`ā^P`) must be given a real value** — the transfer bound is part of the stated
+  problem, not a numerical guard.
+
+## 🟡 N12 — `ā^P`, the minimum retained parental asset, is a spec addition set to `1e-9`
+
+The adopted half-period problem constrains `0 ≤ tr ≤ a − ā^P`. `model.txt` currently writes
+`0 ≤ tr ≤ a_{T_L}`, i.e. `ā^P = 0`, which makes `κ log(a_term)` unbounded below as
+`tr → a`.
+
+The code effectively sets `ā^P = 1e-9`:
+
+```julia
+tr_hi = assets - 1e-9        # child_lifecycle_ret.jl:712, :756
+lower_bounds!(opt, [1e-6])   # work,    :729
+lower_bounds!(opt, [1e-12])  # college, :773, :1082
+```
+
+so `κ log(a_term)` can reach `9 · log(1e-9) ≈ -186`. That is a numerical guard standing in
+for an economic object.
+
+**Fix.** Choose `ā^P` on economic grounds (the parent's late-life consumption floor —
+which is what the `κ_term` footnote already describes), state it in `model.txt`, and use it
+as the bound. Note the interaction with **C4**: the college branch currently initializes at
+`0.99·tr_hi`, i.e. hard against this boundary, while the work branch starts at `0.5·tr_hi`.
 
 ## 🔴 N10 — Heterogeneous high-resource arms solve the work path at the wrong `y`
 
@@ -834,8 +932,10 @@ answer in `model.txt`, then write code once.
 | 0.1 | **N6 — withdrawn.** The belief correction cancels to `k₀ + 4b*`. | ✅ closed |
 | 0.2 | **P8 — resolved.** Stata `Age` is re-indexed to model time; `β_age * t` is correct. | ✅ closed |
 | 0.3 | **P7 (wage half) — resolved.** `2 × mean parental wage` = household earnings. | ✅ closed |
-| 0.4 | **C3 — retirement: remove it.** | ⬜ **implement** |
-| 0.5 | **N1 — ε timing: observed BEFORE transfer and enrolment.** | ⬜ **implement** |
+| 0.4 | **C3 — retirement: remove it.** `code/src/child_lifecycle.jl` written and verified; **not yet wired into the notebook**. | 🟨 built, not switched |
+| 0.5 | **N1 — ε observed before the transfer; `E_ε` outermost.** Convention fixed, see N1. | ✅ decided → implement in 3.3 |
+| 0.5b | **N12 — give `ā^P` an economic value** (currently `1e-9`). | ⬜ **decide** |
+| 0.5c | **C6 — `z₀` at separation: stationary draw, or observed?** Forced by 0.5. | ⬜ **decide** |
 | 0.6 | **Child horizon `T`.** | ⬜ **decide** |
 | 0.7 | **Shock process: stationary AR(1) or random walk?** | ⬜ **decide** |
 | 0.8 | **P7 (φ half): is `(φ₁,φ₂,φ₃)` meant to be normalized?** | ⬜ **decide** |
@@ -860,7 +960,14 @@ Starting from `_ar1.jl` means re-implementing the entire progressive-tax system 
 reference sites — and `_ar1.jl` still has the flat `(1-τ)` baked into `wage_func:424`, which
 is a *specification* error, not just a missing feature.
 
-**Recommendation:** copy `child_lifecycle_ret.jl` → `child_lifecycle.jl`, delete the ~61
+**Status: done, not switched.** `code/src/child_lifecycle.jl` exists on branch
+`fix/remove-retirement` (1136 → 1056 lines). Verified: solves with 0% NaN/Inf in every work
+array, matching `_ret.jl`'s contamination profile exactly; both simulators run; the new
+`obj_last_period` gradient agrees with finite differences to ~1e-10. `T` default 51 (see
+0.6). **The notebook still includes `child_lifecycle_ret.jl`** — switching it changes every
+result, so it is a deliberate step, not a side effect.
+
+**Method used:** copy `child_lifecycle_ret.jl` → `child_lifecycle.jl`, delete the ~61
 retirement lines (`t_retire`, `h_avg`, `util_retire`, `pension_amount`,
 `asset_constraint_retire`, `create_interpolator_retire`, `value_of_retirement`, and the two
 retirement branches in each simulator), and port the two `max(a_next, a_min)` lines from
@@ -868,39 +975,29 @@ retirement branches in each simulator), and port the two `max(a_next, a_min)` li
 
 Net: delete ~61 lines + add 2, versus port ~22 sites and fix a tax specification.
 
-#### 0.5 — ε timing: adopt "observed before the transfer"
+#### 0.5 — ε timing: DECIDED
 
-Your prose is unambiguous:
-
-> "Conditional on this decision, the parent chooses the level of altruistic transfer, `tr`.
-> **This choice is made after all the uncertainties in the period are realized.**"
-
-and `V^{CD}_{T_L}(a, HC, ε₀, m) = max_tr E_z[·]` conditions on `ε₀`, consistent with it.
-
-The **only** object that disagrees is the displayed `V^{CD}_{T_L-1} = max_tr E_{ε₀,z}[·]`,
-which puts the max outside the ε-expectation — that is a *commitment* timing where the
-parent sets the transfer before the taste shock is known. It contradicts the prose, and it
-also double-counts: eq. (T_L−1) then applies `E_{ε₀}` again to an object that already
-integrated ε.
-
-**Adopt "ε before", and replace the displayed equation with**
+**Convention:** `ε₀` observed at the half period, `z₀` not. Enrolment and transfer may
+condition on `ε₀` but not on realized `z₀`. The parent's `t=17` continuation is
 
 ```
-V^CD_{T_L-1}(a, HC, m) = E_{ε₀}[ V^CD_{T_L}(a, HC, ε₀, m) ]
+E_{ε₀} [ max_{d,tr} E_{z₀} [ W_d(tr; ε₀, z₀) ] ]
 ```
 
-i.e. the `T_L−1` object is simply the ε-expectation of the `T_L` object, not a separate
-maximization. Then eq. (T_L−1) takes `E_z` only.
+with the expectations **nested in that order**. Full statement, the asymmetry in the
+current code, and the fix: see **N1**.
 
-This is also the cheapest option in code and the one the forward simulator already
-implements:
+Implications recorded as separate items:
 
-- keep `optimal_transfer_college!` (ε-specific `tr`) and `optimal_transfer_work!` — already correct
-- build the parent's terminal value as
-  `v_max = Σ_it t_weight[it] · max.(sol_tr_v_college[:,:,:,it], sol_tr_v_work[:,:,:,1])`
-- **delete `optimal_transfer_exp_college!`** — it implements the commitment timing you are
-  rejecting, and it is the source of the 30% NaN in C1
-- `simulate_model_family!` needs no change
+- **0.5b / N12** — the bound `0 ≤ tr ≤ a − ā^P` introduces `ā^P`, which `model.txt` does not
+  have and the code sets to `1e-9`. Give it an economic value.
+- **0.5c / C6** — the convention *requires* the simulation to draw `z₀` from the same
+  distribution the transfer integrated over. Currently the solve uses `stationary_dist`
+  and the simulation uses the median state. Raised to High.
+
+**Also update `model.txt`:** replace the displayed `V^{CD}_{T_L-1} = max_tr E_{ε₀,z}[·]`
+with `V^{CD}_{T_L-1} = E_{ε₀}[V^{CD}_{T_L}(·,ε₀)]`, and let eq. (T_L−1) take `E_z` only —
+the current pair double-counts the ε expectation.
 
 #### 0.6 — Child horizon (nobody has flagged this)
 
@@ -987,10 +1084,12 @@ binding; transfer values and simulated policies agree state by state.
 |---|---|---|
 | 3.1 | **P1** | Two lines. Could be done earlier, but its full-model effect is only measurable once the terminal value is clean. |
 | 3.2 | **C2** | `(HC+1)^2`, not `^4`. |
-| 3.3 | **N1** | Implement the Phase-0.5 timing everywhere: backward terminal value, transfer policy, enrolment policy, forward simulator must share one information set. |
+| 3.3 | **N1** | Implement the Phase-0.5 timing. Concretely: rebuild `v_max` as `Σ_it t_weight[it]·max.(sol_tr_v_college[:,:,:,it], sol_tr_v_work[:,:,:,1])` at all 11 sites, and **delete `optimal_transfer_exp_college!`** — which also closes the 30% NaN in C1. Work branch and forward simulator need no change. |
+| 3.3b | **C6** | Draw the initial child shock from `stationary_dist` (or condition the transfer on an observed `z₀`). Required for N1's timing to be coherent, so it lands with it. |
+| 3.3c | **N12** | Apply the chosen `ā^P` as the transfer bound in both branches. Pairs with C4, which currently starts the college search hard against that boundary. |
 | 3.4 | **N10** | Re-solve the work path at the treatment `y` in cells 77/79. Copying baseline work policies into a high-`y` child model is invalid. |
 | 3.5 | **P4** | Remove the `-1e8` penalty branches; objective and gradient must always describe the same function. |
-| 3.6 | **C3** | Implement the Phase-0.4 retirement decision. |
+| 3.6 | **C3** | Switch the notebook to `child_lifecycle.jl`; archive `_ret.jl` and `_ar1.jl`. The module is already built and verified. |
 
 **Exit criterion:** baseline policies satisfy feasibility and gradient tests, and the
 backward and forward discrete-choice rules agree state by state.
@@ -1002,7 +1101,7 @@ backward and forward discrete-choice rules agree state by state.
 | # | Issue | Note |
 |---|---|---|
 | 4.1 | **C5** | Compare Tauchen vs Rouwenhorst at N = 7, 9, 11. Match moments and persistence; do not pick by convention. |
-| 4.2 | **C6** | Align the initial shock distribution: if transfer values integrate the stationary distribution, simulation must draw from it; if the state is observed, transfer policies must condition on it. |
+| 4.2 | — | *(C6 moved to 3.3b — it is now a consistency requirement of the N1 timing, not an accuracy refinement.)* |
 | 4.3 | **P5** | Do **not** blindly swap linear for unrestricted cubic. Compare: linear + derivative-free optimizer; shape-preserving (Schumaker); smooth + monotonicity checks. |
 | 4.4 | **X1 (full)** | Bellman residuals, grid-refinement comparisons, simulation-domain coverage, monotonicity/concavity, Monte Carlo standard errors, enrolment/transfer stability across grids. |
 
@@ -1029,6 +1128,7 @@ backward and forward discrete-choice rules agree state by state.
 - **Phase 0 before everything.** 0.4 and 0.5 decide which Bellman problem you are repairing.
 - **N11 before any fix can be validated** — a notebook that cannot run in order cannot verify anything.
 - **P2 before any counterfactual re-run**, or you cannot attribute a change to a fix.
-- **C1 before N1.** N1 rewrites how the terminal value is assembled; doing that while 30% of the input is NaN means you cannot tell whether it worked.
+- **C1 before N1.** N1 rewrites how the terminal value is assembled; doing that while 30% of the input is NaN means you cannot tell whether it worked. Note the fixes overlap: deleting `optimal_transfer_exp_college!` removes the array that carries the 30% NaN, so N1 partly *is* the C1 fix on the transfer side.
+- **N1, C6 and N12 land together.** The timing convention is only coherent if `z₀` is drawn from the distribution the transfer integrated over (C6) and the transfer bound is the stated one (N12). Fixing N1 alone leaves the model internally inconsistent in a different way.
 - **X1 (minimal) early.** It converts most of Phases 2-3 from eyeballing into checkable assertions.
 - **N5 after N10** — they share the `base_child` copying defect.
