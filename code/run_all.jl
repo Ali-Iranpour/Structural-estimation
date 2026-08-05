@@ -64,6 +64,12 @@ println("child solved in $(round(time()-t_start, digits=1))s")
 
 banner("2. Child diagnostics")
 check_solution(child)
+# X4: check_solution allows NaN blanket-wide, so a solver failure INSIDE the feasible
+# region would pass. This compares the NaN pattern against the two theoretical masks.
+check_feasibility_mask(child)
+# C16: the solution can leave the grid where the simulation does not. Reports both the
+# off-grid share and how often the k_max ceiling binds.
+check_solver_domain(child; throw_on_fail = false)
 println()
 bellman_residual(child; n_sample = QUICK ? 100 : 500)
 monotonicity_report(child)
@@ -109,6 +115,7 @@ table_outcomes([parent], ["Baseline"], "baseline_outcomes";
 br  = bellman_residual(child; n_sample = QUICK ? 100 : 500, verbose = false)
 mono = monotonicity_report(child; verbose = false)
 sim  = check_simulation(child; throw_on_fail = false, verbose = false)
+dom  = check_solver_domain(child; throw_on_fail = false, verbose = false)
 mcs  = mc_standard_errors(parent.sim_a[:, parent.T + 1])
 table_diagnostics([
     "Minimum converged share (parent solve)" => fmt_num(minimum(d.converged_share for d in diag); digits = 4),
@@ -118,6 +125,10 @@ table_diagnostics([
     "Monotonicity violations, \$c\$ in assets" => fmt_num(100mono.c_violations; digits = 2) * "\\%",
     "Simulated assets below \$a_{\\min}\$"      => fmt_num(100sim.below_a; digits = 2) * "\\%",
     "Simulated assets above \$a_{\\max}\$"      => fmt_num(100sim.above_a; digits = 2) * "\\%",
+    "Simulated states non-finite"             => fmt_num(100max(sim.nonfinite_a, sim.nonfinite_k); digits = 2) * "\\%",
+    "Stored transitions off-grid, assets"     => fmt_num(100dom.assets; digits = 2) * "\\%",
+    "Stored transitions off-grid, HC"         => fmt_num(100dom.hc; digits = 2) * "\\%",
+    "\$k_{\\max}\$ ceiling binds"               => fmt_num(100dom.hc_ceiling_binds; digits = 2) * "\\%",
     "Mean terminal parental assets"           => fmt_num(mcs.mean; digits = 4),
     "Bootstrap standard error"                => fmt_num(mcs.se; digits = 4),
   ], "numerical_diagnostics";

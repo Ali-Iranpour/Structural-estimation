@@ -139,6 +139,7 @@ separately from `check_simulation`.
 function check_solver_domain(m; tol_share::Float64 = 0.01, throw_on_fail::Bool = true,
                              verbose::Bool = true)
     na = 0; nk = 0; nbind = 0; tot = 0
+    worst_a = 0.0; worst_k = 0.0
     for t in 1:(m.T - 1), ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Na
         c = m.sol_c_work[t, ia, ik, ip, 1]; h = m.sol_h_work[t, ia, ik, ip, 1]
         (isfinite(c) && isfinite(h)) || continue
@@ -146,30 +147,45 @@ function check_solver_domain(m; tol_share::Float64 = 0.01, throw_on_fail::Bool =
         a_n = (1 + m.r) * m.a_grid[ia] + after_tax_income(m, w_pre, h) - c + m.y
         k_n = m.k_grid[ik] + h
         tot += 1
-        (a_n > m.a_max || a_n < m.a_min) && (na += 1)
-        (k_n > m.k_max || k_n < m.k_grid[1]) && (nk += 1)
-        # C16 imposes k' <= k_max as a box bound on h, so k_n can no longer exceed k_max
-        # and the `nk` share above is 0 by construction. What matters instead is how often
-        # that ceiling BINDS: every binding state is one where k_max, a computational
-        # choice, is doing economic work. A non-trivial share means k_max is too small.
-        h_hi = clamp(m.k_max - m.k_grid[ik], 1e-3, 1.0)
-        h >= h_hi - 1e-6 && h_hi < 1.0 && (nbind += 1)
+        ea = max(a_n - m.a_max, m.a_min - a_n, 0.0)
+        ek = max(k_n - m.k_max, m.k_grid[1] - k_n, 0.0)
+        ea > 0 && (na += 1; worst_a = max(worst_a, ea))
+        ek > 0 && (nk += 1; worst_k = max(worst_k, ek))
+        # C16 imposes k' <= k_max as a box bound on h, so what matters is how often that
+        # ceiling BINDS -- k_max, a computational choice, doing economic work. The TOP row
+        # is excluded: there k_max - k = 0 and the ceiling binds for any k_max whatsoever,
+        # so counting it would report a structural 1/Nk on every model. Binding strictly
+        # below the top row is the real signal that k_max is too small.
+        if ik < m.Nk
+            h_hi = clamp(m.k_max - m.k_grid[ik], 1e-3, 1.0)
+            h >= h_hi - 1e-6 && h_hi < 1.0 && (nbind += 1)
+        end
     end
     res = (assets = na / max(tot, 1), hc = nk / max(tot, 1),
+           worst_a = worst_a, worst_k = worst_k,
            hc_ceiling_binds = nbind / max(tot, 1), checked = tot)
-    verbose && @printf("stored work transitions off-grid: assets %.2f%%   HC %.2f%%   | HC ceiling binds %.2f%%   (of %d)\n",
-                       100res.assets, 100res.hc, 100res.hc_ceiling_binds, tot)
-    worst = max(res.assets, res.hc)
+    verbose && @printf("stored work transitions off-grid: assets %.2f%% (max %.2e)   HC %.2f%% (max %.2e)   | HC ceiling binds %.2f%%   (of %d)\n",
+                       100res.assets, res.worst_a, 100res.hc, res.worst_k,
+                       100res.hc_ceiling_binds, tot)
+    # The SHARE alone is not the right test: with the box bound in place the residual HC
+    # overshoot is exactly the labor lower bound (1e-3), which lands one thousandth of a
+    # unit past the last node -- a float-sized excursion, not an extrapolation. What
+    # matters is the MAGNITUDE relative to the grid span.
+    rel_a = worst_a / max(m.a_max - m.a_min, eps())
+    rel_k = worst_k / max(m.k_max - m.k_grid[1], eps())
+    worst = max(rel_a, rel_k)
     if worst > tol_share
-        msg = "Stored solution transitions leave the grid: $(round(100worst, digits=2))% " *
-              "(tolerance $(round(100tol_share, digits=2))%). The continuation value is " *
-              "being extrapolated. Widen the grids or add upper-domain constraints."
+        msg = "Stored solution transitions leave the grid by $(round(100worst, digits=2))% " *
+              "of its span (tolerance $(round(100tol_share, digits=2))%): assets $(worst_a), " *
+              "HC $(worst_k). The continuation value is being extrapolated that far. " *
+              "Widen the grids or tighten the upper-domain constraints."
         throw_on_fail ? error(msg) : @warn msg
     end
-    if res.hc_ceiling_binds > tol_share
-        @warn "The k_max ceiling binds at $(round(100res.hc_ceiling_binds, digits=2))% of " *
-              "stored work states. k_max is restricting human capital as economics, not " *
-              "just bounding the grid. Raise k_max (currently $(m.k_max))."
+    if res.hc_ceiling_binds > 0
+        @warn "The k_max ceiling binds below the top HC row, at " *
+              "$(round(100res.hc_ceiling_binds, digits=2))% of stored work states. k_max is " *
+              "restricting human capital as economics, not just bounding the grid. " *
+              "Raise k_max (currently $(m.k_max))."
     end
     return res
 end
