@@ -1279,6 +1279,7 @@ function simulate_model_family_hetero!(
     # -- Unpack grids/dims --
     @unpack simN, T, t_college, r, college_cost, college_boost, a_min = base_child
     @unpack a_grid, k_grid, p_grid, p_transition, Np = base_child
+    @unpack ap_grid = base_child                  # N13: transfer arrays live on this grid
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = base_child
     @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = base_child
     @unpack Nt, t_weight = base_child
@@ -1297,11 +1298,11 @@ function simulate_model_family_hetero!(
         for t in 1:T, ip in 1:Np
     ]
     sol_tr_v_work_interp = [
-        LinearInterpolation((a_grid, k_grid), base_child.sol_tr_v_work[:, :, ip, 1]; extrapolation_bc=Flat())
+        LinearInterpolation((ap_grid, k_grid), base_child.sol_tr_v_work[:, :, ip, 1]; extrapolation_bc=Flat())
         for ip in 1:Np
     ]
     sol_tr_work_interp = [
-        LinearInterpolation((a_grid, k_grid), base_child.sol_tr_work[:, :, ip, 1]; extrapolation_bc=Flat())
+        LinearInterpolation((ap_grid, k_grid), base_child.sol_tr_work[:, :, ip, 1]; extrapolation_bc=Flat())
         for ip in 1:Np
     ]
 
@@ -1323,8 +1324,8 @@ function simulate_model_family_hetero!(
         i = first_feasible_parent_a(child_models[m])
         i === nothing && error("Belief bin $m: college transfer infeasible at every asset " *
                                "grid point (needs a >= $(col_min[m]))")
-        i > length(a_grid) - 1 && error("Belief bin $m: college transfer feasible at only " *
-                                        "$(length(a_grid) - i + 1) asset node(s); need 2 to interpolate")
+        i > length(ap_grid) - 1 && error("Belief bin $m: college transfer feasible at only " *
+                                         "$(length(ap_grid) - i + 1) parental asset node(s); need 2")
         ip0[m] = i
     end
 
@@ -1337,11 +1338,11 @@ function simulate_model_family_hetero!(
         for m in 1:num_bins, it in 1:Nt, t in 1:T, ip in 1:Np
     ]
     sol_tr_v_college_interp_belief = [
-        LinearInterpolation((a_grid[ip0[m]:end], k_grid), child_models[m].sol_tr_v_college[ip0[m]:end, :, ip, it]; extrapolation_bc=Flat())
+        LinearInterpolation((child_models[m].ap_grid[ip0[m]:end], k_grid), child_models[m].sol_tr_v_college[ip0[m]:end, :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, ip in 1:Np
     ]
     sol_tr_college_interp_belief = [
-        LinearInterpolation((a_grid[ip0[m]:end], k_grid), child_models[m].sol_tr_college[ip0[m]:end, :, ip, it]; extrapolation_bc=Flat())
+        LinearInterpolation((child_models[m].ap_grid[ip0[m]:end], k_grid), child_models[m].sol_tr_college[ip0[m]:end, :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, ip in 1:Np
     ]
 

@@ -68,12 +68,13 @@ function check_solution(m; throw_on_fail::Bool = true, verbose::Bool = true)
         "sol_h_college"     => m.sol_h_college,
         "sol_tr_v_college"  => m.sol_tr_v_college;
         # College arrays: NaN marks states from which college cannot be completed.
-        # sol_tr_work/sol_tr_v_work: NaN only at a = 0, where the parent cannot retain
-        # delta_P and kappa_term*log(a_term) diverges -- the N13 singularity, dropped from
-        # the terminal spline by `valid_rows`. Inf is never allowed in any array.
+        # sol_tr_work/sol_tr_v_work are NO LONGER allowed NaN. They used to be, because the
+        # shared grid put a = 0 in the parental dimension, where the parent cannot retain
+        # delta_P and kappa_term*log(a_term) diverges. N13 gave the parent its own grid
+        # starting at delta_P, so the work transfer is now defined at every parental node
+        # and a NaN there is a real failure. Inf is never allowed in any array.
         allow_nan = ["sol_v_college", "sol_c_college", "sol_h_college",
-                     "sol_tr_college", "sol_tr_v_college",
-                     "sol_tr_work", "sol_tr_v_work"],
+                     "sol_tr_college", "sol_tr_v_college"],
         throw_on_fail = throw_on_fail, verbose = verbose)
 end
 
@@ -94,6 +95,19 @@ function check_feasibility_mask(m; throw_on_fail::Bool = true, verbose::Bool = t
     for t in 1:m.t_college, ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Na
         feasible = m.a_grid[ia] >= a_req[t]
         v = m.sol_v_college[t, ia, ik, ip, 1]
+        tot += 1
+        if feasible && isnan(v)
+            unexpected_nan += 1
+        elseif !feasible && !isnan(v)
+            unexpected_finite += 1
+        end
+    end
+    # The transfer stage carries a second, different mask on the PARENTAL grid: college
+    # needs a >= a_req[1] + delta_P. C14 built interpolants across it, so check it too.
+    col_min = min_parent_assets_for_college(m)
+    for it in 1:m.Nt, ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Nap
+        feasible = m.ap_grid[ia] >= col_min
+        v = m.sol_tr_v_college[ia, ik, ip, it]
         tot += 1
         if feasible && isnan(v)
             unexpected_nan += 1
@@ -124,7 +138,7 @@ separately from `check_simulation`.
 """
 function check_solver_domain(m; tol_share::Float64 = 0.01, throw_on_fail::Bool = true,
                              verbose::Bool = true)
-    na = 0; nk = 0; tot = 0
+    na = 0; nk = 0; nbind = 0; tot = 0
     for t in 1:(m.T - 1), ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Na
         c = m.sol_c_work[t, ia, ik, ip, 1]; h = m.sol_h_work[t, ia, ik, ip, 1]
         (isfinite(c) && isfinite(h)) || continue
@@ -134,16 +148,28 @@ function check_solver_domain(m; tol_share::Float64 = 0.01, throw_on_fail::Bool =
         tot += 1
         (a_n > m.a_max || a_n < m.a_min) && (na += 1)
         (k_n > m.k_max || k_n < m.k_grid[1]) && (nk += 1)
+        # C16 imposes k' <= k_max as a box bound on h, so k_n can no longer exceed k_max
+        # and the `nk` share above is 0 by construction. What matters instead is how often
+        # that ceiling BINDS: every binding state is one where k_max, a computational
+        # choice, is doing economic work. A non-trivial share means k_max is too small.
+        h_hi = clamp(m.k_max - m.k_grid[ik], 1e-3, 1.0)
+        h >= h_hi - 1e-6 && h_hi < 1.0 && (nbind += 1)
     end
-    res = (assets = na / max(tot, 1), hc = nk / max(tot, 1), checked = tot)
-    verbose && @printf("stored work transitions off-grid: assets %.2f%%   HC %.2f%%   (of %d)\n",
-                       100res.assets, 100res.hc, tot)
+    res = (assets = na / max(tot, 1), hc = nk / max(tot, 1),
+           hc_ceiling_binds = nbind / max(tot, 1), checked = tot)
+    verbose && @printf("stored work transitions off-grid: assets %.2f%%   HC %.2f%%   | HC ceiling binds %.2f%%   (of %d)\n",
+                       100res.assets, 100res.hc, 100res.hc_ceiling_binds, tot)
     worst = max(res.assets, res.hc)
     if worst > tol_share
         msg = "Stored solution transitions leave the grid: $(round(100worst, digits=2))% " *
               "(tolerance $(round(100tol_share, digits=2))%). The continuation value is " *
               "being extrapolated. Widen the grids or add upper-domain constraints."
         throw_on_fail ? error(msg) : @warn msg
+    end
+    if res.hc_ceiling_binds > tol_share
+        @warn "The k_max ceiling binds at $(round(100res.hc_ceiling_binds, digits=2))% of " *
+              "stored work states. k_max is restricting human capital as economics, not " *
+              "just bounding the grid. Raise k_max (currently $(m.k_max))."
     end
     return res
 end
