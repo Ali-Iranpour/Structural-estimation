@@ -21,6 +21,21 @@ Audit of the model code against [`model.txt`](model.txt). Line numbers are curre
 | `code/transfer_CRRA_wage.ipynb` | **LIVE** — driver |
 | `code/src/child_lifecycle_ar1.jl` | **NOT INCLUDED** — kept for reference. Its issues are latent unless you switch to it. |
 
+### Where each error lives
+
+`parent_family.jl` was extracted from the notebook, so the `P` errors exist in **exactly
+one place**. Verified: zero copies of `dV_dk_sum`, `asset_constraint_max`, `util_total`,
+`solve_model!`, `simulate_model!` etc. remain in `code/transfer_CRRA_wage.ipynb`.
+
+The notebook is still **fully affected at runtime** — it includes `parent_family.jl` and
+calls its solvers — but there is now one site to fix per bug, not two that can drift.
+
+`archive/Combined Models/Full model/transfer_CRRA_wage_ORIGINAL.ipynb` still contains all
+of them inline. That is the frozen pre-extraction copy; do not fix it.
+
+Errors that genuinely live in the notebook are the `N` and `M` items: parameter values
+passed at construction, the terminal-value construction, experiment design, and labels.
+
 ### Summary
 
 | # | Issue | File | Severity |
@@ -43,6 +58,7 @@ Audit of the model code against [`model.txt`](model.txt). Line numbers are curre
 | N6 | Belief correction can drive human capital negative | child modules + notebook | 🟠 |
 | N7 | Res-vs-Exp arms asymmetric (child y=1.08, parent y=1.2) | notebook | 🟡 |
 | N8 | Model/label order swapped in one figure | notebook | 🟡 |
+| N9 | Tax counterfactual labels do not match the τ values used | notebook | 🟡 |
 | P6 | NaN guard unreachable; poisons the backward init chain | parent_family | 🟡 |
 | P7 | φ weights not normalized; `BothCollege` share hardcoded | parent_family | 🟡 |
 | P8 | Verify `Age` units in the wage equation | parent_family | 🟡 |
@@ -438,6 +454,27 @@ drawn solid/black as the reference series. Straight swap.
 *Checked and NOT a problem:* the μ̃ arms in cells 25/27/32/34 are correctly labelled. The
 arms are now polar cases (`mu_1=0` → μ̃ ≡ 1 "Parent only"; `mu_0=mu_1=0` → μ̃ = 0 after age
 7 "Child only"), and both the "Low/High μ_t" and "Parent only/Child only" labellings match.
+
+## 🟡 N9 — Tax counterfactual labels do not match the τ values used
+
+**Cell 30, lines 35-37 and 48/53** print tax rates that are not the ones the models were
+built with:
+
+| | actual τ | printed |
+|---|---|---|
+| baseline (cell 54) | **0.18** (constructor default, parent_family.jl:183) | `τ=0.25` ❌ |
+| `model_tax_benefit_high` (cell 28 L232) | **0.25** | `τ=0.35` ❌ |
+| `model_tax_benefit_low` (cell 28 L237) | **0.10** | `τ=0.10` ✓ |
+
+Stale labels carried over from `transfer_model_AR1.ipynb`, where the baseline was τ=0.25
+and the high arm τ=0.35. In this notebook the experiment is **0.18 → 0.25**, a much
+smaller change than the printed output claims. Any CEV quoted from this cell is attached
+to the wrong tax rates. (The CEV itself is separately invalid — see N3.)
+
+The `y` labels are correct: `y = 0.6 / 1.0 / 0.2` × 10³ = 6000 / 10000 / 2000.
+
+Also **cell 28 line 217**: `phi_3_0 = 0.1  # Increased from 1.0` — the default is 0.03,
+not 1.0.
 
 ## 🟡 M1 — Tables are never written to disk
 
