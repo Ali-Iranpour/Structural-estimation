@@ -36,6 +36,12 @@ mutable struct ConSavLaborCollege_AR1
     Nk::Int; simT::Int; simN::Int
     a_grid::Vector{Float64}; k_grid::Vector{Float64}
 
+    # N13: the transfer arrays are indexed on PARENTAL assets, which are a different
+    # object from the child's assets even though both are wealth. Sharing one grid forced
+    # a_min = 0 into the parental dimension, where the parent cannot retain delta_P,
+    # a_term -> 0, and kappa_terminal*log(a_term) diverges.
+    ap_grid::Vector{Float64}; Nap::Int; ap_min::Float64; ap_max::Float64
+
     psi_terminal::Float64       # Terminal value weight on human capital
     kappa_terminal::Float64     # Weight on parent's retained assets
     omega::Float64              # Weight on child's life-cycle utility
@@ -103,12 +109,36 @@ function ConSavLaborCollege_AR1(;
                 # equal to c_floor by decision (2026-08-05): the parent must retain at
                 # least one period's minimum consumption. Was an implicit 1e-9, which let
                 # kappa_terminal*log(a_term) reach about -186. See N12 in docs/ERRORS.md.
-                delta_P::Float64=0.01
+                delta_P::Float64=0.01,
+                # N13: parental asset grid. ap_min defaults to delta_P -- the smallest
+                # parental asset at which the retained balance is still strictly positive,
+                # so the terminal value is finite on every row and valid_rows is 1:Nap.
+                Nap::Int=Na, ap_min::Float64=delta_P, ap_max::Float64=a_max
                 )
 
     simT = T
     a_grid = create_focused_grid(a_min, 2.0, a_max, Na, 0.2, 1.3)
     k_grid = nonlinspace(0.001, k_max, Nk, 1.5)
+
+    # N13/C14: parental asset grid. Starting at delta_P removes the singular row; putting
+    # an exact node at the college transfer threshold removes the dead band between that
+    # threshold and the first grid point above it (measured at 2.39 wide on the shared
+    # grid), where a state was economically feasible but had no solved cell to interpolate.
+    ap_min >= ap_max && error("ap_min ($ap_min) must be below ap_max ($ap_max)")
+    ap_min < delta_P && error("ap_min ($ap_min) is below delta_P ($delta_P); the parent " *
+                              "cannot retain its floor and the terminal value diverges")
+    ap_grid = create_focused_grid(ap_min, ap_min + 2.0, ap_max, Nap, 0.2, 1.3)
+    # Same recursion as compute_min_assets, so the node matches bit-for-bit.
+    let a_req_1 = a_min
+        for _ in 1:t_college
+            a_req_1 = (a_req_1 + c_floor + college_cost - y) / (1 + r)
+        end
+        col_thr = a_req_1 + delta_P
+        if ap_min < col_thr < ap_max
+            ap_grid[argmin(abs.(ap_grid .- col_thr))] = col_thr
+            sort!(ap_grid)
+        end
+    end
 
     # Gauss-Hermite quadrature for transitory shocks
     nodes, weights = gausshermite(Nt)
@@ -126,7 +156,7 @@ function ConSavLaborCollege_AR1(;
     sol_c_college = fill(NaN, sol_shape); sol_h_college = fill(NaN, sol_shape); sol_v_college = fill(NaN, sol_shape)
 
     # --- Initialize half period solution arrays (5D) ---
-    tr_shape = (Na, Nk, Np, Nt)
+    tr_shape = (Nap, Nk, Np, Nt)   # N13: parental asset dimension, not the child's
     sol_tr_college = fill(NaN, tr_shape); sol_tr_work = fill(NaN, tr_shape)
     sol_tr_v_college = fill(NaN, tr_shape); sol_tr_v_work = fill(NaN, tr_shape)
 
@@ -138,7 +168,9 @@ function ConSavLaborCollege_AR1(;
     sim_income = fill(NaN, sim_shape); sim_wage = fill(NaN, sim_shape)
 
     rng = MersenneTwister(seed)
-    sim_a_init = rand(rng, simN) .* 20
+    # N13: sim_a_init holds PARENTAL assets, so it is drawn on the parental grid's domain.
+    # Draws below ap_min previously landed on rows where the terminal value diverges.
+    sim_a_init = ap_min .+ rand(rng, simN) .* (min(20.0, ap_max) - ap_min)
     sim_k_init = rand(rng, simN) .* 5
     # C6 (Phase 0.5c): draw the initial child shock from the STATIONARY distribution --
     # the same distribution the transfer problem integrates over. Starting everyone at the
@@ -154,6 +186,7 @@ function ConSavLaborCollege_AR1(;
     return ConSavLaborCollege_AR1(
         T, t_college, rho, beta, phi, eta, alpha, y, w, tau, r,
         a_max, a_min, Na, k_max, Nk, simT, simN, a_grid, k_grid,
+        ap_grid, Nap, ap_min, ap_max,
         psi_terminal, kappa_terminal, omega, mu,
         Nt, t_grid, sigma_eps, t_weight,
         Np, p_grid, p_transition, p_ar1, sigma_p,
@@ -290,18 +323,28 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
             w_pre_t = wage_func(model, capital, t, p_shock)
             c_hi = max((1.0 + model.r) * assets + after_tax_income(model, w_pre_t, 1.0) + y, 0.02)
 
+            # C16: k' = k + h must stay on the grid. Imposed as a BOX bound on h, not as
+            # a nonlinear constraint: at capital = k_max the constraint k + h <= k_max
+            # requires h <= 0, which is empty against the lower bound of 1e-3, and SLSQP
+            # returns FAILURE. As a box the worst case is a degenerate but feasible
+            # [1e-3, 1e-3]. This makes k_max a real ceiling on human capital rather than a
+            # grid artefact the solver extrapolates past, so k_max must be set above the
+            # reachable range -- check_solver_domain reports how often it binds.
+            h_hi = clamp(model.k_max - capital, 1e-3, 1.0)
+
             opt = Opt(:LD_SLSQP, 2)
             lower_bounds!(opt, [c_floor, 1e-3])   # C17: the configured floor, not a literal
-            upper_bounds!(opt, [c_hi, 1.0])
+            upper_bounds!(opt, [c_hi, h_hi])
             ftol_rel!(opt, 1e-8)
             maxeval!(opt, 1000)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 1e-6)
-            # C16: keep the stored transition inside the solved grid
+            # C16: a' <= a_max. Always feasible -- at c = c_hi the whole budget is consumed
+            # and a' = a_min -- so this one can stay a nonlinear constraint.
             inequality_constraint!(opt, (x, grad) -> asset_constraint_work_upper(x, grad, model, assets, capital, t, p_shock), 1e-6)
-            inequality_constraint!(opt, (x, grad) -> hc_constraint_work_upper(x, grad, model, capital), 1e-6)
             min_objective!(opt, obj_wrapper)
 
-            init = [clamp(sol_c_work[t + 1, i_a, i_k, i_p, 1], c_floor, c_hi), 0.4]
+            init = [clamp(sol_c_work[t + 1, i_a, i_k, i_p, 1], c_floor, c_hi),
+                    clamp(0.4, 1e-3, h_hi)]
             (minf, x_opt, ret) = optimize(opt, init)
             check_nlopt!(ret, minf, x_opt, "work t=$t ia=$i_a ik=$i_k ip=$i_p")
             sol_c_work[t, i_a, i_k, i_p, :] .= x_opt[1]
@@ -356,13 +399,21 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                 # the initial guess is always inside it.
                 c_hi = max((1.0 + model.r) * assets - model.college_cost + model.y - a_req[t + 1],
                            c_floor + 1e-8)
+                # C16 (college branch): a' <= a_max, as a box LOWER bound on c. There is no
+                # labor choice here, so a' is monotone in c alone and the ceiling is exactly
+                # a floor on consumption. c_hi - c_lo = a_max - a_req[t+1] > 0, so the box is
+                # never empty. At a = a_max the old bounds gave a' = 102.39 on a grid ending
+                # at 100.
+                c_lo = max(c_floor,
+                           (1.0 + model.r) * assets - model.college_cost + model.y - model.a_max)
+                c_lo = min(c_lo, c_hi)
 
                 nodes = t == 1 ? (1:model.Nt) : (1:1)
                 for i_t in nodes
                     eps_it = t == 1 ? model.t_grid[i_t] : 0.0
 
                     opt = Opt(:LD_SLSQP, 1)
-                    lower_bounds!(opt, c_floor)
+                    lower_bounds!(opt, c_lo)
                     upper_bounds!(opt, c_hi)
                     ftol_rel!(opt, 1e-8)
                     maxeval!(opt, 1000)
@@ -376,7 +427,7 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                         (x, grad) -> asset_constraint_college(x, grad, model, assets, t, a_req[t + 1]),
                         1e-6)
 
-                    (minf, c_vec, ret) = optimize(opt, [clamp(0.13, c_floor, c_hi)])
+                    (minf, c_vec, ret) = optimize(opt, [clamp(0.13, c_lo, c_hi)])
                     check_nlopt!(ret, minf, c_vec, "college t=$t ia=$i_a ik=$i_k ip=$i_p it=$i_t")
 
                     if t == 1
@@ -509,14 +560,8 @@ end
 end
 
 # k' = k + h <= k_max. Linear in h, so the gradient is constant.
-@inline function hc_constraint_work_upper(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
-    capital::Float64)
-    if length(grad) > 0
-        grad[1] = 0.0
-        grad[2] = 1.0
-    end
-    return capital + x[2] - model.k_max
-end
+# The k' <= k_max ceiling is imposed as a box bound on h in solve_model_work!, not here:
+# as a nonlinear constraint it is infeasible at capital = k_max. See the comment there.
 
 @inline function asset_constraint_work(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
     assets::Float64, capital::Float64, t::Int, p_shock::Float64)
@@ -778,16 +823,16 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
                 # visible for check_simulation rather than silently clipped.
                 sim_a[i, t+1] = snap(a_next, a_min, model.a_max)
                 sim_k[i, t+1] = snap(k_next, k_grid[1], model.k_max)
+
+                p_draw = draws_uniform_p[i, t]
+                p_trans_probs = p_transition[p_idx, :]
+                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
             else
                 # C12: the terminal period consumes everything and leaves no bequest, so
                 # end-of-life assets are 0 by construction. This column was never written
                 # and stayed NaN, which X3 then hid. sim_k has only T columns, so only
                 # assets are recorded here.
                 sim_a[i, t+1] = 0.0
-
-                p_draw = draws_uniform_p[i, t]
-                p_trans_probs = p_transition[p_idx, :]
-                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
             end
         end
     end
@@ -825,12 +870,12 @@ infeasible -- never stored in an interpolated array.
 """
 function terminal_value_surface(m::ConSavLaborCollege_AR1; ip::Int = 1)
     a_col_min = min_parent_assets_for_college(m)
-    out = zeros(m.Na, m.Nk)
+    out = zeros(m.Nap, m.Nk)          # N13: parental asset dimension
     for it in 1:m.Nt
         w = m.t_weight[it]
-        for ik in 1:m.Nk, ia in 1:m.Na
+        for ik in 1:m.Nk, ia in 1:m.Nap
             vw = m.sol_tr_v_work[ia, ik, ip, 1]
-            vc = m.a_grid[ia] >= a_col_min ? m.sol_tr_v_college[ia, ik, ip, it] : -Inf
+            vc = m.ap_grid[ia] >= a_col_min ? m.sol_tr_v_college[ia, ik, ip, it] : -Inf
             isnan(vc) && (vc = -Inf)          # NaN marks infeasible; -Inf only at the max
             if !isfinite(vw) && !isfinite(vc)
                 # Neither branch is defined here. At a <= delta_P the parent cannot retain
@@ -862,11 +907,11 @@ Returns the spline; `valid_rows(m)` gives the indices used.
 """
 function terminal_value_spline(m::ConSavLaborCollege_AR1; s::Float64 = 10.0, ip::Int = 1)
     V  = terminal_value_surface(m; ip = ip)
-    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Na]
+    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
     ia0 = findfirst(ok)
-    ia0 === nothing && error("Terminal value is non-finite at every asset grid point")
+    ia0 === nothing && error("Terminal value is non-finite at every parental asset grid point")
     all(ok[ia0:end]) || error("Terminal value has interior non-finite rows: $(findall(.!ok))")
-    return Spline2D(m.a_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s)
+    return Spline2D(m.ap_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s)
 end
 
 """
@@ -876,9 +921,9 @@ Asset-grid rows over which the parent's terminal value is finite (assets above `
 """
 function valid_rows(m::ConSavLaborCollege_AR1)
     V  = terminal_value_surface(m)
-    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Na]
+    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
     ia0 = findfirst(ok)
-    return ia0 === nothing ? (1:0) : (ia0:m.Na)
+    return ia0 === nothing ? (1:0) : (ia0:m.Nap)
 end
 
 # ========== Transfer-stage helpers ==========
@@ -936,20 +981,22 @@ an interpolation.
 """
 function first_feasible_parent_a(model::ConSavLaborCollege_AR1)
     thr = min_parent_assets_for_college(model)
-    return findfirst(a -> a >= thr, model.a_grid)
+    return findfirst(a -> a >= thr, model.ap_grid)   # N13: parental grid
 end
 
 # ========== Main Solvers ==========
 
 function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
-    @unpack Na, Nk, a_grid, k_grid, p_transition, Np, delta_P = model
+    # N13: `assets` here is the PARENT's, so the outer loop runs over ap_grid. The child's
+    # a_grid still indexes V1_work, which is evaluated at the transfer tr.
+    @unpack Nap, Nk, a_grid, ap_grid, k_grid, p_transition, Np, delta_P = model
     π_p = stationary_dist(p_transition)
 
     V1_work = [extrapolate(interpolate((a_grid, k_grid), model.sol_v_work[1, :, :, ip, 1],
                                        Gridded(Linear())), Line()) for ip in 1:Np]
 
-    for ia in 1:Na, ik in 1:Nk
-        assets = a_grid[ia]
+    for ia in 1:Nap, ik in 1:Nk
+        assets = ap_grid[ia]
         HC     = k_grid[ik]
 
         # Work path admits a zero transfer, so the domain is [0, a - delta_P]. It is
@@ -967,7 +1014,8 @@ function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
 end
 
 function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
-    @unpack Na, Nk, Nt, a_grid, k_grid, p_transition, Np, delta_P = model
+    # N13: `assets` is parental, so the loop runs over ap_grid; a_grid indexes V1_college.
+    @unpack Nap, Nk, Nt, a_grid, ap_grid, k_grid, p_transition, Np, delta_P = model
     π_p   = stationary_dist(p_transition)
     a_req = compute_min_assets(model)
 
@@ -980,8 +1028,8 @@ function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
     V1_college = [[extrapolate(interpolate((ag1, k_grid), model.sol_v_college[1, i1:end, :, ip, it],
                                            Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
 
-    for ia in 1:Na, ik in 1:Nk, it in 1:Nt
-        assets = a_grid[ia]
+    for ia in 1:Nap, ik in 1:Nk, it in 1:Nt
+        assets = ap_grid[ia]
         HC     = k_grid[ik]
 
         # College requires the child to start with at least a_req[1] -- enough to finish
@@ -1110,6 +1158,7 @@ end
 function simulate_model_family!(model::ConSavLaborCollege_AR1)
     @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition, Np = model
+    @unpack ap_grid = model                       # N13: transfer arrays live on this grid
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
     @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = model
     @unpack Nt, t_weight = model
@@ -1153,9 +1202,9 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     ip0 = first_feasible_parent_a(model)
     ip0 === nothing && error("College transfer infeasible at every asset grid point " *
                              "(needs a >= $col_min, a_grid ends at $(a_grid[end]))")
-    ip0 > length(a_grid) - 1 && error("College transfer feasible at only $(length(a_grid) - ip0 + 1) " *
-                                      "asset node(s); need at least 2 to interpolate")
-    ag_p = a_grid[ip0:end]
+    ip0 > length(ap_grid) - 1 && error("College transfer feasible at only $(length(ap_grid) - ip0 + 1) " *
+                                       "parental asset node(s); need at least 2 to interpolate")
+    ag_p = ap_grid[ip0:end]
 
     # Transfer value interpolators
     sol_tr_v_college_interp = [
@@ -1164,7 +1213,7 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
         for it in 1:Nt
     ]
     sol_tr_v_work_interp = [
-        LinearInterpolation((a_grid, k_grid), model.sol_tr_v_work[:, :, ip, 1]; extrapolation_bc=Line())
+        LinearInterpolation((ap_grid, k_grid), model.sol_tr_v_work[:, :, ip, 1]; extrapolation_bc=Line())
         for ip in 1:Np
     ]
     # Transfer amount interpolators
@@ -1174,7 +1223,7 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
         for it in 1:Nt
     ]
     sol_tr_work_interp = [
-        LinearInterpolation((a_grid, k_grid), model.sol_tr_work[:, :, ip, 1]; extrapolation_bc=Flat())
+        LinearInterpolation((ap_grid, k_grid), model.sol_tr_work[:, :, ip, 1]; extrapolation_bc=Flat())
         for ip in 1:Np
     ]
 
@@ -1261,17 +1310,17 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
                 # visible for check_simulation rather than silently clipped.
                 sim_a[i, t+1] = snap(a_next, a_min, model.a_max)
                 sim_k[i, t+1] = snap(k_next, k_grid[1], model.k_max)
+
+                # Transition for persistent shock
+                p_draw = draws_uniform_p[i, t]
+                p_trans_probs = p_transition[p_idx, :]
+                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
             else
                 # C12: the terminal period consumes everything and leaves no bequest, so
                 # end-of-life assets are 0 by construction. This column was never written
                 # and stayed NaN, which X3 then hid. sim_k has only T columns, so only
                 # assets are recorded here.
                 sim_a[i, t+1] = 0.0
-
-                # Transition for persistent shock
-                p_draw = draws_uniform_p[i, t]
-                p_trans_probs = p_transition[p_idx, :]
-                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
             end
         end
     end
