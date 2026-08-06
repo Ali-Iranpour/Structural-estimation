@@ -140,7 +140,7 @@ write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
 - `z` — AR(1) wage shock (Tauchen, `Np = 3`). See ERRORS.md Phase 4: Rouwenhorst matches
   the target moments exactly where Tauchen overstates the sd by 31% — an open decision.
 
-Three regimes: `t = 1..6` parents decide alone (4 controls); `t = 7..16` the child bargains
+Three regimes: `t = 1..5` parents decide alone (4 controls); `t = 6..16` the child bargains
 and study time is added (5 controls); `t = 17` terminal, continuation is the college/transfer
 value `V_child_interp`.
 
@@ -167,7 +167,7 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 | `rho`, `eta` | 1.5, 2.0 | CRRA; inverse Frisch |
 | `phi_1_0, phi_2_0, phi_3_0` | 1.0, **0.8**, 0.03 | consumption / **parental leisure** / child HC weights. `phi_2` weights `l_p^(1-eta)/(1-eta)` with `l_p = 1 - h_p - tau_p`; it was 20.0 when it scaled a Frisch labor disutility (P10) |
 | `lambda_1_0, lambda_2_0` | 0.7, 0.3 | child's leisure / HC weights |
-| `mu_0, mu_1` | 1.0, −0.04 | welfare weight `μ̃_t = 1` for `t ≤ 6`, then `μ_0 + μ_1(t−6)`. The boundary is `T_CHILD_VOICE` in `parent_family.jl` — one constant, six call sites |
+| `mu_0, mu_1` | 1.0, −0.04 | welfare weight `μ̃_t = 1` for `t ≤ 5`, then `μ_0 + μ_1(t−5)`. The boundary is `T_CHILD_VOICE` in `parent_family.jl` — one constant, six call sites |
 | `tau`, `tax_lambda` | 0.18, 0.82 | progressive tax `λ(wh)^(1−τ)` |
 | `r`, `beta_0` | 0.03, 0.96 | interest rate; discount factor |
 | `R_0, R_1` | 2.0, 0.06 | HC technology TFP, `R_t = R_0 + R_1(t−1)` |

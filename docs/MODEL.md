@@ -18,7 +18,7 @@ Line numbers are as of 2026-08-02.
 | Family utility | `U_f = φ₁c^(1-ρ)/(1-ρ) − φ₂h^(1+η)/(1+η) + α̃₁ln l_c + α̃₂ln HC` | `util_total` — P:688 |
 | `α̃₁ = (1−μ̃)λ₁`, `α̃₂ = μ̃φ₃ + (1−μ̃)λ₂` | | inline in `util_total` |
 | Welfare weight | `μ̃_t = 1` (t<`T_CHILD_VOICE`); `1 − μ₁(t−(`T_CHILD_VOICE`−1))` otherwise | `mu_vector` in constructor, keyed off `T_CHILD_VOICE = 7` |
-| | | ⚠️ code uses `μ_0 + μ_1(t−6)` with `μ_1 = −0.04`, i.e. the opposite sign convention |
+| | | ⚠️ code uses `μ_0 + μ_1(t−5)` with `μ_1 = −0.04`, i.e. the opposite sign convention |
 | Budget constraint | `a' = (1+r)a + y − T(wh) + b − c_p − e_p`, `a' ≥ 0` | `asset_constraint_full` — P:759 (5 controls)<br>`asset_constraint_parentonly` — P:796 (4 controls) |
 | Progressive tax | `T(·)` via HSV/Benabou | `λ(wh)^(1−τ)` inline in the objectives; marginal `λ(1−τ)(wh)^(−τ)w` |
 | Parent time | `h_p + τ_p + l_p = 1` | `constraint_min_leisure_full` — P:835<br>`constraint_min_leisure_parentonly` — P:846 |
@@ -35,8 +35,8 @@ Line numbers are as of 2026-08-02.
 
 | Stage | Model | Code |
 |---|---|---|
-| Childhood `t ≤ 6` | max over `c_p, e_p, h_p, τ_p` | `solve_model!` loop `(T_CHILD_VOICE-1):-1:1` → `obj_work_period_parentonly` |
-| Adolescence `6 < t < 17` | max over `c_p, e_p, h_p, τ_p, τ_c` | `solve_model!` loop `(T-1):-1:T_CHILD_VOICE` → `obj_work_period_full` |
+| Childhood `t ≤ 5` | max over `c_p, e_p, h_p, τ_p` | `solve_model!` loop `(T_CHILD_VOICE-1):-1:1` → `obj_work_period_parentonly` |
+| Adolescence `5 < t < 17` | max over `c_p, e_p, h_p, τ_p, τ_c` | `solve_model!` loop `(T-1):-1:T_CHILD_VOICE` → `obj_work_period_full` |
 | Terminal `t = 17` | `U_f + βE[V^CD_{T_L−1}]` | `solve_model!` terminal block → `obj_last_period_full` — P:537 |
 | | `V^CD` enters as | `model.V_child_interp` (a `Dierckx.Spline2D` built in the notebook) |
 
