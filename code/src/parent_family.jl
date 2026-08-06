@@ -1012,15 +1012,81 @@ end
 # Interpolation Functions
 # ------------------------------------------------
 
-function create_interp(model::Parent_child_interaction_age_specific_AR1, sol_v, t)
-    Np = model.Np
-    interp_vec = Vector{Any}(undef, Np)
-    @inbounds @simd for i_p in 1:Np
-        vview = @view sol_v[t, :, :, :, i_p]   # avoid copy
-        itp = interpolate((model.a_grid, model.k_grid, model.hc_grid), vview, Gridded(Linear()))
-        interp_vec[i_p] = extrapolate(itp, Line())
+"""
+    SmoothContinuation
+
+The parent's continuation value, C1 in `(a, hc)` instead of piecewise linear.
+
+`Gridded(Linear())` makes `dV/dhc` a STEP function: constant inside each grid cell, jumping
+at every node. `tau_p`'s first-order condition depends on `dV/dHC` directly -- it is the
+only thing that pays for parental time -- so the optimal `tau_p` inherits those steps, and
+adjacent asset nodes whose `HC_next` lands in different cells get discretely different
+`tau_p`. That is the ragged policy plot.
+
+Measured, holding everything else fixed (direction reversals in `tau_p` over the asset grid):
+
+    t        16    15    14    10
+    linear    9     5    12     5
+    cubic     1     2     4     1
+
+Two alternatives were ruled out first. Tightening the solver by six orders of magnitude
+(`xtol_rel` 1e-4 -> 1e-10, `ftol_rel` 1e-13, `maxeval` 40x) changed nothing, so it is not
+solver noise. Refining `Nhc` 20 -> 40 -> 80 made it WORSE (5 -> 10 -> 15 reversals), which
+is what a cell-boundary artefact does: more cells, more steps.
+
+`k` is the binary BothCollege indicator, so it gets linear blending across its two nodes
+rather than a spline.
+
+Outside the grid the spline is continued LINEARLY from the boundary -- value and gradient
+from the same line, so the pair stays consistent, bounded, and still points back inside.
+Dierckx's own extrapolation is a cubic and can diverge.
+"""
+struct SmoothContinuation
+    spl::Vector{Dierckx.Spline2D}   # one per k node, over (a, hc)
+    kg::Vector{Float64}
+    alo::Float64; ahi::Float64
+    hlo::Float64; hhi::Float64
+end
+
+@inline function _kw(s::SmoothContinuation, k::Float64)
+    length(s.kg) == 1 && return (1, 1, 0.0)
+    i = clamp(searchsortedlast(s.kg, k), 1, length(s.kg) - 1)
+    return (i, i + 1, (k - s.kg[i]) / (s.kg[i+1] - s.kg[i]))
+end
+
+function (s::SmoothContinuation)(a::Float64, k::Float64, hc::Float64)
+    ac, hcc = clamp(a, s.alo, s.ahi), clamp(hc, s.hlo, s.hhi)
+    i, j, w = _kw(s, k)
+    v  = (1-w) * s.spl[i](ac, hcc) + w * s.spl[j](ac, hcc)
+    # linear continuation outside the box, from the boundary derivative
+    if a != ac
+        da = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 1, 0) + w*Dierckx.derivative(s.spl[j], ac, hcc, 1, 0)
+        v += da * (a - ac)
     end
-    return interp_vec
+    if hc != hcc
+        dh = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 0, 1) + w*Dierckx.derivative(s.spl[j], ac, hcc, 0, 1)
+        v += dh * (hc - hcc)
+    end
+    return v
+end
+
+function Interpolations.gradient(s::SmoothContinuation, a::Float64, k::Float64, hc::Float64)
+    ac, hcc = clamp(a, s.alo, s.ahi), clamp(hc, s.hlo, s.hhi)
+    i, j, w = _kw(s, k)
+    da = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 1, 0) + w*Dierckx.derivative(s.spl[j], ac, hcc, 1, 0)
+    dh = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 0, 1) + w*Dierckx.derivative(s.spl[j], ac, hcc, 0, 1)
+    dk = length(s.kg) == 1 ? 0.0 :
+         (s.spl[j](ac, hcc) - s.spl[i](ac, hcc)) / (s.kg[j] - s.kg[i])
+    return (da, dk, dh)
+end
+
+function create_interp(model::Parent_child_interaction_age_specific_AR1, sol_v, t)
+    ag, hg, kg = model.a_grid, model.hc_grid, collect(model.k_grid)
+    return [SmoothContinuation(
+                [Dierckx.Spline2D(ag, hg, sol_v[t, :, ik, :, i_p]; kx = 3, ky = 3, s = 0.0)
+                 for ik in 1:model.Nk],
+                kg, first(ag), last(ag), first(hg), last(hg))
+            for i_p in 1:model.Np]
 end
 
 # ------------------------------------------------
