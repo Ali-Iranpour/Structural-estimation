@@ -8,19 +8,27 @@
         \textbf{Diagnostic} & \textbf{Value} \\
         \midrule
         Minimum converged share (parent solve) & 1.0000 \\
-        Bellman residual, max (child work path) & 5.77e-13 \\
-        Bellman residual, mean & 1.00e-13 \\
-        Monotonicity violations, $V$ in assets & 0.01\% \\
-        Monotonicity violations, $c$ in assets & 4.02\% \\
+        Bellman residual, max (child work path) & 5.73e-13 \\
+        Bellman residual, mean & 9.95e-14 \\
+        Monotonicity violations, $V$ in assets & 0.03\% \\
+        Monotonicity violations, $c$ in assets & 3.72\% \\
         Simulated assets below $a_{\min}$ & 0.00\% \\
         Simulated assets above $a_{\max}$ & 0.00\% \\
-        Mean terminal parental assets & 20.3271 \\
-        Bootstrap standard error & 0.1128 \\
+        Simulated states non-finite & 0.00\% \\
+        Stored transitions off-grid, assets & 1.07\% (max 1.0e-06) \\
+        Stored transitions off-grid, HC & 2.00\% (max 1.0e-03) \\
+        $k_{\max}$ ceiling binds & 0.00\% \\
+        Bellman optimality residual, max & 1.50e-05 \\
+        States improved by re-optimization & 2.00\% \\
+        Linear vs.\ cubic continuation, max $|\Delta c|$ & 5.46e+00 \\
+        Linear vs.\ cubic continuation, max $|\Delta h|$ & 1.08e-01 \\
+        Mean terminal parental assets & 19.6080 \\
+        Bootstrap standard error & 0.1333 \\
         \bottomrule\bottomrule
     \end{tabular}
     \begin{tablenotes}
         \footnotesize
-        \item \textit{Note:} Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples.
+        \item \textit{Note:} Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples. The optimality residual re-optimizes sampled states from four starts and compares the maximum against the stored value, so unlike the consistency residual it detects a suboptimal policy. The two off-grid rows report the share of stored transitions leaving the grid and the largest such excursion: these are bounded by the NLopt constraint tolerance and the labor lower bound respectively, so they are float-sized rather than genuine extrapolation. The last two rows re-solve the same states against an interpolating cubic continuation instead of the linear one the solver uses, and report how far the optimal policy moves.
     \end{tablenotes}
     \end{threeparttable}
 \end{table}
