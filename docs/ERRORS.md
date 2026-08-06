@@ -45,14 +45,62 @@ both theoretical masks. **One caveat remains — see P5.**
 
 | # | Issue | File | Severity |
 |---|---|---|---|
-| P5 | Linear continuation moves policies — **established and measured** | all | 🟠 |
+| P10 | Parent's utility omits `φ₂ log l_p`, so parental time with the child is **free** | parent_family | 🟠 |
+| P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
 | P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
 
 ---
 
-## 🟠 P5 — Linear continuation moves policies (established, not refuted)
+## 🟠 P10 — The parent's utility has no leisure term, so `τ_p` is a free good
+
+`model.txt` specifies
+
+    U_{p,t} = φ₁ log c_{p,t} + φ₂ log l_{p,t} + φ₃ log HC_t,    l_{p,t} = 1 − h_{p,t} − τ_{p,t}
+
+The code implements
+
+    φ₁ c^(1−ρ)/(1−ρ) − φ₂ h_p^(1+η)/(1+η) + φ₃ log HC
+
+The parental-leisure term is gone, replaced by a Frisch labor disutility. That substitution
+drops `τ_p` out of the parent's preferences entirely. **Verified directly:** `util_parent`
+evaluated at `τ_p = 0.05` and at `τ_p = 0.90` returns the same number to the last bit —
+difference `0.000e+00`.
+
+So parental time spent with the child costs the parent nothing. The only thing that ever
+prices it is the *child's* leisure term in `util_total`, weighted `(1−μ̃_t)λ₁`, which is
+`0.028` at the first bargaining period.
+
+Three consequences, all measured:
+
+1. **In childhood the time constraint binds everywhere.** With no price on `τ_p` the parent
+   pushes it to the corner: `corr(τ_p, h_p) = −1.000` exactly at `t = 2` and `t = 6`, i.e.
+   `τ_p = 1 − h_p`. Across all periods `h_p + τ_p` hits its bound at **35.29%** of solved
+   states.
+2. **The sign flips at the regime boundary.** Once the child's leisure enters, `τ_p` leaves
+   the corner and `corr(τ_p, h_p)` goes from `−1.000` to `+0.65` at `t = 16` — parents who
+   work *more* also spend *more* time with the child. That is backwards.
+3. **`τ_p` becomes nearly asset-independent**, range ≈ 0.01 across the whole wealth
+   distribution, because its first-order condition then balances two small terms and neither
+   depends on assets directly.
+
+Pricing `τ_p` fixes the sign: adding `0.5 · log(1 − h_p − τ_p)` as an experiment made
+`corr(τ_p, h_p)` negative at **every** period (−0.69 to −0.95). It did not remove the
+raggedness — that was the continuation, and is fixed separately.
+
+**Fix — needs a decision, not a patch.** Either restore `φ₂ log l_{p,t}` as `model.txt`
+says, which means recalibrating `φ₂` (currently 20.0, scaled for the Frisch form — as a log
+weight it would dominate the objective); or keep the Frisch form and add a separate price
+for `τ_p`, and change `model.txt` to match. Both change every result.
+
+## 🟡 P5 — Linear continuation moves policies (parent side fixed)
+
+**Parent solver: fixed.** `create_interp` now returns a `SmoothContinuation` — cubic in
+`(a, hc)`, linearly blended in the binary `k`. This was the cause of the ragged policy
+plots; see the commit for the ruled-out alternatives and the before/after reversal counts.
+
+**Child solver: still open, and still measured as real.**
 
 `Gridded(Linear())` makes the continuation C0 but not C1, so `Interpolations.gradient` is
 piecewise-constant with a jump at every knot while SLSQP builds a BFGS quadratic model from
@@ -150,8 +198,11 @@ Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
 
 ## Remaining work, in order
 
-1. **P5** — make the decision above. Everything else numerical is closed.
-2. **P7b** — get the `BothCollege` share from the estimation sample.
+1. **P10** — decide the parent's utility functional form. This is the one that changes
+   the economics rather than the numerics.
+2. **P5 (child side)** — the same smoothing question for `child_lifecycle.jl`, now that the
+   parent side shows the fix is safe (`V` stayed monotone at 59,160 of 59,160 pairs).
+3. **P7b** — get the `BothCollege` share from the estimation sample.
 3. **Improvement 7.0** — Tauchen vs Rouwenhorst in the solved model, not just in the
    discretization report.
 4. **Improvement 7.5 / 6.5** — grid refinement on real outcomes, and the paired bootstrap.

@@ -339,6 +339,26 @@ boundary meant finding all of them.
 """
 const T_CHILD_VOICE = 7
 
+"""
+    TIME_FLOOR
+
+Lower bound on the time shares `tau_p`, `tau_c` and `h_p` in every parent optimization.
+
+The Cobb-Douglas production logs give `d(HC_next)/dx = HC_next * sigma_j / x`, unbounded as
+`x -> 0`. At a floor of 1e-4 that reached |grad| = 2e4 while SLSQP was exploring the corner,
+which is enough to wreck the BFGS model and return a NaN iterate -- the same failure mode as
+the leisure cliff, from the production logs rather than the utility ones.
+
+1e-3 is **strictly slack at every solved state**, so it cannot change a solution: over 61,200
+states the stored minima are `tau_p` 0.0152, `i_c` 0.0055, `h_p` 0.1711, and none sits at or
+below 1e-3. It just caps the 1/x factor 10x lower. A floor of 1e-2 would NOT be slack --
+`i_c` is below it at 1.08% of states.
+
+This is a bound on exploration, not economics: `sigma_j * log(x)` makes `x` a good, so
+`df/dx -> +inf` as `x -> 0` and the true optimum is always interior.
+"""
+const TIME_FLOOR = 1e-3
+
 const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
 
 # P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
@@ -456,7 +476,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
 
         opt = Opt(:LD_SLSQP, 5)
         bmax = budget_ceiling(model, assets, capital, t, p_shock)
-        lower_bounds!(opt, [1e-4, 1e-4, 1e-4, 1e-4, 1e-4])
+        lower_bounds!(opt, [1e-4, TIME_FLOOR, 1e-4, TIME_FLOOR, TIME_FLOOR])
         upper_bounds!(opt, [bmax, 1.0, bmax, 1.0, 1.0])
         min_objective!(opt, obj_wrapper)
         inequality_constraint!(opt, constraint_min_leisure_full, TOL_CONSTR)
@@ -527,7 +547,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
 
             opt = Opt(:LD_SLSQP, 5)
             bmax = budget_ceiling(model, assets, capital, t, p_shock)
-            lower_bounds!(opt, [0.01, 1e-4, 0.01, 1e-4, 1e-4])
+            lower_bounds!(opt, [0.01, TIME_FLOOR, 0.01, TIME_FLOOR, TIME_FLOOR])
             upper_bounds!(opt, [bmax, 1.0, bmax, 1.0, 1.0])
             inequality_constraint!(opt, constraint_min_leisure_full, TOL_CONSTR)
             inequality_constraint!(opt, constraint_child_time, TOL_CONSTR)
@@ -539,7 +559,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             # guess makes NLopt return :INVALID_ARGS with NaN, which then propagates
             # backwards through every earlier period -- the same failure already fixed on
             # the child side, where terminal consumption exceeded a hardcoded cap.
-            lo = [0.01, 1e-4, 0.01, 1e-4, 1e-4]
+            lo = [0.01, TIME_FLOOR, 0.01, TIME_FLOOR, TIME_FLOOR]
             hi = [bmax, 1.0, bmax, 1.0, 1.0]
             init = clamp.([
                 model.sol_c[t+1, i_a, i_k, i_hc, i_p],
@@ -613,7 +633,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             # HC_next -> 0 as t_p -> 0, and log(HC) is in utility, so the optimum keeps
             # t_p far away from it.
             bmax = budget_ceiling(model, assets, capital, t, p_shock)
-            lower_bounds!(opt, [0.01, 0.01, 1e-4, 1e-4])
+            lower_bounds!(opt, [0.01, 0.01, TIME_FLOOR, TIME_FLOOR])
             upper_bounds!(opt, [bmax, bmax, 1.0, 1.0])
             inequality_constraint!(opt, constraint_min_leisure_parentonly, TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_parentonly(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
@@ -625,7 +645,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                 model.sol_e[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_h[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_t[t+1, i_a, i_k, i_hc, i_p],
-            ], [0.01, 0.01, 1e-4, 1e-4], [bmax, bmax, 1.0, 1.0])
+            ], [0.01, 0.01, TIME_FLOOR, TIME_FLOOR], [bmax, bmax, 1.0, 1.0])
             xtol_rel!(opt, 1e-4)
             maxeval!(opt, 1000)
             (minf, x_opt, ret) = optimize(opt, init)
@@ -1013,80 +1033,141 @@ end
 # ------------------------------------------------
 
 """
-    SmoothContinuation
+    PchipContinuation
 
-The parent's continuation value, C1 in `(a, hc)` instead of piecewise linear.
+The parent's continuation value: **C1 in `hc` without overshooting**, linear in `a`, and
+linearly blended across the two `k` nodes.
 
-`Gridded(Linear())` makes `dV/dhc` a STEP function: constant inside each grid cell, jumping
-at every node. `tau_p`'s first-order condition depends on `dV/dHC` directly -- it is the
-only thing that pays for parental time -- so the optimal `tau_p` inherits those steps, and
-adjacent asset nodes whose `HC_next` lands in different cells get discretely different
-`tau_p`. That is the ragged policy plot.
+Why `hc` specifically, and why shape-preserving.
 
-Measured, holding everything else fixed (direction reversals in `tau_p` over the asset grid):
+`Gridded(Linear())` makes `dV/dhc` a STEP function -- constant inside each cell, jumping at
+every node. `tau_p`'s first-order condition depends on `dV/dHC` directly, since that is the
+only thing paying for parental time, so the optimal `tau_p` inherits the steps and adjacent
+asset nodes whose `HC_next` lands in different cells get discretely different `tau_p`. That
+is the ragged policy plot. Total variation of `tau_p` over the asset grid, everything else
+fixed (TV/range is 1.0 for a monotone policy, so it measures pure wiggle):
 
-    t        16    15    14    10
-    linear    9     5    12     5
-    cubic     1     2     4     1
+    t                 16       15       14       10
+    linear TV     0.0868   0.0490   0.0463   0.0432
+    PCHIP  TV     0.0415   0.0113   0.0024   0.0028
+    linear TV/rng   2.71     3.88     4.35     2.60
+    PCHIP  TV/rng   1.37     1.48     1.46     2.74
 
-Two alternatives were ruled out first. Tightening the solver by six orders of magnitude
-(`xtol_rel` 1e-4 -> 1e-10, `ftol_rel` 1e-13, `maxeval` 40x) changed nothing, so it is not
-solver noise. Refining `Nhc` 20 -> 40 -> 80 made it WORSE (5 -> 10 -> 15 reversals), which
-is what a cell-boundary artefact does: more cells, more steps.
+Total variation falls by 2x to 19x. Count the direction reversals instead and the numbers
+look unchanged -- but that is the wrong metric here: once the spurious variation is gone the
+policy's whole range is ~1e-3, so what is left reverses at the solver's own `xtol_rel`
+resolution. The amplitude is what moved.
 
-`k` is the binary BothCollege indicator, so it gets linear blending across its two nodes
-rather than a spline.
+Two other explanations were tested and ruled out first. Tightening the solver (`xtol_rel`
+1e-4 -> 1e-10, `ftol_rel` 1e-13, `maxeval` 40x) changed the counts by at most 1, so it is
+not solver noise. Refining `Nhc` 20 -> 40 -> 80 made it WORSE (5 -> 10 -> 15), which is what
+a cell-boundary artefact does: more cells, more steps.
 
-Outside the grid the spline is continued LINEARLY from the boundary -- value and gradient
-from the same line, so the pair stays consistent, bounded, and still points back inside.
-Dierckx's own extrapolation is a cubic and can diverge.
+An interpolating **cubic** also fixes the raggedness, but it overshoots: it pushed `dV/dhc`
+to 13.1 at the low-`hc` edge, and combined with the `HC_next * sigma_1 / tau_p` factor that
+produced gradients around 2e4 and broke the `sigma_3_1 x 1.5` counterfactual with a NaN
+iterate. PCHIP (Fritsch-Carlson monotone cubic Hermite) is C1 like the cubic but its node
+slopes are bounded by the neighbouring secants, so it cannot amplify. It also interpolates
+exactly, so the Bellman consistency residual is preserved, and it is faster than both the
+cubic and the linear version because the solver wastes fewer iterations.
+
+`a` stays linear: consumption's FOC is dominated by `u'(c)`, which is smooth and steep, and
+the consumption policies were never the ragged ones.
 """
-struct SmoothContinuation
-    spl::Vector{Dierckx.Spline2D}   # one per k node, over (a, hc)
-    kg::Vector{Float64}
-    alo::Float64; ahi::Float64
-    hlo::Float64; hhi::Float64
+struct PchipContinuation
+    ag::Vector{Float64}; kg::Vector{Float64}; hg::Vector{Float64}
+    V::Array{Float64,3}          # (Na, Nk, Nhc)
+    D::Array{Float64,3}          # dV/dhc at the nodes, Fritsch-Carlson limited
 end
 
-@inline function _kw(s::SmoothContinuation, k::Float64)
-    length(s.kg) == 1 && return (1, 1, 0.0)
-    i = clamp(searchsortedlast(s.kg, k), 1, length(s.kg) - 1)
-    return (i, i + 1, (k - s.kg[i]) / (s.kg[i+1] - s.kg[i]))
-end
+"""
+    _pchip_slopes(x, y) -> d
 
-function (s::SmoothContinuation)(a::Float64, k::Float64, hc::Float64)
-    ac, hcc = clamp(a, s.alo, s.ahi), clamp(hc, s.hlo, s.hhi)
-    i, j, w = _kw(s, k)
-    v  = (1-w) * s.spl[i](ac, hcc) + w * s.spl[j](ac, hcc)
-    # linear continuation outside the box, from the boundary derivative
-    if a != ac
-        da = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 1, 0) + w*Dierckx.derivative(s.spl[j], ac, hcc, 1, 0)
-        v += da * (a - ac)
+Monotone cubic Hermite node slopes (Fritsch-Carlson). Where the data turn, the slope is set
+to zero; elsewhere it is a weighted harmonic mean of the neighbouring secants, which is what
+bounds it by them and rules out overshoot.
+"""
+function _pchip_slopes(x::AbstractVector{Float64}, y::AbstractVector{Float64})
+    n = length(x); d = zeros(n)
+    n == 1 && return d
+    h = diff(x); del = diff(y) ./ h
+    if n == 2
+        d .= del[1]; return d
     end
-    if hc != hcc
-        dh = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 0, 1) + w*Dierckx.derivative(s.spl[j], ac, hcc, 0, 1)
-        v += dh * (hc - hcc)
+    for i in 2:(n-1)
+        if del[i-1] * del[i] <= 0
+            d[i] = 0.0
+        else
+            w1 = 2h[i] + h[i-1]; w2 = h[i] + 2h[i-1]
+            d[i] = (w1 + w2) / (w1 / del[i-1] + w2 / del[i])
+        end
     end
-    return v
+    # one-sided ends, clipped so they cannot exceed the adjacent secant
+    d[1] = ((2h[1] + h[2]) * del[1] - h[1] * del[2]) / (h[1] + h[2])
+    (d[1] * del[1] <= 0) ? (d[1] = 0.0) :
+        ((del[1] * del[2] <= 0 && abs(d[1]) > abs(3del[1])) ? (d[1] = 3del[1]) : nothing)
+    d[n] = ((2h[n-1] + h[n-2]) * del[n-1] - h[n-1] * del[n-2]) / (h[n-1] + h[n-2])
+    (d[n] * del[n-1] <= 0) ? (d[n] = 0.0) :
+        ((del[n-1] * del[n-2] <= 0 && abs(d[n]) > abs(3del[n-1])) ? (d[n] = 3del[n-1]) : nothing)
+    return d
 end
 
-function Interpolations.gradient(s::SmoothContinuation, a::Float64, k::Float64, hc::Float64)
-    ac, hcc = clamp(a, s.alo, s.ahi), clamp(hc, s.hlo, s.hhi)
-    i, j, w = _kw(s, k)
-    da = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 1, 0) + w*Dierckx.derivative(s.spl[j], ac, hcc, 1, 0)
-    dh = (1-w)*Dierckx.derivative(s.spl[i], ac, hcc, 0, 1) + w*Dierckx.derivative(s.spl[j], ac, hcc, 0, 1)
-    dk = length(s.kg) == 1 ? 0.0 :
-         (s.spl[j](ac, hcc) - s.spl[i](ac, hcc)) / (s.kg[j] - s.kg[i])
+# Hermite value and slope on one hc cell; outside the grid, continue linearly from the
+# boundary node so value and gradient come from the same line.
+@inline function _herm(P::PchipContinuation, ia::Int, ik::Int, hc::Float64)
+    hg = P.hg; n = length(hg)
+    if hc <= hg[1]
+        return (P.V[ia,ik,1] + P.D[ia,ik,1] * (hc - hg[1]), P.D[ia,ik,1])
+    elseif hc >= hg[n]
+        return (P.V[ia,ik,n] + P.D[ia,ik,n] * (hc - hg[n]), P.D[ia,ik,n])
+    end
+    i = clamp(searchsortedlast(hg, hc), 1, n-1)
+    h = hg[i+1] - hg[i]; t = (hc - hg[i]) / h
+    y0, y1 = P.V[ia,ik,i], P.V[ia,ik,i+1]
+    d0, d1 = P.D[ia,ik,i], P.D[ia,ik,i+1]
+    t2 = t*t; t3 = t2*t
+    v  = (2t3 - 3t2 + 1)*y0 + (t3 - 2t2 + t)*h*d0 + (-2t3 + 3t2)*y1 + (t3 - t2)*h*d1
+    dv = ((6t2 - 6t)*y0 + (3t2 - 4t + 1)*h*d0 + (-6t2 + 6t)*y1 + (3t2 - 2t)*h*d1) / h
+    return (v, dv)
+end
+
+@inline function _cell(g::Vector{Float64}, x::Float64)
+    n = length(g)
+    n == 1 && return (1, 1, 0.0)
+    i = clamp(searchsortedlast(g, x), 1, n-1)
+    return (i, i+1, (x - g[i]) / (g[i+1] - g[i]))
+end
+
+function (P::PchipContinuation)(a::Float64, k::Float64, hc::Float64)
+    ia, ja, wa = _cell(P.ag, a); ik, jk, wk = _cell(P.kg, k)
+    v00, _ = _herm(P, ia, ik, hc); v10, _ = _herm(P, ja, ik, hc)
+    v01, _ = _herm(P, ia, jk, hc); v11, _ = _herm(P, ja, jk, hc)
+    return (1-wk)*((1-wa)*v00 + wa*v10) + wk*((1-wa)*v01 + wa*v11)
+end
+
+function Interpolations.gradient(P::PchipContinuation, a::Float64, k::Float64, hc::Float64)
+    ia, ja, wa = _cell(P.ag, a); ik, jk, wk = _cell(P.kg, k)
+    v00, d00 = _herm(P, ia, ik, hc); v10, d10 = _herm(P, ja, ik, hc)
+    v01, d01 = _herm(P, ia, jk, hc); v11, d11 = _herm(P, ja, jk, hc)
+    ha = P.ag[ja] - P.ag[ia]
+    da = ha == 0 ? 0.0 : ((1-wk)*(v10 - v00) + wk*(v11 - v01)) / ha
+    hk = P.kg[jk] - P.kg[ik]
+    dk = hk == 0 ? 0.0 : (((1-wa)*v01 + wa*v11) - ((1-wa)*v00 + wa*v10)) / hk
+    dh = (1-wk)*((1-wa)*d00 + wa*d10) + wk*((1-wa)*d01 + wa*d11)
     return (da, dk, dh)
 end
 
 function create_interp(model::Parent_child_interaction_age_specific_AR1, sol_v, t)
-    ag, hg, kg = model.a_grid, model.hc_grid, collect(model.k_grid)
-    return [SmoothContinuation(
-                [Dierckx.Spline2D(ag, hg, sol_v[t, :, ik, :, i_p]; kx = 3, ky = 3, s = 0.0)
-                 for ik in 1:model.Nk],
-                kg, first(ag), last(ag), first(hg), last(hg))
-            for i_p in 1:model.Np]
+    ag, kg, hg = model.a_grid, collect(model.k_grid), model.hc_grid
+    return [begin
+        V = Array{Float64,3}(undef, model.Na, model.Nk, model.Nhc)
+        D = similar(V)
+        @inbounds for ik in 1:model.Nk, ia in 1:model.Na
+            @views V[ia, ik, :] .= sol_v[t, ia, ik, :, i_p]
+            @views D[ia, ik, :] .= _pchip_slopes(hg, V[ia, ik, :])
+        end
+        PchipContinuation(ag, kg, hg, V, D)
+    end for i_p in 1:model.Np]
 end
 
 # ------------------------------------------------
