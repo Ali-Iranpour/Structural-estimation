@@ -1,6 +1,6 @@
 \section{The Model}
 \subsection{Environment}
-The model starts with a 2-parents family at the birth of their child. It follows the parents until the child turns 18, and follows the child until his death. Parents are assumed to be age 26 at the start of the model when the child is born. As shown in Figure \ref{fig:life_cycle}, the child has 3 stages of life: childhood, adolescence, and adulthood. During the first two stages (until age 18), the child lives with the parents, after which the child separates and makes independent life-cycle decisions. After the child’s separation, parents’ life-cycle decisions are summarized using a terminal value rather than explicitly tracked. The model has no retirement stage and ends as the child becomes 68 years old. In the first stage of the child's life, from age 0 to 5, all decisions related to the family and the child’s human capital formation are made by the parents. The human capital production function of the child is assumed to be in a Cobb–Douglas form, capturing dynamic complementary as the human capital at period $t + 1$ depends on human capital in period $t$. Parents annually decide on their consumption, labor supply, child's educational expenditure, and the time investment dedicated to the child. In the second stage, from age 6 to 17, as the child enters school, the child gradually gains autonomy within the family and becomes more and more involved in the decisions related to their human capital within a bargaining framework. Additionally, the child’s own study time is included in the human capital production function. We introduce a half-period between ages 17 and 18, during which parents transfer assets to the child, which become the child’s initial asset in the next stage. At the same time, parents and child jointly decide whether the child enrolls in college or enters the labor market. If the child attend the college, he faces consumption and saving decisions during college and enter the labor market at age 22. If the child work immediately, he face consumption, saving, and labor supply decisions from age 18. In both paths, the child remains in the labor market until age 68. The model prohibits borrowing, thereby ensuring that in each period, household expenditures exactly equal household income.
+The model starts with a 2-parents family at the birth of their child. It follows the parents until the child turns 18, and follows the child until his death. Parents are assumed to be age 26 at the start of the model when the child is born. As shown in Figure \ref{fig:life_cycle}, the child has 3 stages of life: childhood, adolescence, and adulthood. During the first two stages (until age 18), the child lives with the parents, after which the child separates and makes independent life-cycle decisions. After the child’s separation, parents’ life-cycle decisions are summarized using a terminal value rather than explicitly tracked. The model has no retirement stage and ends as the child becomes 68 years old. In the first stage of the child's life, periods $t = 1,\dots,5$ (child ages 1 to 5), all decisions related to the family and the child’s human capital formation are made by the parents. The human capital production function of the child is assumed to be in a Cobb–Douglas form, capturing dynamic complementary as the human capital at period $t + 1$ depends on human capital in period $t$. Parents annually decide on their consumption, labor supply, child's educational expenditure, and the time investment dedicated to the child. In the second stage, periods $t = 6,\dots,17$ (ages 6 to 17), as the child enters school, the child gradually gains autonomy within the family and becomes more and more involved in the decisions related to their human capital within a bargaining framework. Additionally, the child’s own study time is included in the human capital production function. We introduce a half-period between ages 17 and 18, during which parents transfer assets to the child, which become the child’s initial asset in the next stage. At the same time, parents and child jointly decide whether the child enrolls in college or enters the labor market. If the child attend the college, he faces consumption and saving decisions during college and enter the labor market at age 22. If the child work immediately, he face consumption, saving, and labor supply decisions from age 18. In both paths, the child remains in the labor market until age 68. The model prohibits borrowing, thereby ensuring that in each period, household expenditures exactly equal household income.
 
 
 \input{Figure/life_cycle}
@@ -27,7 +27,7 @@ Note that parental leisure is $l_{p,t} = 1 - h_{p,t} - \tau_{p,t}$, so time spen
   \label{eq:child-util}
 \end{equation}
 where $l_{c,t}$ denotes the child’s leisure (play) time. The preference weights $(\lambda_{1},\lambda_{2})$ are strictly positive and normalized. 
-To model the process of intra-household decision-making, we model the family’s joint utility consisting of parents and the child private utility with age-of-child varying welfare weights\footnote{\footnotesize{We do not explicitly model the process that generates these weights and take them as exogenous to the model.}}. the parents and the child bargain over the allocation of the child’s leisure and human capital investment once childhood ends. The parents’ bargaining weight is denoted by $\tilde{\mu}_t \in (0,1)$, while the child’s bargaining weight is $(1-\tilde{\mu}_t)$. During childhood ($t \leq 6$), the Pareto weight assigned to the child’s utility is set to zero, so all decisions are made by the parents. As the child enters adolescence, they gradually gain autonomy and more power within the family which translates to higher welfare weight in he family joint utility function. In addition, their own decision regarding the time investment in their human capital becomes relevant. The utility of the family is given by:
+To model the process of intra-household decision-making, we model the family’s joint utility consisting of parents and the child private utility with age-of-child varying welfare weights\footnote{\footnotesize{We do not explicitly model the process that generates these weights and take them as exogenous to the model.}}. the parents and the child bargain over the allocation of the child’s leisure and human capital investment once childhood ends. The parents’ bargaining weight is denoted by $\tilde{\mu}_t \in (0,1)$, while the child’s bargaining weight is $(1-\tilde{\mu}_t)$. During childhood ($t \leq 5$), the Pareto weight assigned to the child’s utility is set to zero, so all decisions are made by the parents. As the child enters adolescence, they gradually gain autonomy and more power within the family which translates to higher welfare weight in he family joint utility function. In addition, their own decision regarding the time investment in their human capital becomes relevant. The utility of the family is given by:
 \begin{equation}
     U_{f,t} =
       \phi_1 \frac{C_t^{1-\rho}}{1-\rho}  
@@ -49,11 +49,11 @@ Specifically, $\tilde{\alpha}_1$ in \eqref{eq:alpha1} shows that the weight on t
   \tilde{\mu}_{t} =
   \begin{cases}
     1,                 & \text{if } t \le 7,\\[4pt]
-    1-\mu_{1}(t-6),    & \text{if } 6 < t \le 18,
+    1-\mu_{1}(t-5),    & \text{if } 5 < t \le 18,
   \end{cases}
   \label{eq:bargain-weight}
 \end{equation}
-This schedule implies that during childhood ($t \leq 6$), parents have full control ($\tilde{\mu}_t=1$), so the child’s utility carries no weight. From age 6 onward, as the child enters school and gradually gains autonomy, the parent’s weight decreases linearly while the child’s weight $(1-\tilde{\mu}_t)$ increases with age.
+This schedule implies that during childhood ($t \leq 5$), parents have full control ($\tilde{\mu}_t=1$), so the child’s utility carries no weight. From $t = 6$ (age 6) onward, as the child enters school and gradually gains autonomy, the parent’s weight decreases linearly while the child’s weight $(1-\tilde{\mu}_t)$ increases with age.
 
 \noindent\textbf{Time and Budget Constraints} \quad The family’s choices in each period are subject to both budget and time constraints. The budget constraint determines the evolution of household assets:
 \begin{equation}
@@ -102,11 +102,11 @@ For the child, available time is allocated among study ($\tau_{c,t}$), time spen
     \tau_{c,t} + \tau_{p,t} + l_{c,t} = 1.
 \end{equation}
 
-\noindent\textbf{Human Capital Production} \quad We use Cobb-Douglas specification for the child human capital production function. For childhood period $(t \leq 6)$, The child's human capital at $t+1$ is a function of child care time, parental expenditure, and the current level of child's human capital in period $t$. As soon as child enters Adolescence ($6 < t \leq 17$) the child own study time is also added to the production function. The production function is defined as:
+\noindent\textbf{Human Capital Production} \quad We use Cobb-Douglas specification for the child human capital production function. For childhood period $(t \leq 5)$, The child's human capital at $t+1$ is a function of child care time, parental expenditure, and the current level of child's human capital in period $t$. As soon as child enters Adolescence ($5 < t \leq 17$) the child own study time is also added to the production function. The production function is defined as:
 \begin{equation}
     \log HC_{t+1} =
 \begin{cases}
-\log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t & \text{if } t \leq 6\\
+\log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t & \text{if } t \leq 5\\
 \log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t + \sigma_{4t} \log \tau_{c,t} & \text{if } 7< t \leq 17
 \end{cases}
 \end{equation}
@@ -123,14 +123,14 @@ Here, $R_t$ is a total factor of productivity, $\tau_{p,t}$ is the time spent wi
 The family’s value function at period $t$ incorporates bargaining weights and private utilities into a unified dynamic decision-making framework. The state variables at the beginning of each period are defined as follows: $a_t$ denotes the household’s asset holdings, $k_t$ is the stock of parental human capital, and $HC_t$ represents the child’s cognitive ability. The value function can be specified over three distinct life stages:
 
 
-\noindent\textbf{Childhood ($t \leq 6$)}: In this stage, child holds no exclusive welfare weight within the family, and as a result, the parents act as the single decision maker, choosing their consumption ($c_{p,t}$), educational investments in the child ($e_{p,t}$), labor supply ($h_{p,t}$), and parental time dedicated to child care ($\tau_{p,t}$).
+\noindent\textbf{Childhood ($t \leq 5$)}: In this stage, child holds no exclusive welfare weight within the family, and as a result, the parents act as the single decision maker, choosing their consumption ($c_{p,t}$), educational investments in the child ($e_{p,t}$), labor supply ($h_{p,t}$), and parental time dedicated to child care ($\tau_{p,t}$).
 
     \begin{equation}
         V_t(a_t, k_t, HC_t) = \max_{c_{p,t},\,e_{p,t},\,h_{p,t},\,\tau_{p,t}}
         \left\{ U_{f,t} + \beta\, \mathbb{E}_{z}\left[ V_{t+1}(a_{t+1}, k_{t+1}, HC_{t+1})\right] \right\}
     \end{equation}
     
-\noindent\textbf{Adolescence ($6 < t <17$)}: As the child transitions into adolescence, The child gains autonomy and gets involved in the intra-household decision making. The child’s choice regarding study time ($\tau_{c,t}$) becomes relevant. Accordingly, the family’s problem expands:
+\noindent\textbf{Adolescence ($5 < t <17$)}: As the child transitions into adolescence, The child gains autonomy and gets involved in the intra-household decision making. The child’s choice regarding study time ($\tau_{c,t}$) becomes relevant. Accordingly, the family’s problem expands:
         \begin{equation}
         V_t(a_t, k_t, HC_t)=\max_{c_{p,t},\,e_{p,t},\,h_{p,t},\,\tau_{p,t},\,\tau_{c,t}}
         \left\{ U_{f,t} + \beta\, \mathbb{E}_{z}\left[ V_{t+1}(a_{t+1}, k_{t+1}, HC_{t+1})\right] \right\}

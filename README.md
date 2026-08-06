@@ -64,10 +64,10 @@ the child's birth to age 18; the child is then followed to age 68.
 ## Model in one paragraph
 
 Two parents and one child interact over `t = 1..17` (child ages 0–17). Parents choose
-consumption, labor supply, education expenditure, and time with the child; from age 6
+consumption, labor supply, education expenditure, and time with the child; from age 6 (period 6)
 the child bargains over their own study time and leisure under an age-varying welfare
 weight. The child's cognitive skill follows a Cobb-Douglas production function in
-parental time, education spending, lagged skill, and (after age 6) the child's own
+parental time, education spending, lagged skill, and (from age 6) the child's own
 study time. At age 18 the family jointly chooses college vs. work and the parents
 transfer assets, which become the child's initial wealth. The child then solves a
 consumption-saving-labor problem to age 68. Parental wages follow an estimated profile

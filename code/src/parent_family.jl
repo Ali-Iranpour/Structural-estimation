@@ -338,15 +338,16 @@ childhood: the parents choose alone over `(c_p, e_p, h_p, tau_p)` and the child'
 time is absent from HC production. From `T_CHILD_VOICE` the child bargains, `tau_c` enters
 the choice set, and the welfare weight starts falling from 1.
 
-`t = 1` is the child's birth year, so `T_CHILD_VOICE = 7` means childhood is ages 0-5 and
-the child gains a voice at age 6.
+`T_CHILD_VOICE = 6` means the parent-only periods are `t = 1..5` and the child's own study
+time enters from `t = 6`, which is child age 6 under the model's `t <-> age` indexing
+(`t = 17` is age 17, the last period before separation at 18).
 
 Six things key off this boundary: the two backward-induction loops, `mu_vector`,
 `sigma_4_vector`, and the two simulators' HC-technology branch. They are derived from this
 constant rather than written out, because they were six scattered literals and changing the
 boundary meant finding all of them.
 """
-const T_CHILD_VOICE = 7
+const T_CHILD_VOICE = 6
 
 """
     TIME_FLOOR
