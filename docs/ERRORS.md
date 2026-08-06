@@ -34,7 +34,11 @@ cd code && julia --project=.. run_all.jl      # baseline + diagnostics + tables 
 python3 tools/nb_smoketest.py                 # notebook, every code cell, shrunken grids
 ```
 
-Both are green. The diagnostics no longer understate the problem: `check_simulation` counts
+Both are green. Latest full run: parent converged share **1.0000**, Bellman residual
+**0.00e+00**, `V` monotone in assets at **100.00%** of adjacent pairs, simulated states
+off-grid **0.01%**, college share **19.1%**.
+
+The diagnostics no longer understate the problem: `check_simulation` counts
 non-finite states, `check_solver_domain` measures the *solution* leaving the grid (which
 forward simulation cannot see), and `check_feasibility_mask` checks the NaN pattern against
 both theoretical masks. **One caveat remains — see P5.**
@@ -48,6 +52,7 @@ both theoretical masks. **One caveat remains — see P5.**
 | P10 | Leisure restored (`φ₂` 20.0 → 0.8); **`τ_p` = 0.011 is too low and `σ₁` cannot fix it** | parent_family | 🟡 |
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
 | P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
+| G3 | `create_focused_grid` builds a non-monotone grid when the range is under 3.0 | both | ⚪ |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
 
@@ -180,6 +185,23 @@ reason stated.
 **Fix.** Replace `0.3` with the share measured in the estimation sample, and record it in
 `model.txt` alongside the wage estimates.
 
+## ⚪ G3 — `create_focused_grid` silently builds an invalid grid on a narrow range
+
+The focus point is hardcoded as `min + 3.0`:
+
+```julia
+a_grid = create_focused_grid(a_min, a_min + 3.0, a_max, Na, 0.3, 1.2)
+hc_grid = create_focused_grid(hc_min, hc_min + 3.0, hc_max, Nhc, 0.8, 1.2)
+```
+
+If `max ≤ min + 3.0` the focus segment runs past the end of the grid and the result is not
+monotone. Nothing checks it; the failure surfaces much later, inside Interpolations, as
+`knot-vectors must be unique and sorted in increasing order`. Hit while testing
+`hc_max = 3.0`, which is a value the coverage study says is worth trying.
+
+**Fix.** Make the focus point a fraction of the range rather than a constant, or assert
+`a_focus < a_max`.
+
 ## ⏸️ C2 — Psychic cost uses the wrong power
 
 `kappa/(HC+1)^4` in code against `kappa/(HC+1)^2` in `model.txt`. At `HC = 1, kappa = 5`:
@@ -252,16 +274,22 @@ Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
 | **6.0** | **Standardize monetary units** across simulation arrays and plots. Tables are done — `ASSET_RESCALE` is defined once and both asset tables use it — but parent `sim_wage` still stores `2 ×` the mean parental wage while labelled simply "wage". | partial |
 | **5.5** | **Require zero `MAXEVAL_REACHED`** for final estimation runs. The current 95% floor permits 5% un-converged policies to be stored; runs currently report 100% converged, so tightening the floor costs nothing today. | open |
 | **4.5** | **Add timeouts** to the notebook and PDF validation commands. `run_all.jl` can wait indefinitely on `pdflatex`. | open |
+| **4.0** | **Reconsider how the child's HC enters the wage.** It is `w(1 + αk)` with `α = 0.08`, so the *proportional* return to skill decays as `α/(1+αk)` — 7.3% at `k = 3`, 3.1% at `k = 20`. The estimated *parental* wage equation puts education in logs. If the child's skill is measured on a comparable scale, `w·exp(αk)` would hold the proportional return constant. This is a specification question, and it is the main reason the marginal value of HC falls away faster than the marginal value of a transfer. | open |
 
 ---
 
 ## Remaining work, in order
 
-1. **P10** — decide the parent's utility functional form. This is the one that changes
-   the economics rather than the numerics.
-2. **P5 (child side)** — the same smoothing question for `child_lifecycle.jl`, now that the
-   parent side shows the fix is safe (`V` stayed monotone at 59,160 of 59,160 pairs).
+1. **P10 (calibration half)** — `τ_p` = 0.011 is too low and neither `φ₂` nor `σ₁` fixes it.
+   The levers are the units of the HC production inputs and the weight on the child's skill.
+   This is the only open item that changes the economics.
+2. **P5 (child side)** — apply the same shape-preserving continuation to
+   `child_lifecycle.jl`, now that the parent side shows it is safe: `V` stayed monotone at
+   59,160 of 59,160 adjacent pairs and the Bellman residual went to exactly zero.
 3. **P7b** — get the `BothCollege` share from the estimation sample.
+4. **G3** — two-line guard, needed before any grid range can be narrowed.
+5. **Regenerate every table and figure.** The headline numbers moved a long way across this
+   session (college share 13.1% → 19.1%); anything already drafted is stale.
 3. **Improvement 7.0** — Tauchen vs Rouwenhorst in the solved model, not just in the
    discretization report.
 4. **Improvement 7.5 / 6.5** — grid refinement on real outcomes, and the paired bootstrap.
@@ -321,6 +349,33 @@ explains it, on branch `fix/remove-retirement`.
 | **N13** | Parent and child shared one asset grid, forcing `a_min = 0` into the parental dimension where the terminal value diverges | **final sweep** |
 | **N15** | Unseeded belief draws; taste-shock seeds 123 vs 2222 across simulators | **final sweep** |
 | **T9** | Leisure-floor gradient cliff of 1.28e7 broke the parent solve; the log is now linearized below the floor (C1, bounded) | **final sweep** |
+| **T10** | Parent-only loop floored `t_p`/`h_p` at 1e-6 against the full loop's 1e-4, letting `HC_next·σ₁/t_p` reach 1e6 | policy sweep |
+| **T11** | Neither backward-induction loop clamped its warm start from `t+1` into the current box | policy sweep |
+| **T12** | Parent `c` and `e` were boxed at a constant 100 regardless of the budget; SLSQP reached `a_next = −174` and the continuation was extrapolated 174 units past its edge | policy sweep |
+| **T13** | Production logs gave `∂HC_next/∂x = HC_next·σ_j/x`, unbounded at the 1e-4 time floors; `TIME_FLOOR = 1e-3` is strictly slack and caps it 10× | policy sweep |
+| **P5a** | Parent continuation was `Gridded(Linear())`, so `∂V/∂hc` was a step function and `τ_p` inherited the steps — the ragged policy plots. Now PCHIP | policy sweep |
+| **P10a** | Parent's utility omitted `φ₂ log l_p`, so `τ_p` was free and `corr(τ_p,h_p)` came out **+0.60**. Leisure restored as CRRA, `φ₂` 20.0 → 0.8, correlation now **−0.999** | policy sweep |
+| **I7.0** | Tauchen → Rouwenhorst in both modules; exact sd and persistence at every `N` | grid study |
+| **I7.5** | Grid refinement on real outcomes; found the state grids converged and the shock grid binding | grid study |
+| **G1** | Parent `Np` 3 → 7 — the binding approximation in the model (college share +4.55pp) | grid study |
+| **G2** | Parent `a_max` 50 → 100; simulated assets reached 281.5, off-grid 0.43% → 0.10% | grid study |
+
+### Tested and rejected
+
+Alternatives that were measured and **deliberately not adopted**. Each one is a real
+experiment with a number attached, not an untried idea.
+
+| Tried | Measured | Why rejected |
+|---|---|---|
+| **Interpolating cubic** for the parent's continuation | Fixes the raggedness as well as PCHIP does | Overshoots: pushed `∂V/∂hc` to 13.1 at the low-`hc` edge, which times `HC_next·σ₁/τ_p` gave gradients of 2e4 and broke the `σ₃₁ × 1.5` arm with a NaN iterate. PCHIP is C1 *and* bounded by the neighbouring secants. |
+| **Tighter solver** — `xtol_rel` 1e-4 → 1e-10, `ftol_rel` 1e-13, `maxeval` 40× | Reversal counts changed by **at most 1** | The raggedness was never solver noise. Six orders of magnitude bought nothing. |
+| **Finer `Nhc`** — 20 → 40 → 80 | Reversals at t=15 went **5 → 10 → 15**, range shrank 0.013 → 0.011 | Made it *worse*. Cell-boundary artefact, not coarseness — more cells, more steps. |
+| **Halving all state grids** (child `Na`,`Nk` 50→25; parent `Na`,`Nhc` 30→15) | College share **17.85% → 7.45%** | −10.4pp. The current sizes are at the convergence point, not above it. |
+| **Doubling any state grid** | College share moved ≤ 0.15pp; parent `Nhc` 30→60 moved it **0.00** | No accuracy to buy. Compute belongs in `Np`, not here. |
+| **Parent `a_max` 200** instead of 100 | Off-grid 0.10% → 0.05%; mean terminal assets 22.13 → 21.77 | Not worth the lost range resolution. 100 is enough. |
+| **Raising `σ₁₀`** to lift `τ_p` toward its old level | `τ_p` 0.011 → 0.102, but mean final `HC` **2.55 → 0.35 → 0.00** | Cobb-Douglas with inputs below 1: `log τ_p < 0`, so a larger elasticity *reduces* output. `τ_p` and `HC` cannot both be matched this way. |
+| **Re-ranging `hc_max`, `ap_grid`** to the ergodic distribution | ~⅓ of nodes sit outside the data's p1–p99 | Real waste, but since doubling the same grids changes nothing, reclaiming it is tidiness rather than correctness. Also blocked by the `create_focused_grid` bug below. |
+| **`τ_p` priced at weight 0.5** as a diagnostic before the full P10 fix | `corr(τ_p,h_p)` went negative at every t, but raggedness unchanged | Confirmed the sign problem and the continuation problem were independent. Superseded by the real fix. |
 
 ### Withdrawn or not errors
 
