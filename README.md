@@ -132,8 +132,14 @@ and re-run before committing a new Manifest.
 [`docs/ERRORS.md`](docs/ERRORS.md) carries the full list — every finding with its severity,
 file and line — followed by the improvement backlog and an ordered work plan.
 
-**4 findings are open: 1 high, 1 medium, 2 deferred by instruction.** The one that matters
-before trusting any output:
+**5 findings are open: 1 high, 2 medium, 2 deferred by instruction.** The one that matters
+before trusting any output is **P10** — the parent's utility omits the leisure term
+`model.txt` specifies, so time spent with the child costs the parent nothing. Verified
+directly: `util_parent` at `τ_p = 0.05` and `τ_p = 0.90` returns the same number to the
+last bit. Fixing it is a modelling decision, not a patch.
+
+The numerical caveat that was here before, **P5**, is now fixed on the parent side and
+still open on the child side:
 
 **P5 — the continuation interpolation moves policies, and this is now measured.** The
 solver's `Gridded(Linear())` continuation is C0 but not C1. Re-solving the same states
