@@ -65,10 +65,13 @@ m.V_child_interp = V_child_interp1   # built from the child solve
 solve_model!(m); simulate_model!(m)
 ```
 
-> ⚠️ **Before trusting a run.** The accuracy diagnostics currently understate the
-> problem: `check_simulation` filters out non-finite states before computing off-grid
-> shares (X3), and nothing measures whether the *solver* leaves the grid (C16 — 3.59% of
-> stored asset transitions do). See [`ERRORS.md`](ERRORS.md).
+> ⚠️ **Before trusting a run.** The diagnostics no longer understate the problem —
+> `check_simulation` counts non-finite states, `check_solver_domain` measures the
+> *solution* leaving the grid (which forward simulation cannot see), and
+> `check_feasibility_mask` checks the NaN pattern against both theoretical masks. One
+> caveat remains: **P5**, the continuation interpolation moves optimal labor supply by up
+> to 0.11–0.17 at some states, and refining the grid does not shrink it. See
+> [`ERRORS.md`](ERRORS.md).
 
 ### One reproducible run
 
@@ -169,7 +172,7 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 | `r`, `beta_0` | 0.03, 0.96 | interest rate; discount factor |
 | `R_0, R_1` | 2.0, 0.06 | HC technology TFP, `R_t = R_0 + R_1(t−1)` |
 | `sigma_{1..4}_0/1` | see constructor | elasticities, entered as **logs**: `σ_jt = exp(σ_j0 + σ_j1·(t−1))` |
-| `a_max`, `Na` | 50.0, 30 | asset grid |
+| `a_max`, `Na` | 50.0, 30 | parent's asset grid |
 | `Nk` | 2 | BothCollege ∈ {0,1} |
 | `hc_max`, `Nhc` | 6.0, 30 | child HC grid |
 | `Np`, `p_ar1`, `sigma_p` | 3, 0.9, 0.1 | AR(1) wage shock |
@@ -181,6 +184,8 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 |---|---|---|
 | `T`, `t_college` | 51, 4 | horizon (ages 18–68); college years |
 | `c_floor`, `delta_P` | 0.01, 0.01 | consumption floor (= optimizer bound); min retained parental asset |
+| `a_max`, `Na` | 100.0, 30 | **child's** asset grid. 100, not 50: it must cover the parent's terminal assets plus 51 periods of the child's own accumulation |
+| `ap_min`, `ap_max`, `Nap` | `delta_P`, `a_max`, `Na` | **parental** asset grid, separate since N13. Indexes the transfer arrays and the terminal-value spline. Starts at `delta_P` so the parent can always retain its floor; carries an exact node at the college threshold `a_req[1] + delta_P`, so there is no dead band |
 | `rho`, `eta`, `phi` | 1.5, 2.0, 18.0 | CRRA; inverse Frisch; labor disutility scale |
 | `kappa` | 5.0 | psychic cost of college |
 | `college_cost`, `college_boost` | 1.2, 2.0 | annual cost; annual HC increment `b*` |
@@ -189,23 +194,36 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 | `Np`, `p_ar1`, `sigma_p` | 5, 0.95, 0.2 | AR(1) wage shock |
 | `Nt`, `sigma_eps` | 11 (10 passed), 0.5 | Gauss-Hermite nodes for the taste shock ε₀ |
 
-Note the notebook overrides several of these at construction (`Na=50, Nk=50, Nt=10, rho=1.5`).
+Note the notebook overrides several of these at construction
+(`Na=50, Nk=50, Nt=10, rho=1.5, a_max=100.0`).
 
 ---
 
 ## Known issues
 
-The full audit is in [`ERRORS.md`](ERRORS.md): **20 open** (7 high, 9 medium, 3 low,
-1 deferred), plus a Resolved log of what has been fixed.
+The full audit is in [`ERRORS.md`](ERRORS.md): **4 open** (1 high, 1 medium, 2 deferred
+by instruction), plus a Resolved log of what has been fixed.
 
-The three that most affect results:
+1. 🟠 **P5** — the continuation interpolation moves policies. Re-solving the same states
+   against an interpolating cubic spline instead of `Gridded(Linear())` moves optimal
+   labor supply by up to 0.11–0.17 of the time endowment, and quadrupling the grid does
+   not shrink it. The Bellman residual is blind to this: it sits at 5.6e-13 on every grid
+   because it re-evaluates the stored policy rather than re-optimizing. This is a decision
+   about the interpolation scheme, not a bug to patch — ERRORS.md lays out the options.
+2. 🟡 **P7b** — the `BothCollege` share is hardcoded at `Bernoulli(0.3)` and still needs
+   an empirical source from the estimation sample.
+3. ⏸️ **C2**, **C8** — deferred out of scope by instruction.
 
-1. 🟠 **X3** — `check_simulation` drops non-finite states before computing off-grid shares,
-   so a 96%-NaN simulation reports "0% outside".
-2. 🟠 **C16** — the work solver has no upper domain constraint; 3.59% of stored asset and
-   5.00% of human-capital transitions leave the solved grid, invisible to the simulation.
-3. 🟠 **M2** — the notebook's 17 child-model constructions all use `a_max = 50`, the grid
-   already measured as inadequate; only `run_all.jl` uses 100.
+Two numerical guards are worth knowing about when reading the parent solver, both added
+after the solve died on NaN iterates:
+
+- `LEISURE_FLOOR = 1e-4`. The child's leisure `1 − τ_p − i_c` is a *nonlinear* constraint,
+  so SLSQP evaluates points that violate it. Below the floor `log` is **linearized**, not
+  flattened: value and slope both match at the floor, so the derivative is bounded by
+  `1/L` instead of cliffing by it. Verified inactive at the optimum — the minimum child
+  leisure over 54,000 solved states is 0.465.
+- Both backward-induction loops floor `t_p` and `h_p` at `1e-4` (the parent-only loop used
+  `1e-6`) and clamp the warm start from `t+1` into the current box.
 
 ---
 

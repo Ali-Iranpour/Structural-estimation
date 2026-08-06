@@ -14,6 +14,7 @@ the child's birth to age 18; the child is then followed to age 68.
 | Read the model as written in the paper | [`docs/model.txt`](docs/model.txt) |
 | Find which code implements which equation | [`docs/MODEL.md`](docs/MODEL.md) |
 | Know what's currently broken | [`docs/ERRORS.md`](docs/ERRORS.md) — every error, severity, file and line |
+| Understand why the spec says what it says | [`docs/SPEC_DECISIONS.md`](docs/SPEC_DECISIONS.md) |
 | Find an old version | [`archive/NOTES.md`](archive/NOTES.md) |
 
 ---
@@ -131,16 +132,22 @@ and re-run before committing a new Manifest.
 [`docs/ERRORS.md`](docs/ERRORS.md) carries the full list — every finding with its severity,
 file and line — followed by the improvement backlog and an ordered work plan.
 
-**20 findings are open: 7 high, 9 medium, 3 low, 1 deferred.** The three that matter most
+**4 findings are open: 1 high, 1 medium, 2 deferred by instruction.** The one that matters
 before trusting any output:
 
-1. **X3** — `check_simulation` drops non-finite states *before* computing off-grid shares,
-   so a 96%-NaN simulation reports "0% outside". The diagnostics can return green on a
-   broken run.
-2. **C16** — the work solver constrains only `a' >= a_min`; **3.59%** of stored asset
-   transitions and **5.00%** of human-capital transitions leave the solved grid. Forward
-   simulation reports 0.00%, so this is invisible today.
-3. **M2** — the notebook runs every counterfactual on `a_max = 50`, the grid already
-   measured as too small; only `run_all.jl` uses the corrected 100.
+**P5 — the continuation interpolation moves policies, and this is now measured.** The
+solver's `Gridded(Linear())` continuation is C0 but not C1. Re-solving the same states
+against an interpolating cubic spline instead moves optimal labor supply by up to **0.11 to
+0.17** of the unit time endowment, and **quadrupling the grid from 20×20 to 80×80 does not
+shrink it**. The Bellman residual is blind to this — it sits at 5.6e-13 on every grid,
+because it re-evaluates the stored policy rather than re-optimizing.
 
-A green `run_all.jl` does **not** currently mean a sound solution.
+This is not a bug to patch: it means the numerical solution is not pinned down at those
+states, and the fix is a decision about the interpolation scheme. ERRORS.md lays out the
+three options.
+
+The other two: **P7b**, the `BothCollege` share is hardcoded at `Bernoulli(0.3)` and still
+needs an empirical source; **C2** and **C8** are deferred out of scope by instruction.
+
+A green `run_all.jl` now means the solution is internally consistent, on-domain, and
+feasibility-masked correctly — it does not settle P5.

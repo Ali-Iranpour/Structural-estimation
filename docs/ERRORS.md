@@ -31,11 +31,13 @@ solve unless stated.
 
 ```bash
 cd code && julia --project=.. run_all.jl      # baseline + diagnostics + tables + PDF
-python3 tools/nb_smoketest.py                 # notebook, all 64 cells, shrunken grids
+python3 tools/nb_smoketest.py                 # notebook, every code cell, shrunken grids
 ```
 
-⚠️ **The diagnostics currently understate the problem** — see X3 and C16. A green run does
-not yet mean a sound solution.
+Both are green. The diagnostics no longer understate the problem: `check_simulation` counts
+non-finite states, `check_solver_domain` measures the *solution* leaving the grid (which
+forward simulation cannot see), and `check_feasibility_mask` checks the NaN pattern against
+both theoretical masks. **One caveat remains — see P5.**
 
 ---
 
@@ -43,295 +45,116 @@ not yet mean a sound solution.
 
 | # | Issue | File | Severity |
 |---|---|---|---|
-| M2 | Notebook uses the known-inadequate child `a_max = 50` | notebook | 🟠 |
-| C16 | Work solver has no upper domain constraint; **3.59% / 5.00%** of stored transitions leave the grid | child_lifecycle | 🟠 |
-| X3 | `check_simulation` drops non-finite states before computing off-grid shares | diagnostics | 🟠 |
-| P6 | Parent-only loop still stores unchecked NLopt results | parent_family | 🟠 |
-| C15 | Heterogeneous child simulator silently clamps, no upper guard | parent_family | 🟠 |
-| D1 | `model.txt` still places the max outside `E_eps` | docs | 🟠 |
-| P5 | Linear continuation under SLSQP — **unverified**, not established benign | all | 🟠 |
-| C14 | Interpolators built over arrays containing infeasible NaN rows | both | 🟡 |
-| N15 | Unseeded belief draws; mismatched taste-shock seeds | notebook + src | 🟡 |
-| P4 | `obj_last_period_full` still returns a finite `-1e12` sentinel | parent_family | 🟡 |
-| X4 | `check_solution` allows blanket NaN and omits `sol_h_college` | diagnostics | 🟡 |
-| P9 | Heterogeneous parent sim takes wage/tax from the base model | parent_family | 🟡 |
-| N13 | Parent and child share one asset grid | child_lifecycle | 🟡 |
-| M1 | Notebook writes no tables; table asset units inconsistent | notebook + tables | 🟡 |
-| P7 | phi normalization; `BothCollege` share hardcoded | parent_family | 🟡 |
-| C17 | Work bounds hardcode `0.01` instead of `model.c_floor` | child_lifecycle | 🟡 |
-| C7 | `findfirst` / `discrete_draw` can return `nothing` | both | ⚪ |
-| C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⚪ |
-| C12 | `sim_a[:, T+1]` never written | both | ⚪ |
+| P5 | Linear continuation moves policies — **established and measured** | all | 🟠 |
+| P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
+| C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
 
 ---
 
-## 🟠 M2 — The notebook uses the known-inadequate child grid
-
-All **17** `ConSavLaborCollege_AR1(...)` constructions in the notebook pass `a_max = 50.0`.
-`run_all.jl` uses **100.0**, and its own comment records why: at 50, `check_simulation`
-reported 2.87% of simulated child assets above the grid.
-
-The notebook's baseline *and every counterfactual* therefore run on the grid already
-measured as too small, while only the baseline script uses the corrected one.
-
-**Fix.** Set `a_max = 100.0` at all 17 sites, or define the grid once and reuse it.
-
-## 🟠 C16 — The work solver can leave the solved grid
-
-`asset_constraint_work` constrains only `a' >= a_min`. There is **no** `a' <= a_max`, and
-nothing constrains `k' = k + h <= k_max`. The continuation value is then evaluated
-off-grid by `Line()` extrapolation.
-
-Measured over 100,000 stored work transitions:
-
-| | share leaving the grid |
-|---|---|
-| assets | **3.59%** |
-| human capital | **5.00%** |
-
-Forward simulation reports 0.00%, so this is invisible to the current diagnostics: the
-*solution* leaves the domain even where the *simulation* does not.
-
-**Fix.** Add explicit upper constraints, or widen the grids until stored transitions stay
-inside — and add this solver-side measurement to `diagnostics.jl`, which does not make it.
-
-## 🟠 X3 — `check_simulation` can report 0% on an all-NaN simulation
-
-`diagnostics.jl:89` filters non-finite values *before* computing shares:
-
-```julia
-a, k = filter(isfinite, a), filter(isfinite, k)
-below_a = count(<(m.a_min), a) / max(length(a), 1)
-```
-
-Demonstrated: a `sim_a` that is **96% NaN** reports `above_a = 0.00%` and passes. This
-masks C12 (the entirely-NaN terminal asset column) and would mask any failure producing
-NaN rather than an out-of-range number.
-
-**Fix.** Count non-finite entries as violations, or report them as their own column, and
-fail on them.
-
-## 🟠 P6 — Parent-only loop still stores unchecked results
-
-The terminal and adolescence loops validate `x_opt`/`minf` before storing. The
-**parent-only** loop (`t = 7..1`, `parent_family.jl:555`) does not — it goes straight from
-`optimize(...)` to `push!(itercounts, ...)` and storage. P6 was only partially fixed.
-
-**Fix.** Apply the same finiteness check as the other two loops.
-
-## 🟠 C15 — Heterogeneous child simulator clamps silently
-
-`parent_family.jl:1396`, in `simulate_model_family_hetero!`:
-
-```julia
-sim_a[i, t+1] = max(a_next, a_min)
-```
-
-Pre-Phase-2 behaviour: it **rewrites the budget law** by replacing a genuinely negative
-asset with `a_min`, and applies no upper guard on assets or human capital. It contradicts
-the `snap` convention adopted in Phase 2 — correct only float-sized violations, leave real
-excursions visible.
-
-**Fix.** Use `snap` here too.
-
-## 🟠 D1 — The paper still describes commitment timing
-
-`model.txt:185` still has the max **outside** `E_eps`, the commitment timing Phase 0.5
-rejected and the code no longer implements. The code computes
-`E_eps[ max_{d,tr} E_z[W] ]`.
-
-**Fix.** Replace with `V^CD_{T_L-1} = E_eps[ V^CD_{T_L}(., eps) ]`. This is edit 6 of the
-eight in [`SPEC_DECISIONS.md`](SPEC_DECISIONS.md), none of which have been applied.
-
-## 🟠 P5 — Linear continuation value under SLSQP (unverified)
+## 🟠 P5 — Linear continuation moves policies (established, not refuted)
 
 `Gridded(Linear())` makes the continuation C0 but not C1, so `Interpolations.gradient` is
-piecewise-constant with jumps at every knot while SLSQP builds a BFGS quadratic model from
-it. `interp_vec = Vector{Any}` also forces dynamic dispatch in the innermost objective.
+piecewise-constant with a jump at every knot while SLSQP builds a BFGS quadratic model from
+it. This was previously downgraded on a Bellman residual of `5.8e-13` and then restored to
+High because that residual re-evaluates the *stored* policy — it detects an inconsistent
+value, never a suboptimal one.
 
-**Restored to High.** It was downgraded on a Bellman residual of `5.8e-13`, but that
-residual re-evaluates the *stored* policy — it detects an inconsistent value, not a
-suboptimal policy. Nothing has established that linear interpolation gives negligible
-policy and moment differences.
+**It has now been tested directly and it is confirmed.** Two new diagnostics do it:
 
-**Fix.** Establish or refute it via Improvement 1, and compare against shape-preserving and
-smooth interpolation.
+- `bellman_optimality_residual` re-optimizes sampled states from four starts against the
+  same continuation and compares the maximum against the stored `V`.
+- `continuation_interpolation_test` solves each sampled state twice — once against the
+  linear continuation the solver uses, once against an interpolating cubic spline of the
+  same value array — and compares the two optimal policies.
 
-## 🟡 C14 — Interpolators built over arrays containing NaN rows
+Measured across four grids (`Nt=6`, `a_max=100`, work path):
 
-`simulate_model_family!` (`child_lifecycle.jl:1108`) and especially
-`simulate_model_family_hetero!` (`parent_family.jl:1293`) build interpolants from whole
-transfer/college arrays, including infeasible rows holding `NaN`.
+| grid | consistency residual | optimality residual (max) | states improved | max \|Δc\| | max \|Δh\| | mean \|Δh\| |
+|---|---|---|---|---|---|---|
+| 20×20 | 5.53e-13 | 1.98e-05 | 4.17% | 2.81 | 0.139 | 6.2e-03 |
+| 30×30 | 5.58e-13 | 1.26e-05 | 3.33% | 1.18 | 0.135 | 4.7e-03 |
+| 50×50 | 5.63e-13 | 1.50e-05 | 2.50% | 5.46 | 0.108 | 5.4e-03 |
+| 80×80 | 5.65e-13 | 1.22e-04 | 3.33% | 1.45 | 0.170 | 3.5e-03 |
 
-Measured: the transfer-stage feasibility threshold is **2.2774**, the first feasible asset
-grid node is **4.6661** — a **2.39-wide band** where a state is economically feasible but
-interpolates against NaN.
+Three things to read off this:
 
-Latent today (current terminal assets do not land in the band) but structurally wrong.
+1. **The consistency residual is blind to it.** It is 5.6e-13 at every grid — flat. It
+   measures whether `V` matches the stored `(c,h)`, and it always will.
+2. **The continuation choice moves labor supply by up to ~0.11–0.17** of the unit time
+   endowment at some states — 11 to 17 percentage points. Consumption moves by up to
+   several units.
+3. **Refining the grid does not remove it.** Quadrupling the grid from 20×20 to 80×80
+   leaves the maximum policy gap the same size.
 
-**Fix.** Build every college/transfer interpolant over the feasible slice, consistently.
+The optimality residual itself is small (≈1e-5 relative, 2.5–4% of states improvable),
+which is ordinary SLSQP slack. The continuation gap is the real finding.
 
-## 🟡 N15 — Unseeded belief draws and mismatched shock seeds
+**What this does *not* say.** The cubic spline is not "the right answer" — it is a second
+reasonable approximation that disagrees with the first. Cubic splines overshoot and can
+break the monotonicity and concavity of `V`, which matters here. The honest statement is
+that **the numerical solution is not pinned down at those states**, not that linear is
+wrong and cubic is right.
 
-- **4** unseeded `rand(Beta(alpha, beta), simN)` calls in the notebook.
-- Homogeneous simulators use `MersenneTwister(123)` (`child_lifecycle.jl:680, 1130`); the
-  heterogeneous one uses `MersenneTwister(2222)` (`parent_family.jl:1312`).
+**Decision required.** Three options, in increasing cost:
 
-With an otherwise identical one-bin model at `N = 500`, the seed difference alone moved the
-college count from 21 to 23. Counterfactual differences still carry resampling noise, which
-P2 was supposed to remove.
+- Accept it and report it, given the affected states are a minority and the moments used
+  in the paper may be insensitive. *This needs a moments-level test that has not been run.*
+- Switch to a **shape-preserving** scheme (monotone cubic / PCHIP), which is C1 without
+  overshoot. This changes every result and requires re-running everything.
+- Solve on a much finer grid where the two agree. The table above suggests this is
+  expensive: 4× refinement bought nothing.
 
-**Fix.** Seed the Beta draws from the model seed; use one stored set of taste-shock draws
-everywhere.
+## 🟡 P7b — The `BothCollege` share is hardcoded
 
-## 🟡 P4 — A finite sentinel survives in `obj_last_period_full`
+`parent_family.jl` draws `sim_k_init` from `Bernoulli(0.3)` — 30% of households have two
+college-educated parents. The number is hardcoded and **still needs an empirical source**:
+it should come from the estimation sample, as the wage coefficients in
+`wage2_styled.do` do.
 
-`parent_family.jl:634`:
+The other half of P7 — the `model.txt` claim that `(φ₁,φ₂,φ₃)` are "normalized to sum to
+one" when the calibration is `(1, 20, 0.03)` — is **fixed**; the claim is dropped and the
+reason stated.
 
-```julia
-if any(isnan, grad)
-    grad .= -1e12
-    return -1e12
-end
-```
-
-The `-1e8` penalties were removed from the utility and HC functions; this one remains.
-Because `-1e12` is *finite*, every downstream check accepts it. The finite-sentinel problem
-is not fully removed.
-
-**Fix.** Let the NaN propagate and fail, or floor the underlying quantity consistently in
-value and gradient, as `LEISURE_FLOOR` does.
-
-## 🟡 X4 — `check_solution` is too permissive
-
-Two problems at `diagnostics.jl:58`:
-
-1. `sol_h_college` appears in `allow_nan` but is **not among the arrays actually
-   inspected**, so it is never checked.
-2. NaN is allowed blanket-wide per array. Nothing verifies the NaN pattern coincides with
-   the theoretical feasibility mask, so a solver failure *inside* the feasible region would
-   pass silently.
-
-**Fix.** Inspect `sol_h_college`; compare the NaN mask against `a_req` / `first_feasible_a`.
-
-## 🟡 P9 — Heterogeneous parent sim mixes models
-
-`parent_family.jl:1208` selects policies from the belief-specific `pm` but computes wage
-and tax from `model` (= `parent_models[1]`):
-
-```julia
-wage      = wage_func(model, k, t, p_shock)
-after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-```
-
-Harmless only while every belief-specific parent model shares wage and tax parameters —
-true today, silently wrong the moment it is not.
-
-**Fix.** Use `pm` throughout.
-
-## 🟡 N13 — Parent and child share one asset grid
-
-The transfer arrays are indexed on the **child's** asset grid but hold **parental** assets.
-Two consequences:
-
-1. `a_min = 0` is needed so the work branch's `tr = 0` is on-grid, but at `a = 0` the parent
-   cannot retain `delta_P`, `a_term -> 0` and `kappa_term*log(a_term)` diverges — a genuine
-   model singularity, handled by dropping that row from the terminal spline.
-2. **Between `delta_P` and the first valid spline node** the terminal value is obtained by
-   *extrapolation* rather than interpolation, because `terminal_value_spline` fits only over
-   `valid_rows`. Same dead band as C14.
-
-**Fix.** Separate the parental-asset grid from the child-asset grid; start the parent grid
-above `delta_P` so neither the singularity nor the dead band exists.
-
-## 🟡 M1 — Notebook writes no tables, and table units are inconsistent
-
-`run_all.jl` writes three tables with provenance; the notebook writes **none** — zero
-`table_*` and zero `write_manifest` calls. `belief_df` and the `@sprintf` belief summary
-exist only as notebook output, which is stripped on commit.
-
-**Fix the unit inconsistency first:** `table_outcomes` multiplies assets by `rescale = 10`;
-`table_belief_groups` does not rescale at all. Wiring them in as-is would put assets in two
-different units in the same paper.
-
-## 🟡 P7 — Parameters that do not match the spec
-
-- `phi_2_0 = 20.0` with `phi_1_0 = 1.0`, `phi_3_0 = 0.03` — sum 21.03 against `model.txt`'s
-  "normalized to sum to one". **Decided (Phase 0.8): drop the claim**; the `model.txt` edit
-  is in `SPEC_DECISIONS.md`, not yet applied.
-- `Bernoulli(0.3)` for the `BothCollege` share is hardcoded and **still needs an empirical
-  source** — it should come from the estimation sample, as the wage coefficients do.
-
-## 🟡 C17 — Work bounds hardcode the consumption floor
-
-`child_lifecycle.jl:294` and `:301` use a literal `0.01` for the consumption lower bound and
-the initial guess rather than `model.c_floor`. `c_floor` defaults to `0.01`, so they agree
-today — but changing the configured floor would silently re-introduce exactly the
-inconsistency C1 was about.
-
-**Fix.** Use `model.c_floor` at both sites.
-
-## ⚪ C7 — `findfirst` / `discrete_draw` can return `nothing`
-
-Broader than previously recorded. Three sites:
-
-- `eps_indices = [findfirst(w -> w >= rand(rng), cum_weights) ...]` — `t_weight` sums to 1
-  only up to floating-point error.
-- `discrete_draw` has the same structure and failure mode.
-- The heterogeneous simulator's `clamp(findfirst(...), 1, Nt)` **also fails** when the
-  result is `nothing`: `clamp(nothing, ...)` is a `MethodError`, so the guard does not guard.
-
-**Fix.** `something(findfirst(...), Nt)` before clamping; normalize the weight vectors to
-sum exactly to 1.
-
-## ⚪ C8 — Duplicate `discrete_draw`; unused `Nt` dimension
-
-In the **superseded** `child_lifecycle_ar1.jl` only. Harmless while it stays
-reference-only.
-
-## ⚪ C12 — `sim_a[:, T+1]` never written
-
-Both simulators guard the transition on `if t < T`, so the final column of a `T+1`-column
-array stays `NaN`. The child consumes everything at `T`, so the correct value is `0`.
-Currently masked by X3.
+**Fix.** Replace `0.3` with the share measured in the estimation sample, and record it in
+`model.txt` alongside the wage estimates.
 
 ## ⏸️ C2 — Psychic cost uses the wrong power
 
 `kappa/(HC+1)^4` in code against `kappa/(HC+1)^2` in `model.txt`. At `HC = 1, kappa = 5`:
 0.31 vs 1.25. **Deferred out of scope by instruction.**
 
+## ⏸️ C8 — Duplicate `discrete_draw`; unused `Nt` dimension
+
+In the **superseded** `child_lifecycle_ar1.jl` only. Harmless while it stays
+reference-only. **Deferred out of scope by instruction.**
+
 ---
 
 ## Improvements to add
 
-None implemented. Ordered by priority.
+Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
 
-| Priority | Improvement |
-|---|---|
-| **8.0** | Replace the Bellman residual with a **true maximized-RHS residual**: re-optimize sampled states independently and compare the maximum against stored `V`. The present check re-evaluates the stored policy, so it detects inconsistency but not suboptimality. Also report Euler/FOC, complementary-slackness and constraint residuals. |
-| **7.5** | **Grid refinement over at least three** asset/HC grids, reporting college share, transfer distribution, terminal parental assets and selected policy functions — not one scalar. |
-| **7.0** | **Compare Tauchen and Rouwenhorst in the solved model.** At the child's own parameters Tauchen overstates the unconditional shock sd by **31.4%**. Phase 0.7 kept the AR(1) *process* as a documented approximation; the *discretizer* is a separate, still-open choice. |
-| **6.5** | **Common stored preference- and wage-shock draws across every counterfactual**, then a **paired bootstrap** for differences. |
-| **6.0** | **Explicit tests around the college-feasibility threshold**: just below, exactly at, inside the band between threshold and first grid node, and just above. |
-| **6.0** | **Standardize monetary units** across simulation arrays, plots and tables. Parent `sim_wage` stores `2 x` the mean parental wage while labelled simply "wage". |
-| **5.5** | **Require zero `MAXEVAL_REACHED`** for final estimation runs, or verify those solutions independently. The current 95% floor permits 5% un-converged policies to be stored. |
-| **4.5** | **Add timeouts** to the notebook and PDF validation commands. `run_all.jl` can wait indefinitely on `pdflatex`; the smoke test can hang in plotting-library initialization. |
+| Priority | Improvement | Status |
+|---|---|---|
+| ~~8.0~~ | True maximized-RHS Bellman residual, re-optimizing sampled states independently | **done** — `bellman_optimality_residual` |
+| **7.5** | **Grid refinement over at least three** asset/HC grids, reporting college share, transfer distribution, terminal parental assets and selected policy functions — not one scalar. | open |
+| **7.0** | **Compare Tauchen and Rouwenhorst in the solved model.** At the child's own parameters Tauchen overstates the unconditional shock sd by **31.4%** and persistence by 3.99%; Rouwenhorst matches both exactly. Phase 0.7 kept the AR(1) *process* as a documented approximation; the *discretizer* is a separate, still-open choice. | open |
+| **6.5** | **Paired bootstrap** for counterfactual differences. Common draws are now stored and shared (N15), so the pairing is available; the bootstrap is not written. | open |
+| **6.0** | **Explicit tests around the college-feasibility threshold**: just below, exactly at, and just above. The dead band between them is now zero wide (N13/C14), so this is a regression test for that. | open |
+| **6.0** | **Standardize monetary units** across simulation arrays and plots. Tables are done — `ASSET_RESCALE` is defined once and both asset tables use it — but parent `sim_wage` still stores `2 ×` the mean parental wage while labelled simply "wage". | partial |
+| **5.5** | **Require zero `MAXEVAL_REACHED`** for final estimation runs. The current 95% floor permits 5% un-converged policies to be stored; runs currently report 100% converged, so tightening the floor costs nothing today. | open |
+| **4.5** | **Add timeouts** to the notebook and PDF validation commands. `run_all.jl` can wait indefinitely on `pdflatex`. | open |
 
 ---
 
 ## Remaining work, in order
 
-1. **X3, C16** — fix the diagnostics before trusting any other green result.
-2. **M2** — put the notebook on the corrected grid.
-3. **P6, C15, P4, C17** — finish the partially-applied fixes.
-4. **N15** — complete P2 (seeded beliefs, one shared taste-shock draw set).
-5. **C14, N13** — the feasibility dead band.
-6. **D1 and the other seven `model.txt` edits** in `SPEC_DECISIONS.md`.
-7. **M1** (after the unit fix), **X4**, **P9**, **P7**, **C7**.
-8. **P5** — establish or refute via Improvement 1.
-9. **Run the notebook at production grids.** The smoke test only proves it executes at
-   `Na=12, Nk=12, Nt=4, simN=200` with 3 belief bins.
+1. **P5** — make the decision above. Everything else numerical is closed.
+2. **P7b** — get the `BothCollege` share from the estimation sample.
+3. **Improvement 7.0** — Tauchen vs Rouwenhorst in the solved model, not just in the
+   discretization report.
+4. **Improvement 7.5 / 6.5** — grid refinement on real outcomes, and the paired bootstrap.
 
 ---
 
@@ -347,7 +170,6 @@ explains it, on branch `fix/remove-retirement`.
 | N11 | Notebook cannot run top-to-bottom | Phase 1 |
 | N2 | Diagnostics suppressed | Phase 1 |
 | P2 | Unseeded RNG | Phase 1 |
-| P6 | NaN guard unreachable | Phase 1 |
 | X1 | No accuracy diagnostics | Phase 1+4 |
 | C11 | Transfer/simulation extrapolation | Phase 2 |
 | C9 | Child simulation never clamps | Phase 2 |
@@ -356,7 +178,6 @@ explains it, on branch `fix/remove-retirement`.
 | N1 | College choice outside the ε expectation | Phase 3 |
 | N10 | Heterogeneous arms mismatched `y` | Phase 3 |
 | P1 | Spurious `∂V/∂k` | Phase 3 |
-| P4 | Objective/gradient inconsistent | Phase 3 |
 | N3 | Invalid CEV (removed; welfare gaps + bootstrap SE instead) | Phase 5 |
 | N4 | θ-experiment ω mismatch | Phase 5 |
 | N8 | Model/label order swapped | Phase 5 |
@@ -372,6 +193,24 @@ explains it, on branch `fix/remove-retirement`.
 | C1 | `-Inf` sentinel → 30% NaN | pre-Phase 0 |
 | C10 | Return codes never inspected | pre-Phase 0 |
 | C4 | Asymmetric transfer optimization | pre-Phase 0 |
+| **X3** | `check_simulation` dropped non-finite states before computing off-grid shares, so a 96%-NaN run reported 0.00% outside | **final sweep** |
+| **X4** | `check_solution` omitted `sol_h_college` and allowed NaN blanket-wide; `check_feasibility_mask` now checks both theoretical masks | **final sweep** |
+| **P4** | `obj_last_period_full` returned a finite `-1e12` sentinel that every downstream check accepted | **final sweep** |
+| **P6** | The parent-only loop stored NLopt results unchecked | **final sweep** |
+| **P9** | Heterogeneous parent sim took wage and tax from the base model, policies from the belief model | **final sweep** |
+| **P7a** | `model.txt` claimed the φ weights sum to one; claim dropped, reason stated | **final sweep** |
+| **C7** | `clamp(nothing, …)` is a `MethodError`, so neither guard guarded; weights now normalized to sum to exactly 1 | **final sweep** |
+| **C12** | `sim_a[:, T+1]` was never written; the terminal period leaves no bequest, so it is 0 | **final sweep** |
+| **C14** | Interpolants built across both NaN masks; the measured 2.39-wide college dead band is now 0.00 | **final sweep** |
+| **C15** | Heterogeneous family simulator used `max(a_next, a_min)`, rewriting the budget law, with no upper guard | **final sweep** |
+| **C16** | No upper domain constraint; 3.59% of asset and 5.00% of HC transitions left the grid. Now bounded — residual excursions are 9.99e-07 (NLopt constraint tolerance) and 1.00e-03 (labor lower bound) | **final sweep** |
+| **C17** | Work bounds hardcoded `0.01` instead of `model.c_floor` | **final sweep** |
+| **D1** | `model.txt` placed the max outside `E_ε`; all eight spec edits applied | **final sweep** |
+| **M1** | Notebook wrote no tables, and `table_belief_groups` printed raw units under an `×10³` caption | **final sweep** |
+| **M2** | Notebook ran every counterfactual on the known-inadequate `a_max = 50` | **final sweep** |
+| **N13** | Parent and child shared one asset grid, forcing `a_min = 0` into the parental dimension where the terminal value diverges | **final sweep** |
+| **N15** | Unseeded belief draws; taste-shock seeds 123 vs 2222 across simulators | **final sweep** |
+| **T9** | Leisure-floor gradient cliff of 1.28e7 broke the parent solve; the log is now linearized below the floor (C1, bounded) | **final sweep** |
 
 ### Withdrawn or not errors
 
@@ -395,3 +234,4 @@ explains it, on branch `fix/remove-retirement`.
 | **5** — counterfactual design | N4, N3, N8, N9, M1 (partial), experiment definitions |
 | **audit** — deep sweep | T1–T4 |
 | **notebook execution** | T5–T8 |
+| **final sweep** — everything but C2/C8 | X3, X4, P4, P6, P9, P7a, C7, C12, C14, C15, C16, C17, D1, M1, M2, N13, N15, T9; P5 established and measured |
