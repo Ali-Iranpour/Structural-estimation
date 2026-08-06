@@ -222,19 +222,21 @@ function Parent_child_interaction_age_specific_AR1(;
     phi_2_vector   = [phi_2_0 + phi_2_1 * (t-1) for t in 1:T]
     phi_3_vector   = [phi_3_0 + phi_3_1 * (t-1) for t in 1:T]
     R_vector       = [R_0 + R_1 * (t-1) for t in 1:T]
-    #R_vector       = [t <= 7 ? 2.0 : 2.5 + 0.1 * (t-1) for t in 1:T]
-    mu_vector      = [t <= 7 ? 1.0 : mu_0 + mu_1 * (t-7) for t in 1:T]
+    #R_vector       = [t < T_CHILD_VOICE ? 2.0 : 2.5 + 0.1 * (t-1) for t in 1:T]
+    mu_vector      = [t < T_CHILD_VOICE ? 1.0 : mu_0 + mu_1 * (t - (T_CHILD_VOICE - 1))
+                      for t in 1:T]
 
     sigma_1_vector = [exp(sigma_1_0 + sigma_1_1 * (t-1)) for t in 1:T]
     sigma_2_vector = [exp(sigma_2_0 + sigma_2_1 * (t-1)) for t in 1:T]
     sigma_3_vector = [exp(sigma_3_0 + sigma_3_1 * (t-1)) for t in 1:T]
-    sigma_4_vector = [t <= 7 ? 0.0 : exp(sigma_4_0 + sigma_4_1 * (t-7)) for t in 1:T]
+    sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 :
+                      exp(sigma_4_0 + sigma_4_1 * (t - (T_CHILD_VOICE - 1))) for t in 1:T]
 
     
     #sigma_1_vector = [0.10 for t in 1:T]  # very small, but constant
     #sigma_2_vector = [0.10 + 0.01*(t-1) for t in 1:T] # slowly rising
     #sigma_3_vector = [0.30 for t in 1:T]  # moderate persistence
-    #sigma_4_vector = [t <= 7 ? 0.0 : 0.10 + 0.01*(t-8) for t in 1:T]
+    #sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 : 0.10 + 0.01*(t-T_CHILD_VOICE) for t in 1:T]
 
     lambda_1_vector = [lambda_1_0 + lambda_1_1 * (t-1) for t in 1:T]
     lambda_2_vector = [lambda_2_0 + lambda_2_1 * (t-1) for t in 1:T]
@@ -319,6 +321,24 @@ end
 
 # === Put near the top of your file ===
 const TOL_CONSTR = 1e-8
+"""
+    T_CHILD_VOICE
+
+First period in which the child is a decision maker. Periods `1 .. T_CHILD_VOICE-1` are
+childhood: the parents choose alone over `(c_p, e_p, h_p, tau_p)` and the child's study
+time is absent from HC production. From `T_CHILD_VOICE` the child bargains, `tau_c` enters
+the choice set, and the welfare weight starts falling from 1.
+
+`t = 1` is the child's birth year, so `T_CHILD_VOICE = 7` means childhood is ages 0-5 and
+the child gains a voice at age 6.
+
+Six things key off this boundary: the two backward-induction loops, `mu_vector`,
+`sigma_4_vector`, and the two simulators' HC-technology branch. They are derived from this
+constant rather than written out, because they were six scattered literals and changing the
+boundary meant finding all of them.
+"""
+const T_CHILD_VOICE = 7
+
 const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
 
 # P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
@@ -460,7 +480,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                                       itercounts, total, min_converged, verbose))
 
     # ----- Earlier periods (t = T-1 down to 8) -----
-    for t in (T-1):-1:8
+    for t in (T-1):-1:T_CHILD_VOICE
         println("Solving period $t ... (full model)")
         converge_count = 0
         maxeval_count = 0
@@ -538,7 +558,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
     end
 
     # ----- Parent-only periods (t = 7 down to 1) -----
-    for t in 7:-1:1
+    for t in (T_CHILD_VOICE - 1):-1:1
         println("Solving period $t ... (parent only)")
         converge_count = 0
         maxeval_count = 0
@@ -1113,7 +1133,7 @@ function simulate_model!(model::Parent_child_interaction_age_specific_AR1)
             # silently rewrite the transition law.
             sim_a[i, t+1] = snap_parent(a_next_p, model.a_min, model.a_max)
             sim_k[i, t+1] = k 
-            if t < 8
+            if t < T_CHILD_VOICE
                 hc_next = exp(log(model.R_vector[t]) +
                               model.sigma_1_vector[t] * log(max(sim_t[i, t], 1e-8)) +
                               model.sigma_2_vector[t] * log(max(sim_e[i, t], 1e-8)) +
@@ -1261,7 +1281,7 @@ function simulate_model_hetero!(
                                         sim_c[i, t] - sim_e[i, t], pm.a_min, pm.a_max)
             sim_k[i, t+1] = k
 
-            if t < 8
+            if t < T_CHILD_VOICE
                 sim_hc[i, t+1] = exp(
                     log(pm.R_vector[t]) +
                     pm.sigma_1_vector[t] * log(max(sim_t[i, t], 1e-8)) +
