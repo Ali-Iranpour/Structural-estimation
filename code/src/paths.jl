@@ -26,7 +26,12 @@ const ROOT     = normpath(joinpath(@__DIR__, "..", ".."))
 const CODE_DIR = joinpath(ROOT, "code")
 const SRC_DIR  = joinpath(CODE_DIR, "src")
 const DOCS_DIR = joinpath(ROOT, "docs")
-const OUT_DIR  = joinpath(ROOT, "output")
+
+# STRUCT_EST_OUTPUT redirects every output helper somewhere else. The smoke test sets it,
+# because it runs the notebook at shrunken grids and would otherwise drop 12x12x4 figures
+# and 200-agent tables into output/, which is tracked. Provenance already records that a
+# table came from a shrunken run; this stops it being committed in the first place.
+const OUT_DIR = get(ENV, "STRUCT_EST_OUTPUT", joinpath(ROOT, "output"))
 
 const FIG_DIR    = joinpath(OUT_DIR, "figures")
 const TAB_DIR    = joinpath(OUT_DIR, "tables")

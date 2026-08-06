@@ -130,8 +130,9 @@ table_diagnostics([
     "Simulated assets below \$a_{\\min}\$"      => fmt_num(100sim.below_a; digits = 2) * "\\%",
     "Simulated assets above \$a_{\\max}\$"      => fmt_num(100sim.above_a; digits = 2) * "\\%",
     "Simulated states non-finite"             => fmt_num(100max(sim.nonfinite_a, sim.nonfinite_k); digits = 2) * "\\%",
-    "Stored transitions off-grid, assets"     => fmt_num(100dom.assets; digits = 2) * "\\%",
-    "Stored transitions off-grid, HC"         => fmt_num(100dom.hc; digits = 2) * "\\%",
+    # The share alone reads as a domain failure; the magnitudes are what say it is not.
+    "Stored transitions off-grid, assets"     => fmt_num(100dom.assets; digits = 2) * "\\% (max " * @sprintf("%.1e", dom.worst_a) * ")",
+    "Stored transitions off-grid, HC"         => fmt_num(100dom.hc; digits = 2) * "\\% (max " * @sprintf("%.1e", dom.worst_k) * ")",
     "\$k_{\\max}\$ ceiling binds"               => fmt_num(100dom.hc_ceiling_binds; digits = 2) * "\\%",
     "Bellman optimality residual, max"        => @sprintf("%.2e", opt_res.max),
     "States improved by re-optimization"      => fmt_num(100opt_res.share_improved; digits = 2) * "\\%",
@@ -142,7 +143,7 @@ table_diagnostics([
   ], "numerical_diagnostics";
     caption = "Numerical Diagnostics",
     label   = "numerical_diagnostics",
-    note    = "Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples. The optimality residual re-optimizes sampled states from four starts and compares the maximum against the stored value, so unlike the consistency residual it detects a suboptimal policy. The last two rows re-solve the same states against an interpolating cubic continuation instead of the linear one the solver uses, and report how far the optimal policy moves.",
+    note    = "Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples. The optimality residual re-optimizes sampled states from four starts and compares the maximum against the stored value, so unlike the consistency residual it detects a suboptimal policy. The two off-grid rows report the share of stored transitions leaving the grid and the largest such excursion: these are bounded by the NLopt constraint tolerance and the labor lower bound respectively, so they are float-sized rather than genuine extrapolation. The last two rows re-solve the same states against an interpolating cubic continuation instead of the linear one the solver uses, and report how far the optimal policy moves.",
     seed = SEED, simN = SIMN)
 
 write_manifest(tabpath(); experiment = "full_run", seed = SEED, simN = SIMN,

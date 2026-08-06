@@ -4,13 +4,13 @@ name       = "baseline_college_work_choice"
 caption    = "College vs.\ Work Decisions in the Baseline"
 label      = "tab:college_work_choice"
 n_rows     = 3
-timestamp  = "2026-08-05 22:14:46"
-git_commit = "91b248f-dirty"
+timestamp  = "2026-08-06 02:18:48"
+git_commit = "80b94e8-dirty"
 julia      = "1.11.3"
 
 [parameters]
 n_agents            = 5000
-n_college           = 222
+n_college           = 655
 seed                = 1234
 simN                = 5000
 child_grid          = "50x50x10"
