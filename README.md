@@ -23,13 +23,17 @@ the child's birth to age 18; the child is then followed to age 68.
 ```
 .
 ├── code/
-│   ├── transfer_CRRA_wage.ipynb    driver: solve, simulate, counterfactuals, figures
+│   ├── run_all.jl                  ONE reproducible end-to-end run (--quick to smoke test)
+│   ├── transfer_CRRA_wage.ipynb    interactive driver: counterfactuals, figures
 │   └── src/
 │       ├── paths.jl                every path in the project — nothing else hard-codes one
 │       ├── manifest.jl             run provenance (git SHA, versions, parameters)
+│       ├── diagnostics.jl          accuracy checks: Bellman residuals, domains, gradients
+│       ├── tables.jl               LaTeX tables (threeparttable) + PDF build
 │       ├── parent_family.jl        parent problem: struct, solver, simulators
-│       ├── child_lifecycle_ret.jl  child lifecycle WITH retirement (the one used)
-│       └── child_lifecycle_ar1.jl  child lifecycle, no retirement (not included)
+│       ├── child_lifecycle.jl      child lifecycle — CANONICAL, no retirement
+│       ├── child_lifecycle_ret.jl  superseded, reference only
+│       └── child_lifecycle_ar1.jl  superseded, reference only
 │
 ├── docs/
 │   ├── model.txt                   LaTeX model specification from the paper
@@ -41,8 +45,8 @@ the child's birth to age 18; the child is then followed to age 68.
 │
 ├── output/
 │   ├── figures/                    81 PDFs — tracked in git
-│   ├── tables/                     tracked in git
-│   ├── reports/                    tracked in git
+│   ├── tables/                     .tex + .meta.toml provenance — tracked in git
+│   ├── reports/                    all_tables.pdf — tracked in git
 │   └── data/                       solved models, simulation dumps — git-ignored
 │
 ├── tools/
@@ -81,8 +85,14 @@ git clone <repo> && cd Structural-estimation
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-Then open `code/transfer_CRRA_wage.ipynb` with the IJulia (Julia 1.11) kernel and run
-cells in order. See [`docs/GUIDE.md`](docs/GUIDE.md) for load order, runtime, and caveats.
+Then either run everything non-interactively:
+
+```bash
+cd code && julia --project=.. run_all.jl
+```
+
+or open `code/transfer_CRRA_wage.ipynb` with the IJulia (Julia 1.11) kernel and run cells
+in order. See [`docs/GUIDE.md`](docs/GUIDE.md) for load order, runtime, and caveats.
 
 ---
 
@@ -118,7 +128,19 @@ and re-run before committing a new Manifest.
 
 ## Known limitations
 
-[`docs/ERRORS.md`](docs/ERRORS.md) carries the full list, ordered by severity. The
-three that most affect results: a spurious `∂V/∂k` term in the labor-supply gradient, the
-college choice being taken outside the taste-shock expectation, and unseeded RNG in the
-parent simulation (so counterfactual arms do not share random numbers). None are fixed.
+[`docs/ERRORS.md`](docs/ERRORS.md) carries the full list — every finding with its severity,
+file and line — followed by the improvement backlog and an ordered work plan.
+
+**20 findings are open: 7 high, 9 medium, 3 low, 1 deferred.** The three that matter most
+before trusting any output:
+
+1. **X3** — `check_simulation` drops non-finite states *before* computing off-grid shares,
+   so a 96%-NaN simulation reports "0% outside". The diagnostics can return green on a
+   broken run.
+2. **C16** — the work solver constrains only `a' >= a_min`; **3.59%** of stored asset
+   transitions and **5.00%** of human-capital transitions leave the solved grid. Forward
+   simulation reports 0.00%, so this is invisible today.
+3. **M2** — the notebook runs every counterfactual on `a_max = 50`, the grid already
+   measured as too small; only `run_all.jl` uses the corrected 100.
+
+A green `run_all.jl` does **not** currently mean a sound solution.

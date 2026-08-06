@@ -1,0 +1,13 @@
+# Provenance for numerical_diagnostics.tex — written automatically.
+[table]
+name       = "numerical_diagnostics"
+caption    = "Numerical Diagnostics"
+label      = "tab:numerical_diagnostics"
+n_rows     = 9
+timestamp  = "2026-08-05 22:14:47"
+git_commit = "91b248f-dirty"
+julia      = "1.11.3"
+
+[parameters]
+seed                = 1234
+simN                = 5000

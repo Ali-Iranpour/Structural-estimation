@@ -42,20 +42,6 @@ end
 #   (was notebook cell 8)
 # -----------------------------------------------------------------------------
 
-function safe_maximum(x, y)
-    # Both x and y are scalars (floats)
-    if isnan(x) || x == -Inf
-        if isnan(y) || y == -Inf
-            return NaN
-        else
-            return y
-        end
-    elseif isnan(y) || y == -Inf
-        return x
-    else
-        return max(x, y)
-    end
-end
 
 
 # -----------------------------------------------------------------------------
@@ -162,6 +148,8 @@ mutable struct Parent_child_interaction_age_specific_AR1
     sim_k_init::Vector{Float64}   # Initial capital         [simN]
     sim_hc_init::Vector{Float64}  # Initial human capital   [simN]
     sim_p_init::Vector{Int}    # Initial AR1 shocks      [Np, simN]
+    draws_uniform_p::Matrix{Float64}  # Pre-drawn uniforms for the AR(1) path [simN, simT]
+    seed::Int                         # Seed actually used (the kwarg was previously ignored)
 
     # --- Wage vector (for each period) ---
     w_vec::Vector{Float64}        # Wage per period         [T]
@@ -283,14 +271,21 @@ function Parent_child_interaction_age_specific_AR1(;
 
     # Initial conditions
 
-    rng_a  = MersenneTwister(1234)
-    rng_k  = MersenneTwister(5678)
-    rng_hc = MersenneTwister(9012)
-    rng_p  = MersenneTwister(3456)
+    # All randomness is seeded off the `seed` kwarg, which was previously accepted and
+    # then ignored (these seeds were hardcoded). Arms constructed with the same seed share
+    # initial conditions AND shock paths -- common random numbers -- so a difference
+    # between arms is a treatment effect rather than a reshuffle.
+    rng_a  = MersenneTwister(seed)
+    rng_k  = MersenneTwister(seed + 1)
+    rng_hc = MersenneTwister(seed + 2)
+    rng_p  = MersenneTwister(seed + 3)
     sim_a_init = rand(rng_a, LogNormal(0.2962227, 1.401793), simN)
     sim_k_init = Float64.(rand(rng_k, Bernoulli(0.3), simN))  # 70% zeros, 30% ones
     sim_hc_init = rand(rng_hc, simN) .* 1;
     sim_p_init = fill(ceil(Int, Np/2), simN)
+    # Pre-drawn uniforms for the AR(1) transition: reproducible, and identical across arms.
+    # Previously `sample(...)` was called against the GLOBAL RNG.
+    draws_uniform_p = rand(rng_p, simN, simT)
 
 
 
@@ -312,7 +307,7 @@ function Parent_child_interaction_age_specific_AR1(;
     sol_c, sol_i, sol_h, sol_t, sol_e, sol_v, sol_tr, sol_t_asset,
     simN, simT,
     sim_c, sim_h, sim_t, sim_e, sim_a, sim_i, sim_k, sim_hc, sim_wage, sim_income, sim_tr, sim_t_asset, sim_p,
-    sim_a_init, sim_k_init, sim_hc_init, sim_p_init,
+    sim_a_init, sim_k_init, sim_hc_init, sim_p_init, draws_uniform_p, seed,
     w_vec, nothing, β0, β_bothcollege, β_age, β_age2, β_age2_capital, β_age_capital)
 end
 
@@ -325,13 +320,50 @@ end
 # === Put near the top of your file ===
 const TOL_CONSTR = 1e-8
 const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
-const AMIN = 0.0    # Minimum asset level
 
+# P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
+# and h_p are all held positive by box bounds, whereas leisure_c = 1 - t_p - i_c is a
+# NONLINEAR constraint, which SLSQP is free to violate at trial points.
+#
+# The old code returned a flat -1e8 there while still computing the gradient from the
+# smooth formula, so objective and gradient described different functions and the line
+# search accepted steps that worsened the objective. Instead the objective is floored and
+# the gradient is floored to match: below LEISURE_FLOOR the objective is constant in
+# leisure, so its derivative is exactly zero. Same function, same derivative, everywhere.
+const LEISURE_FLOOR = 1e-8
+@inline safe_leisure(l::Float64) = max(l, LEISURE_FLOOR)
+@inline d_safe_leisure(l::Float64) = l > LEISURE_FLOOR ? 1.0 : 0.0
+
+
+"""
+    snap_parent(x, lo, hi; tol = 1e-10)
+
+Clamp only floating-point-sized violations of `[lo, hi]`; leave genuine excursions visible
+so the diagnostics can report them. See `snap` in child_lifecycle.jl.
+"""
+@inline function snap_parent(x::Float64, lo::Float64, hi::Float64; tol::Float64 = 1e-10)
+    x < lo && x > lo - tol && return lo
+    x > hi && x < hi + tol && return hi
+    return x
+end
 
 # --------------------------
 # Model Solver
 # --------------------------
-function solve_model!(model::Parent_child_interaction_age_specific_AR1)
+"""
+    solve_model!(model; min_converged = 0.95, verbose = true)
+
+Backward induction for the parent problem.
+
+Returns a `Vector{NamedTuple}` of per-period solver diagnostics and **throws** if the
+converged share in any period falls below `min_converged`. Printing alone was not enough:
+the notebook wraps every counterfactual in `@suppress_output`, which sent
+`print_period_stats` to /dev/null, so 30+ models were solved with no idea how many grid
+points converged. A returned value plus a hard floor cannot be suppressed.
+"""
+function solve_model!(model::Parent_child_interaction_age_specific_AR1;
+                      min_converged::Float64 = 0.95, verbose::Bool = true)
+    diagnostics = NamedTuple[]
     T, Na, Nk, Nhc, Np = model.T, model.Na, model.Nk, model.Nhc, model.Np
     a_grid, k_grid, hc_grid, p_grid = model.a_grid, model.k_grid, model.hc_grid, model.p_grid
 
@@ -380,13 +412,20 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
 
         push!(itercounts, opt.numevals)
         rt = result_type_name(ret)
+        # Validity is checked FIRST. Previously this sat in an elseif after the
+        # converged/maxeval branches, so a result reporting :FTOL_REACHED with a NaN
+        # iterate slipped through; and the fallback replaced x_opt without recomputing
+        # minf, storing a value that did not match the stored policy.
+        if any(!isfinite, x_opt) || !isfinite(minf)
+            error("Non-finite solver result at t=$t, i_a=$i_a, i_k=$i_k, i_hc=$i_hc, " *
+                  "i_p=$i_p (ret=$ret, minf=$minf, x=$x_opt)")
+        end
         if rt == "converged"
             converge_count += 1
         elseif rt == "maxeval"
             maxeval_count += 1
-        elseif any(isnan, x_opt)
-            println("Warning: NaN in solution at t=$t, i_a=$i_a, i_k=$i_k, i_hc=$i_hc")
-            x_opt = init
+        else
+            other_dict[ret] = get(other_dict, ret, 0) + 1
         end
         total += 1
 
@@ -399,7 +438,8 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
         model.sol_t_asset[t, i_a, i_k, i_hc, i_p] = 0.0
         model.sol_v[t, i_a, i_k, i_hc, i_p] = -minf
     end
-    print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+    push!(diagnostics, record_period!(t, converge_count, maxeval_count, other_dict,
+                                      itercounts, total, min_converged, verbose))
 
     # ----- Earlier periods (t = T-1 down to 8) -----
     for t in (T-1):-1:8
@@ -446,11 +486,17 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
             (minf, x_opt, ret) = optimize(opt, init)
             
             push!(itercounts, opt.numevals)
+            if any(!isfinite, x_opt) || !isfinite(minf)
+                error("Non-finite solver result at t=$t, i_a=$i_a, i_k=$i_k, i_hc=$i_hc, " *
+                      "i_p=$i_p (ret=$ret, minf=$minf, x=$x_opt)")
+            end
             rt = result_type_name(ret)
             if rt == "converged"
                 converge_count += 1
             elseif rt == "maxeval"
                 maxeval_count += 1
+            else
+                other_dict[ret] = get(other_dict, ret, 0) + 1
             end
             total += 1
 
@@ -463,7 +509,8 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
             model.sol_t_asset[t, i_a, i_k, i_hc, i_p] = 0.0
             model.sol_v[t, i_a, i_k, i_hc, i_p] = -minf
         end
-        print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+        push!(diagnostics, record_period!(t, converge_count, maxeval_count, other_dict,
+                                          itercounts, total, min_converged, verbose))
     end
 
     # ----- Parent-only periods (t = 7 down to 1) -----
@@ -527,10 +574,12 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1)
             model.sol_t_asset[t, i_a, i_k, i_hc, i_p] = 0.0
             model.sol_v[t, i_a, i_k, i_hc, i_p] = -minf
         end
-        print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+        push!(diagnostics, record_period!(t, converge_count, maxeval_count, other_dict,
+                                          itercounts, total, min_converged, verbose))
     end
-end
 
+    return diagnostics
+end
 # ------------------------------------------------
 # Supporting functions 
 # ------------------------------------------------
@@ -560,10 +609,12 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
 
         # Partial derivatives of utility
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_di_c = (1 - model.mu_vector[t]) * model.lambda_1_vector[t] / leisure_c * (-1)
+        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
+                     safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
         dutil_de_p = 0.0
         dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
-        dutil_dt_p = (1 - model.mu_vector[t]) * model.lambda_1_vector[t] / leisure_c * (-1)
+        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
+                     safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
 
         # Partial derivatives of HC_next
         dHC_next_dt_p = HC_next * model.sigma_1_vector[t] / t_p
@@ -628,12 +679,17 @@ end
     if length(grad) > 0
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
         dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
-        term_leisure_c = (1 - model.mu_vector[t]) * model.lambda_1_vector[t] / leisure_c * (-1)
+        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
+                          safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
         grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da_sum * (-1)
         grad[2] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_4_vector[t] / i_c)
         grad[3] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
-        grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da_sum * marginal + dV_dk_sum)
+        # P1: no dV_dk_sum. `k` is the fixed BothCollege indicator (k_next = capital), so
+        # d k_next / d h_p = 0. The term was a leftover from when k was parental human
+        # capital accumulating by learning-by-doing; it told the optimizer that working
+        # more makes you college-educated.
+        grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da_sum * marginal)
         grad[5] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
     return f
@@ -675,7 +731,9 @@ end
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
         grad[1] = model.phi_1_vector[t] * (c_p ^ (-model.rho)) - model.beta_vector[t] * dV_da_sum
         grad[2] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
-        grad[3] = -model.phi_2_vector[t] * (h_p ^ model.eta) + model.beta_vector[t] * (marginal * dV_da_sum + dV_dk_sum)
+        # P1: no dV_dk_sum -- see obj_work_period_full.
+        grad[3] = -model.phi_2_vector[t] * (h_p ^ model.eta) +
+                  model.beta_vector[t] * (marginal * dV_da_sum)
         grad[4] = model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
     return util_now + model.beta_vector[t] * V_next
@@ -688,23 +746,21 @@ end
 @inline function util_total(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64,
                             t_p::Float64, i_c::Float64, HC::Float64, t::Int)
     leisure_c = 1.0 - t_p - i_c
-    if c <= 0.0 || i_c <= 0.0 || leisure_c <= 0.0
-        return -1e8
-    end
+    # c and i_c are held positive by box bounds; leisure_c is not (see LEISURE_FLOOR).
+    @assert c > 0.0 && i_c > 0.0 "util_total: box bounds violated (c=$c, i_c=$i_c)"
     rho = model.rho
     eta = model.eta
     u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
     disutil_h = - model.phi_2_vector[t] * (h_p ^ (1.0 + eta) / (1.0 + eta))
     u_parent = u_cons + disutil_h
-    u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) + 
-            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log(leisure_c) + model.lambda_2_vector[t] * log(HC))
+    u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) +
+            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log(safe_leisure(leisure_c)) +
+                                        model.lambda_2_vector[t] * log(HC))
     return u_parent + u_child
 end
 
 @inline function util_parent(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64, t_p::Float64, HC::Float64, t::Int)
-    if c <= 0.0
-        return -1e8
-    end
+    @assert c > 0.0 "util_parent: box bound violated (c=$c)"
     rho = model.rho
     eta = model.eta
     u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
@@ -719,9 +775,9 @@ end
 # ------------------------------------------------
 
 @inline function HC_technology_full(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, i_c::Float64, t::Int)
-    if t_p <= 0.0 || e_p <= 0.0
-        return -1e8
-    end
+    # P4: returning -1e8 as a human-capital LEVEL was doubly wrong -- it is not a value,
+    # and it was then multiplied by sigma/t_p inside the gradient. Bounds keep t_p, e_p > 0.
+    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_full: box bounds violated (t_p=$t_p, e_p=$e_p)"
     return exp(log(model.R_vector[t]) +
         model.sigma_1_vector[t] * log(t_p) +
         model.sigma_2_vector[t] * log(e_p) +
@@ -730,9 +786,8 @@ end
 end
 
 @inline function HC_technology_parentonly(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, t::Int)
-    if t_p <= 0.0 || e_p <= 0.0
-        return -1e8 
-    end
+    # P4: see HC_technology_full.
+    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_parentonly: box bounds violated (t_p=$t_p, e_p=$e_p)"
     return exp(log(model.R_vector[t]) +
             model.sigma_1_vector[t] * log(t_p) +
             model.sigma_2_vector[t] * log(e_p) + 
@@ -895,6 +950,30 @@ function result_type_name(ret)
     end
 end
 
+"""
+    record_period!(...)
+
+Build the per-period diagnostic record, print it when `verbose`, and throw if the
+converged share is below `min_converged`.
+"""
+function record_period!(t, converge_count, maxeval_count, other_dict, itercounts, total,
+                        min_converged::Float64, verbose::Bool)
+    share = total == 0 ? 1.0 : converge_count / total
+    rec = (period = t, total = total, converged = converge_count,
+           converged_share = share, maxeval = maxeval_count,
+           other = sum(values(other_dict); init = 0),
+           other_codes = copy(other_dict),
+           mean_iters = isempty(itercounts) ? 0.0 : mean(itercounts))
+    verbose && print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+    if share < min_converged
+        error("Period $t: only $(round(100*share, digits=1))% of $(total) grid points " *
+              "converged (floor $(round(100*min_converged, digits=1))%). " *
+              "maxeval=$maxeval_count, other=$(rec.other) $(other_dict). " *
+              "Refusing to return a solution built on failed optimizations.")
+    end
+    return rec
+end
+
 function print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
     avg_iter = round(mean(itercounts), digits=2)
     println("Period $t: Converged: $(round(converge_count/total*100, digits=1))%, Maxeval: $(round(maxeval_count/total*100, digits=1))%, Other: $(round(sum(values(other_dict))/total*100, digits=1))%, Avg iters: $avg_iter")
@@ -938,8 +1017,8 @@ function simulate_model!(model::Parent_child_interaction_age_specific_AR1)
         sim_p[i, 1] = model.sim_p_init[i]  # Initial shock state
         for t in 1:simT-1
             current_state = sim_p[i, t]
-            next_state = sample(1:model.Np, Weights(model.p_transition[current_state, :]))
-            sim_p[i, t+1] = next_state
+            sim_p[i, t+1] = discrete_draw(model.p_transition[current_state, :],
+                                          model.draws_uniform_p[i, t])
         end
     end
 
@@ -985,7 +1064,11 @@ function simulate_model!(model::Parent_child_interaction_age_specific_AR1)
             sim_income[i, t] = after_tax  # Store after-tax income
  
             # Transition equations
-            sim_a[i, t+1] = (1.0 + model.r) * a + sim_income[i, t] + model.y - sim_c[i, t] - sim_e[i, t]
+            a_next_p = (1.0 + model.r) * a + sim_income[i, t] + model.y - sim_c[i, t] - sim_e[i, t]
+            # Float-sized violations are snapped; genuine excursions are left visible so
+            # check_simulation can report them. Clipping a real out-of-grid state would
+            # silently rewrite the transition law.
+            sim_a[i, t+1] = snap_parent(a_next_p, model.a_min, model.a_max)
             sim_k[i, t+1] = k 
             if t < 8
                 hc_next = exp(log(model.R_vector[t]) +
@@ -1028,6 +1111,17 @@ function simulate_model_hetero!(
     # ======= Shared setup from the first (base) model =======
     model = parent_models[1]  # assumes shared sim arrays and grids live here
     simN, simT = model.simN, model.T
+    # The loops below are @inbounds, so an out-of-range index reads garbage memory and
+    # crashes with a bus error rather than a BoundsError. Validate the caller-supplied
+    # arrays first -- cheap, and it turns a silent memory fault into a clear message.
+    @assert length(belief_type) == simN
+        "belief_type has $(length(belief_type)) entries but the model simulates simN=$simN agents"
+    @assert all(1 .<= belief_type .<= length(parent_models)) "belief_type holds indices outside 1:$(length(parent_models))"
+    for (bi, pm) in enumerate(parent_models)
+        @assert pm.simN >= simN "parent_models[$bi].simN = $(pm.simN) < simN = $simN"
+        @assert length(pm.sim_p_init) >= simN "parent_models[$bi].sim_p_init is too short"
+    end
+
 
     a_grid, k_grid, hc_grid = model.a_grid, model.k_grid, model.hc_grid
     sim_a, sim_k, sim_hc = model.sim_a, model.sim_k, model.sim_hc
@@ -1088,7 +1182,8 @@ function simulate_model_hetero!(
         sim_p[i, 1] = (hasfield(typeof(pm), :sim_p_init) && length(pm.sim_p_init) >= i) ? pm.sim_p_init[i] : model.sim_p_init[i]
         for t in 1:simT-1
             current = sim_p[i, t]
-            sim_p[i, t+1] = sample(1:pm.Np, Weights(pm.p_transition[current, :]))
+            sim_p[i, t+1] = discrete_draw(pm.p_transition[current, :],
+                                          model.draws_uniform_p[i, t])
         end
     end
 
@@ -1116,7 +1211,8 @@ function simulate_model_hetero!(
             after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
             sim_income[i, t] = after_tax  # Store after-tax income
 
-            sim_a[i, t+1] = (1.0 + pm.r) * a + sim_income[i, t] + pm.y - sim_c[i, t] - sim_e[i, t]
+            sim_a[i, t+1] = snap_parent((1.0 + pm.r) * a + sim_income[i, t] + pm.y -
+                                        sim_c[i, t] - sim_e[i, t], pm.a_min, pm.a_max)
             sim_k[i, t+1] = k
 
             if t < 8
@@ -1164,11 +1260,11 @@ function simulate_model_family_hetero!(
     verbose::Bool = true
 )
     # -- Unpack grids/dims --
-    @unpack simN, T, t_college, r, college_cost, college_boost, a_min, t_retire = base_child
+    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = base_child
     @unpack a_grid, k_grid, p_grid, p_transition, Np = base_child
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = base_child
     @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = base_child
-    @unpack Nt, t_weight, t_retire = base_child
+    @unpack Nt, t_weight = base_child
 
     num_bins = length(child_models)
     belief_values = [child_models[m].college_boost for m in 1:num_bins]
@@ -1192,11 +1288,6 @@ function simulate_model_family_hetero!(
         for ip in 1:Np
     ]
 
-    # -- Retirement interpolators (shock-free, i_p=1, i_t=1) --
-    interp_c_retire = [
-        LinearInterpolation((a_grid, k_grid), base_child.sol_c_work[t, :, :, 1, 1]; extrapolation_bc=Flat())
-        for t in 1:T
-    ]
 
     # -- College interpolators (belief-specific) --
     interp_c_college_belief = [
@@ -1258,15 +1349,7 @@ function simulate_model_family_hetero!(
             idx_c = (m, it, t, p_idx)
             idx_h = (m, it, t, p_idx)
 
-            if t >= t_retire
-                # ----- Retirement (shock-free) -----
-                c = interp_c_retire[t](a, k)
-                h = 0.0
-                pen = pension_amount(base_child, k, t)
-                w_pre = wage_func(base_child, k, t, 1.0)
-                sim_wage[i, t] = w_pre / WAGE_SCALING_FACTOR
-                sim_income[i, t] = pen
-            elseif path_choice[i] == :college && t <= t_college
+            if path_choice[i] == :college && t <= t_college
                 # ----- In college -----
                 if t == 1
                     c = interp_c_college_belief[idx_c...](a, k)
@@ -1280,7 +1363,7 @@ function simulate_model_family_hetero!(
                 sim_income[i, t] = 0.0
                 sim_wage[i, t] = 0.0
             else
-                # ----- Working (pre-retirement) -----
+                # ----- Working -----
                 c = interp_c_work[t, p_idx](a, k)
                 h = interp_h_work[t, p_idx](a, k)
                 p_shock = p_grid[p_idx]
@@ -1295,11 +1378,7 @@ function simulate_model_family_hetero!(
 
             # Update states for next period (if t < T)
             if t < T
-                if t >= t_retire
-                    pen = pension_amount(base_child, k, t)
-                    a_next = (1 + r) * a - c + pen + y
-                    k_next = k
-                elseif path_choice[i] == :college
+                if path_choice[i] == :college
                     if t < t_college
                         a_next = (1 + r) * a - c - college_cost + y
                         k_next = k + belief_values[m]
@@ -1318,13 +1397,9 @@ function simulate_model_family_hetero!(
                 sim_k[i, t+1] = k_next
 
                 # Persistent shock update
-                if t < t_retire
-                    p_draw = draws_uniform_p[i, t]
-                    p_trans_probs = p_transition[p_idx, :]
-                    sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
-                else
-                    sim_p_idx[i, t+1] = 1  # Fixed p_shock = 1.0 in retirement
-                end
+                p_draw = draws_uniform_p[i, t]
+                p_trans_probs = p_transition[p_idx, :]
+                sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
             end
         end
     end
