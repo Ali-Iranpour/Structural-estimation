@@ -72,6 +72,10 @@ check_feasibility_mask(child)
 check_solver_domain(child; throw_on_fail = false)
 println()
 bellman_residual(child; n_sample = QUICK ? 100 : 500)
+# P5: the consistency residual above re-evaluates the STORED policy, so it detects an
+# inconsistent value but never a suboptimal one. These two do.
+opt_res = bellman_optimality_residual(child; n_sample = QUICK ? 60 : 200)
+cont    = continuation_interpolation_test(child; n_sample = QUICK ? 60 : 150)
 monotonicity_report(child)
 shock_discretization_report(child.p_ar1, child.sigma_p, child.Np)
 
@@ -129,12 +133,16 @@ table_diagnostics([
     "Stored transitions off-grid, assets"     => fmt_num(100dom.assets; digits = 2) * "\\%",
     "Stored transitions off-grid, HC"         => fmt_num(100dom.hc; digits = 2) * "\\%",
     "\$k_{\\max}\$ ceiling binds"               => fmt_num(100dom.hc_ceiling_binds; digits = 2) * "\\%",
+    "Bellman optimality residual, max"        => @sprintf("%.2e", opt_res.max),
+    "States improved by re-optimization"      => fmt_num(100opt_res.share_improved; digits = 2) * "\\%",
+    "Linear vs.\\ cubic continuation, max \$|\\Delta c|\$" => @sprintf("%.2e", cont.max_dc),
+    "Linear vs.\\ cubic continuation, max \$|\\Delta h|\$" => @sprintf("%.2e", cont.max_dh),
     "Mean terminal parental assets"           => fmt_num(mcs.mean; digits = 4),
     "Bootstrap standard error"                => fmt_num(mcs.se; digits = 4),
   ], "numerical_diagnostics";
     caption = "Numerical Diagnostics",
     label   = "numerical_diagnostics",
-    note    = "Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples.",
+    note    = "Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples. The optimality residual re-optimizes sampled states from four starts and compares the maximum against the stored value, so unlike the consistency residual it detects a suboptimal policy. The last two rows re-solve the same states against an interpolating cubic continuation instead of the linear one the solver uses, and report how far the optimal policy moves.",
     seed = SEED, simN = SIMN)
 
 write_manifest(tabpath(); experiment = "full_run", seed = SEED, simN = SIMN,
