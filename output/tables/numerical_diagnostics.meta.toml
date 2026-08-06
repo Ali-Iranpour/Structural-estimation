@@ -4,8 +4,8 @@ name       = "numerical_diagnostics"
 caption    = "Numerical Diagnostics"
 label      = "tab:numerical_diagnostics"
 n_rows     = 17
-timestamp  = "2026-08-06 02:18:50"
-git_commit = "80b94e8-dirty"
+timestamp  = "2026-08-06 13:57:04"
+git_commit = "23c783b-dirty"
 julia      = "1.11.3"
 
 [parameters]
