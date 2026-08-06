@@ -328,11 +328,29 @@ const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
 # The old code returned a flat -1e8 there while still computing the gradient from the
 # smooth formula, so objective and gradient described different functions and the line
 # search accepted steps that worsened the objective. Instead the objective is floored and
-# the gradient is floored to match: below LEISURE_FLOOR the objective is constant in
-# leisure, so its derivative is exactly zero. Same function, same derivative, everywhere.
-const LEISURE_FLOOR = 1e-8
-@inline safe_leisure(l::Float64) = max(l, LEISURE_FLOOR)
-@inline d_safe_leisure(l::Float64) = l > LEISURE_FLOOR ? 1.0 : 0.0
+# the gradient was floored to match: below LEISURE_FLOOR the objective was constant in
+# leisure, so its derivative was exactly zero.
+#
+# That was consistent but not enough. `d/dl [lambda*log(max(l, L))]` is `lambda/l` above L
+# and 0 below, so the derivative CLIFFS by lambda/L at the floor. At L = 1e-8 that cliff is
+# about 1.3e7, and SLSQP builds a BFGS quadratic model out of it: one step across the cliff
+# and the iterate comes back NaN. Measured directly -- the parent solve died with
+# |grad| = 1.28e7 at leisure_c = 0 (t_p = 0.3135, i_c = 0.6865, which sum to exactly 1).
+#
+# So the log is LINEARIZED below the floor instead of flattened:
+#
+#     l >= L :  log(l)                    d/dl = 1/l
+#     l <  L :  log(L) + (l - L)/L        d/dl = 1/L
+#
+# Value and slope both match at l = L, so the pair is C1 rather than merely continuous, and
+# the derivative is bounded by 1/L everywhere. L is raised to 1e-4, capping the leisure term
+# of the gradient at lambda*1e4. The floor is a numerical guard, not economics: it only
+# applies at trial points that violate the nonlinear leisure constraint, and the optimum
+# keeps leisure far above 1e-4 because lambda*log(l) -> -Inf as l -> 0.
+const LEISURE_FLOOR = 1e-4
+@inline log_leisure(l::Float64) =
+    l >= LEISURE_FLOOR ? log(l) : log(LEISURE_FLOOR) + (l - LEISURE_FLOOR) / LEISURE_FLOOR
+@inline d_log_leisure(l::Float64) = l >= LEISURE_FLOOR ? 1.0 / l : 1.0 / LEISURE_FLOOR
 
 
 """
@@ -615,12 +633,10 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
 
         # Partial derivatives of utility
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
-                     safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
+        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
         dutil_de_p = 0.0
         dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
-        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
-                     safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
+        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
 
         # Partial derivatives of HC_next
         dHC_next_dt_p = HC_next * model.sigma_1_vector[t] / t_p
@@ -693,8 +709,7 @@ end
     if length(grad) > 0
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
         dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
-        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] /
-                          safe_leisure(leisure_c) * d_safe_leisure(leisure_c)
+        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
         grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da_sum * (-1)
         grad[2] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_4_vector[t] / i_c)
@@ -768,7 +783,7 @@ end
     disutil_h = - model.phi_2_vector[t] * (h_p ^ (1.0 + eta) / (1.0 + eta))
     u_parent = u_cons + disutil_h
     u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) +
-            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log(safe_leisure(leisure_c)) +
+            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log_leisure(leisure_c) +
                                         model.lambda_2_vector[t] * log(HC))
     return u_parent + u_child
 end
