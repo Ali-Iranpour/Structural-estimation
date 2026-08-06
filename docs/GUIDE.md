@@ -137,8 +137,9 @@ write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
   capital; it does not accumulate (`k_next = capital`). It enters only through the wage
   equation. The grid is `Nk = 2`.
 - `HC` — child's cognitive skill
-- `z` — AR(1) wage shock (Tauchen, `Np = 3`). See ERRORS.md Phase 4: Rouwenhorst matches
-  the target moments exactly where Tauchen overstates the sd by 31% — an open decision.
+- `z` — AR(1) wage shock (**Rouwenhorst**, `Np = 7`). Rouwenhorst matches the unconditional
+  sd and the first-order autocorrelation exactly at any `Np`; Tauchen overstated the sd by
+  21% at the parent's parameters and 31% at the child's.
 
 Three regimes: `t = 1..5` parents decide alone (4 controls); `t = 6..16` the child bargains
 and study time is added (5 controls); `t = 17` terminal, continuation is the college/transfer
@@ -172,10 +173,10 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 | `r`, `beta_0` | 0.03, 0.96 | interest rate; discount factor |
 | `R_0, R_1` | 2.0, 0.06 | HC technology TFP, `R_t = R_0 + R_1(t−1)` |
 | `sigma_{1..4}_0/1` | see constructor | elasticities, entered as **logs**: `σ_jt = exp(σ_j0 + σ_j1·(t−1))` |
-| `a_max`, `Na` | 50.0, 30 | parent's asset grid |
+| `a_max`, `Na` | **100.0**, 30 | parent's asset grid. Was 50: simulated assets reached 281.5, with 0.43% of states off-grid; at 100 that is 0.10% |
 | `Nk` | 2 | BothCollege ∈ {0,1} |
 | `hc_max`, `Nhc` | 6.0, 30 | child HC grid |
-| `Np`, `p_ar1`, `sigma_p` | 3, 0.9, 0.1 | AR(1) wage shock |
+| `Np`, `p_ar1`, `sigma_p` | **7**, 0.9, 0.1 | AR(1) wage shock, Rouwenhorst. Was 3 — the binding approximation in the whole model: 3 → 7 moved the college share 17.85% → 22.40% while doubling any *state* grid moved it by ≤ 0.15pp |
 | β wage coefficients | see constructor | from the Stata wage regression |
 
 **Child** — `ConSavLaborCollege_AR1` (in `code/src/child_lifecycle.jl`)
@@ -191,7 +192,7 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 | `college_cost`, `college_boost` | 1.2, 2.0 | annual cost; annual HC increment `b*` |
 | `psi_terminal`, `kappa_terminal`, `omega` | 1.0, 10.0, 0.5 | parent's terminal weights on child HC / own assets / altruism |
 | `mu` | 0.5 | **θ**, parent's weight in the college decision |
-| `Np`, `p_ar1`, `sigma_p` | 5, 0.95, 0.2 | AR(1) wage shock |
+| `Np`, `p_ar1`, `sigma_p` | 5, 0.95, 0.2 | AR(1) wage shock, Rouwenhorst |
 | `Nt`, `sigma_eps` | 11 (10 passed), 0.5 | Gauss-Hermite nodes for the taste shock ε₀ |
 
 Note the notebook overrides several of these at construction

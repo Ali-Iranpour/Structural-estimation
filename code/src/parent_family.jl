@@ -171,7 +171,10 @@ function Parent_child_interaction_age_specific_AR1(;
         tau::Float64=0.18, r::Float64=0.03, w::Float64=12.5,
         y::Float64=0.6, alpha::Float64=0.08, tax_lambda::Float64=0.82,
         # --- grid info ---
-        a_max::Float64=50.0, a_min::Float64=0.0, Na::Int=30,
+        # a_max = 100, not 50. Simulated parental assets reached 281.5 against a grid
+        # ending at 50, with 0.43% of states off-grid; at 100 that falls to 0.10% and the
+        # moments barely move (mean terminal assets 22.07 -> 22.13).
+        a_max::Float64=100.0, a_min::Float64=0.0, Na::Int=30,
         k_max::Float64=1.0, k_min::Float64=0.0, Nk::Int=2,
         hc_max::Float64=6.0, hc_min::Float64=0.001, Nhc::Int=30 ,
         # --- simulation details ----
@@ -201,7 +204,12 @@ function Parent_child_interaction_age_specific_AR1(;
         # --- Bargaining parameter ---
         mu_0 = 1.0,        mu_1 = -0.04,
         # Shock parameters (AR1 only)
-        p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=3,
+        # Np = 7, not 3. At Np = 3 the parent's shock grid was the binding approximation in
+        # the whole model: raising it to 7 moved the college share 17.85% -> 22.40% and mean
+        # terminal parental assets +8.9%, while DOUBLING any state grid moved the college
+        # share by at most 0.15pp (parent Nhc 30 -> 60 moved it by 0.00). It converges by
+        # 5-7: Np = 5 gives 22.00%, 7 gives 22.40%, 9 gives 22.30%, 13 gives 21.80%.
+        p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=7,
         β0 = 2.798937,
         β_bothcollege = 0.3077394,
         β_age = 0.0230108,
@@ -221,7 +229,20 @@ function Parent_child_interaction_age_specific_AR1(;
     #hc_grid = range(hc_min, hc_max, length=Nhc)
 
     # --- Setup Persistent AR1 Shock ---
-    mc = tauchen(Np, p_ar1, sigma_p, 0.0, 3)
+    # Rouwenhorst, not Tauchen. For a Gaussian-innovation AR(1) it matches the unconditional
+    # mean, the unconditional variance and the first-order autocorrelation EXACTLY at every
+    # N -- not asymptotically. Tauchen is built on the unconditional distribution and
+    # degrades as rho -> 1, which is where this model sits. Measured here:
+    #
+    #   rho=0.90 sigma=0.10  N=3 : Tauchen sd +21.5%, persistence +10.8%   Rouwenhorst exact
+    #   rho=0.90 sigma=0.10  N=7 : Tauchen sd +17.1%, persistence  +0.2%   Rouwenhorst exact
+    #   rho=0.95 sigma=0.20  N=5 : Tauchen sd +31.4%, persistence  +4.0%   Rouwenhorst exact
+    #
+    # Standard reference: Kopecky & Suen (2010, RED). Trade-off: Rouwenhorst fixes the grid
+    # half-width at sqrt(N-1)*sigma_z, so there is no `m` knob, and it matches the first two
+    # moments but not higher ones -- the invariant distribution is binomial, normal only as
+    # N grows. Neither matters for the moments this model targets.
+    mc = rouwenhorst(Np, p_ar1, sigma_p)
     p_grid = exp.(mc.state_values)
     p_transition = mc.p
 

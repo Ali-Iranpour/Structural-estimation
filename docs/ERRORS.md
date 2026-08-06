@@ -192,6 +192,52 @@ reference-only. **Deferred out of scope by instruction.**
 
 ---
 
+## Grid design: what the refinement study found
+
+Run one-at-a-time from the production configuration, 2,000 agents.
+
+**The state grids are converged. Doubling any of them does nothing:**
+
+| change | college % | Δ college |
+|---|---|---|
+| baseline | 17.85 | — |
+| child `Na` 50→100 | 18.00 | +0.15 |
+| child `Nk` 50→100 | 17.95 | +0.10 |
+| parent `Na` 30→60 | 17.95 | +0.10 |
+| parent `Nhc` 30→60 | 17.85 | **+0.00** |
+| **halve all four** | **7.45** | **−10.40** |
+
+Halving breaks it badly, so the current sizes sit right at the convergence point — well
+chosen, not wasteful. Do not spend nodes here.
+
+**The shock grid was the binding approximation.** Parent `Np` 3 → 7 moved the college share
+by **+4.55pp** and mean terminal parental assets by **+8.9%** — thirty times more than
+doubling any state grid. It converges by 5–7 (Np=5: 22.00%, 7: 22.40%, 9: 22.30%, 13:
+21.80%). The reason is that Tauchen at N=3 is not a mildly coarse version of the process,
+it is a different one:
+
+| ρ=0.9, σ=0.1 | Tauchen sd err | Tauchen persistence err | Rouwenhorst |
+|---|---|---|---|
+| N=3 | **+21.5%** | **+10.8%** | exact |
+| N=7 | +17.1% | +0.18% | exact |
+| N=11 | +6.6% | −0.17% | exact |
+
+Both modules now use Rouwenhorst, and the parent uses `Np = 7`.
+
+**Node placement is still poor, but it is headroom rather than error.** Measured against
+where the simulation actually goes: parent `hc_max = 6.0` against a data p99 of 2.46 (only
+3 of 30 nodes inside the IQR); `ap_grid` puts 39 of 50 nodes outside the p1–p99 range of the
+transfers it indexes; child `a_grid` has 17 of 50 nodes above the data's p99. Since doubling
+these grids changes nothing, reclaiming the waste buys accuracy the model does not currently
+need — it is tidiness, not correctness. **Left undone deliberately.**
+
+⚠️ **A latent bug blocks that clean-up.** `create_focused_grid` hardcodes the focus point at
+`min + 3.0`, so any `hc_max ≤ 3.001` (or `a_max ≤ a_min + 3.0`) silently produces a
+non-monotone grid and dies inside Interpolations with `knot-vectors must be unique and
+sorted in increasing order`. Anyone narrowing a grid range will hit this first.
+
+---
+
 ## Improvements to add
 
 Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
@@ -199,8 +245,8 @@ Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
 | Priority | Improvement | Status |
 |---|---|---|
 | ~~8.0~~ | True maximized-RHS Bellman residual, re-optimizing sampled states independently | **done** — `bellman_optimality_residual` |
-| **7.5** | **Grid refinement over at least three** asset/HC grids, reporting college share, transfer distribution, terminal parental assets and selected policy functions — not one scalar. | open |
-| **7.0** | **Compare Tauchen and Rouwenhorst in the solved model.** At the child's own parameters Tauchen overstates the unconditional shock sd by **31.4%** and persistence by 3.99%; Rouwenhorst matches both exactly. Phase 0.7 kept the AR(1) *process* as a documented approximation; the *discretizer* is a separate, still-open choice. | open |
+| ~~7.5~~ | Grid refinement on real outcomes | **done** — and it found that the *state* grids are converged while the *shock* grid was not. See below. |
+| ~~7.0~~ | Tauchen vs Rouwenhorst in the solved model | **done** — switched to Rouwenhorst in both modules. See below. |
 | **6.5** | **Paired bootstrap** for counterfactual differences. Common draws are now stored and shared (N15), so the pairing is available; the bootstrap is not written. | open |
 | **6.0** | **Explicit tests around the college-feasibility threshold**: just below, exactly at, and just above. The dead band between them is now zero wide (N13/C14), so this is a regression test for that. | open |
 | **6.0** | **Standardize monetary units** across simulation arrays and plots. Tables are done — `ASSET_RESCALE` is defined once and both asset tables use it — but parent `sim_wage` still stores `2 ×` the mean parental wage while labelled simply "wage". | partial |

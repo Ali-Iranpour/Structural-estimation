@@ -49,10 +49,10 @@ t_start = time()
 # -----------------------------------------------------------------------------
 banner("1. Child lifecycle")
 # -----------------------------------------------------------------------------
-# a_max = 100 for the child, against the parent's 50: the child's asset grid has to cover
-# the parent's TERMINAL assets (its own upper bound) plus the child's own accumulation over
-# 51 periods. At a_max = 50 check_simulation reported 2.87% of simulated child assets above
-# the grid, i.e. the model was being simulated where it had not been solved.
+# a_max = 100 for the child: its asset grid has to cover the parent's TERMINAL assets plus
+# the child's own accumulation over 51 periods. At a_max = 50 check_simulation reported
+# 2.87% of simulated child assets above the grid. Verified at the current parameters: child
+# assets go off-grid 0.00% of the time at 100, and raising it to 200 buys nothing.
 child = ConSavLaborCollege_AR1(Na = C_NA, Nk = C_NK, Nt = C_NT, rho = 1.5,
                                psi_terminal = 1.0, kappa_terminal = 5.0, omega = 0.3,
                                a_max = 100.0, w = 20.0, simN = SIMN, seed = SEED)

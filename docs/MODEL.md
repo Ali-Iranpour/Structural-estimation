@@ -28,7 +28,7 @@ Line numbers are as of 2026-08-02.
 | | `σ_jt` entered as logs: `σ_jt = exp(σ_j0 + σ_j1(t−1))` | `sigma_*_vector` in constructor — P:180 |
 | Wage equation | `ln w = β₀ + β₁BC + β₂Age + β₃Age² + β₄(BC×Age) + β₅(BC×Age²) + z` | `wage_func` — P:747 |
 | | | ⚠️ `Age` ← model period `t`; `2×` multiplier not in the model |
-| AR(1) shock | `z_t = ρz_{t−1} + ε` | `tauchen(Np, p_ar1, sigma_p, 0, 3)` in constructor |
+| AR(1) shock | `z_t = ρz_{t−1} + ε` | `rouwenhorst(Np, p_ar1, sigma_p)` in constructor — exact on sd and persistence at any `Np` |
 | | | ⚠️ `model.txt` says random walk (ρ=1); code uses ρ=0.9, `Np=3` |
 
 ### Value functions
