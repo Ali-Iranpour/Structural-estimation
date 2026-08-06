@@ -102,7 +102,7 @@ function ConSavLaborCollege_AR1(;
                 # Preference shock parameters
                 Nt=11, sigma_eps=0.5,
                 # --- Terminal value parameters ---
-                psi_terminal::Float64=1.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
+                psi_terminal::Float64=4.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
                     # --- Bargaining parameter ---
                 mu = 0.5,
                 tax_lambda::Float64=0.82,

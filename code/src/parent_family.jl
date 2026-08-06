@@ -192,15 +192,16 @@ function Parent_child_interaction_age_specific_AR1(;
         # from 0.05 to 3.0, because the FOC phi_2*l^(-eta) = beta*dV/dHC*HC_next*sigma_1/tau_p
         # scales with phi_2 on both sides. tau_p is set by sigma_1 and the value of the
         # child's HC. See docs/ERRORS.md P10 for the calibration tension that creates.
-        phi_2_0 = 0.8,      phi_2_1 = 0.0,
-        phi_3_0 = 0.03,     phi_3_1 = 0.0,
-        R_0 = 2.0,         R_1 = 0.06,
-        sigma_1_0 = -1.8,  sigma_1_1 = -0.02,
+        phi_2_0 = 0.5,      phi_2_1 = 0.0,
+        # ---- HC block, recalibrated together (see the note below) ----
+        phi_3_0 = 1.0,      phi_3_1 = 0.0,
+        R_0 = 1.6,         R_1 = 0.0,
+        sigma_1_0 = -0.90, sigma_1_1 = -0.02,
         sigma_2_0 = -1.8,  sigma_2_1 = 0.02,
-        sigma_3_0 = -2.4,  sigma_3_1 = 0.06,
-        sigma_4_0 = -3.5,  sigma_4_1 = 0.02,
+        sigma_3_0 = -0.36, sigma_3_1 = 0.0,
+        sigma_4_0 = -4.5,  sigma_4_1 = 0.02,
         lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
-        lambda_2_0 = 0.3,  lambda_2_1 = 0.0,
+        lambda_2_0 = 1.0,  lambda_2_1 = 0.0,
         # --- Bargaining parameter ---
         mu_0 = 1.0,        mu_1 = -0.04,
         # Shock parameters (AR1 only)
@@ -368,6 +369,46 @@ Six things key off this boundary: the two backward-induction loops, `mu_vector`,
 constant rather than written out, because they were six scattered literals and changing the
 boundary meant finding all of them.
 """
+#     The human-capital block, recalibrated 2026-08-07
+#
+# `sigma_3_1` was **+0.06**, so self-productivity ROSE with age: 0.09 at t=1 to 0.24 at t=17.
+# The persistence chain from an early investment to T is the product of ~16 such terms --
+# about `0.15^16 = 1e-14` -- so early human capital had no memory at all and there was no
+# reason to front-load. Parental time came out RISING, 0.004 to 0.058, when it should fall.
+#
+# Fixing the sign alone was not enough: the LEVEL had to come up too, and raising it exposed
+# that everything else in the block was scaled to a technology that destroyed skill (HC fell
+# from 0.491 to 0.434 between t=1 and t=2, because every input is far below 1 and Cobb-Douglas
+# maps `R = 2.54` down to 0.855). So the block moved together:
+#
+#     sigma_3_0  -2.40 -> -0.36    self-productivity 0.09 -> 0.70, now FLAT (sigma_3_1 = 0)
+#     sigma_1_0  -1.80 -> -0.90    parental-time elasticity 0.165 -> 0.41
+#     sigma_4_0  -3.50 -> -4.50    child-study elasticity 0.030 -> 0.011
+#     R_0         2.00 ->  1.60    TFP, retuned to keep HC inside hc_grid; R_1 0.06 -> 0
+#     phi_3_0     0.03 ->  1.00    parent's weight on log HC
+#     lambda_2_0  0.30 ->  1.00    child's weight on log HC
+#     phi_2_0     0.80 ->  0.50    leisure weight, to hold labor supply at its target
+#     psi_terminal 1.0 ->  4.00    in the CHILD module -- see below
+#
+# `psi_terminal` had to move with `phi_3`/`lambda_2`. Left at 1.0 while the flow weight went
+# to 1.0, the last period valued skill far less than every earlier one and tau_p collapsed at
+# t = 17 (0.059 against 0.155 once psi rose).
+#
+# Resulting profile, against the 0.40 -> 0.20 target:
+#
+#     t          1      5      9     13     17
+#     tau_p  0.392  0.352  0.310  0.268  0.191
+#     i_c    ~0.14           h_p 0.290 (was 0.285)      HC 1.76 -> 1.95
+#
+# CAVEAT, and it is the honest cost of hitting 0.40: sigma_1 = 0.41 makes the input
+# elasticities sum to 1.29 with sigma_3 = 0.70, i.e. increasing returns. Cunha-Heckman-
+# Schennach-style technologies put self-productivity at 0.85-0.95 and investment elasticities
+# at 0.05-0.20, summing to about 1. At the optimum `sigma_1 * (value share of HC) = tau_p *
+# (price of time)`, so asking the parent to spend 40% of their time on the child REQUIRES
+# either a large sigma_1 or a large skill valuation -- it is a property of the model, not of
+# the solver. If tau_p nearer 0.15 -> 0.08 is acceptable, sigma_1 can sit at ~0.15, squarely
+# in the literature range.
+#
 const T_CHILD_VOICE = 6
 
 """
