@@ -132,14 +132,17 @@ and re-run before committing a new Manifest.
 [`docs/ERRORS.md`](docs/ERRORS.md) carries the full list — every finding with its severity,
 file and line — followed by the improvement backlog and an ordered work plan.
 
-**5 findings are open: 1 high, 2 medium, 2 deferred by instruction.** The one that matters
-before trusting any output is **P10** — the parent's utility omits the leisure term
-`model.txt` specifies, so time spent with the child costs the parent nothing. Verified
-directly: `util_parent` at `τ_p = 0.05` and `τ_p = 0.90` returns the same number to the
-last bit. Fixing it is a modelling decision, not a patch.
+**4 findings are open: 3 medium, 2 deferred by instruction** — no High remains.
 
-The numerical caveat that was here before, **P5**, is now fixed on the parent side and
-still open on the child side:
+**P10** was the big one and is now fixed: the parent's utility had dropped the leisure term
+`model.txt` specifies, so time with the child was free and `corr(τ_p, h_p)` came out
+**+0.60** — parents who worked more also spent more time with the child. Leisure is restored
+as `φ₂ l_p^(1−η)/(1−η)` with `φ₂` recalibrated 20.0 → 0.8, and the correlation is now
+**−0.999**. What remains open under P10 is a calibration tension, not a bug: mean `τ_p`
+lands at 0.011, and no value of `φ₂` moves it.
+
+**P5** is fixed on the parent side — the continuation is now shape-preserving, which is what
+was making the policy functions ragged — and still open on the child side:
 
 **P5 — the continuation interpolation moves policies, and this is now measured.** The
 solver's `Gridded(Linear())` continuation is C0 but not C1. Re-solving the same states

@@ -45,7 +45,7 @@ both theoretical masks. **One caveat remains — see P5.**
 
 | # | Issue | File | Severity |
 |---|---|---|---|
-| P10 | Parent's utility omits `φ₂ log l_p`, so parental time with the child is **free** | parent_family | 🟠 |
+| P10 | Leisure restored (`φ₂` 20.0 → 0.8); **`τ_p` = 0.011 is too low and `σ₁` cannot fix it** | parent_family | 🟡 |
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
 | P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
@@ -53,46 +53,59 @@ both theoretical masks. **One caveat remains — see P5.**
 
 ---
 
-## 🟠 P10 — The parent's utility has no leisure term, so `τ_p` is a free good
+## 🟡 P10 — Parental leisure restored; the calibration tension it exposes is open
 
-`model.txt` specifies
+**Fixed.** `model.txt` specified `U_p = φ₁ log c + φ₂ log l_p + φ₃ log HC` with
+`l_p = 1 − h_p − τ_p`. The code had `−φ₂ h_p^(1+η)/(1+η)` instead, which dropped `τ_p` out
+of the parent's preferences entirely — `util_parent` returned the identical value at
+`τ_p = 0.05` and `τ_p = 0.90`. Parental time with the child was free.
 
-    U_{p,t} = φ₁ log c_{p,t} + φ₂ log l_{p,t} + φ₃ log HC_t,    l_{p,t} = 1 − h_{p,t} − τ_{p,t}
+The parent's leisure is now `φ₂ · l_p^(1−η)/(1−η)`, CRRA rather than log, with
+`l_p = 1 − h_p − τ_p`. `η` is repurposed from the Frisch curvature to the leisure curvature;
+it had no other use. `φ₂` goes from **20.0 to 0.8**: it used to scale a labor disutility and
+now weights a leisure CRRA, a completely different magnitude. 0.8 reproduces the old
+simulated labor supply almost exactly — mean `h_p` **0.2860** against **0.2848** — which is
+the one moment that can be held fixed while the term is restored.
 
-The code implements
+What it fixed, measured:
 
-    φ₁ c^(1−ρ)/(1−ρ) − φ₂ h_p^(1+η)/(1+η) + φ₃ log HC
+| | before | after |
+|---|---|---|
+| `corr(τ_p, h_p)` at t=15 | **+0.603** | **−0.999** |
+| mean `l_p` | 0.3667 | 0.7029 |
+| min simulated `l_p` | **0.00000** (at the corner) | 0.6112 |
+| `h_p + τ_p` at its bound | **35.29%** of states | never |
 
-The parental-leisure term is gone, replaced by a Frisch labor disutility. That substitution
-drops `τ_p` out of the parent's preferences entirely. **Verified directly:** `util_parent`
-evaluated at `τ_p = 0.05` and at `τ_p = 0.90` returns the same number to the last bit —
-difference `0.000e+00`.
+The sign is the point. Before, parents who worked *more* also spent *more* time with the
+child, because the time constraint was binding and `τ_p = 1 − h_p` was mechanical. It is now
+a genuine interior trade-off at every period.
 
-So parental time spent with the child costs the parent nothing. The only thing that ever
-prices it is the *child's* leisure term in `util_total`, weighted `(1−μ̃_t)λ₁`, which is
-`0.028` at the first bargaining period.
+### The open part: `τ_p` is not pinned by `φ₂`
 
-Three consequences, all measured:
+Mean `τ_p` falls from 0.348 to **0.011** — about 16 minutes a day, which is too low
+empirically. It cannot be fixed with `φ₂`: over `φ₂ ∈ [0.05, 3.0]` — a 60-fold range —
+`τ_p` stays between 0.005 and 0.023, because the first-order condition
 
-1. **In childhood the time constraint binds everywhere.** With no price on `τ_p` the parent
-   pushes it to the corner: `corr(τ_p, h_p) = −1.000` exactly at `t = 2` and `t = 6`, i.e.
-   `τ_p = 1 − h_p`. Across all periods `h_p + τ_p` hits its bound at **35.29%** of solved
-   states.
-2. **The sign flips at the regime boundary.** Once the child's leisure enters, `τ_p` leaves
-   the corner and `corr(τ_p, h_p)` goes from `−1.000` to `+0.65` at `t = 16` — parents who
-   work *more* also spend *more* time with the child. That is backwards.
-3. **`τ_p` becomes nearly asset-independent**, range ≈ 0.01 across the whole wealth
-   distribution, because its first-order condition then balances two small terms and neither
-   depends on assets directly.
+    φ₂ · l_p^(−η)  =  β · ∂V/∂HC · HC_next · σ₁ / τ_p
 
-Pricing `τ_p` fixes the sign: adding `0.5 · log(1 − h_p − τ_p)` as an experiment made
-`corr(τ_p, h_p)` negative at **every** period (−0.69 to −0.95). It did not remove the
-raggedness — that was the continuation, and is fixed separately.
+scales with `φ₂` on both sides. `τ_p` is set by `σ₁` and by how much the child's skill is
+worth, not by the price of time.
 
-**Fix — needs a decision, not a patch.** Either restore `φ₂ log l_{p,t}` as `model.txt`
-says, which means recalibrating `φ₂` (currently 20.0, scaled for the Frisch form — as a log
-weight it would dominate the objective); or keep the Frisch form and add a separate price
-for `τ_p`, and change `model.txt` to match. Both change every result.
+Raising `σ₁₀` does lift `τ_p`, but it destroys `HC`:
+
+| `σ₁₀` | −1.8 | −0.9 | 0.0 | +0.7 | +1.2 |
+|---|---|---|---|---|---|
+| mean `τ_p` | 0.011 | 0.025 | 0.069 | 0.102 | 0.001 |
+| mean final `HC` | 2.55 | 1.64 | 0.41 | 0.35 | **0.00** |
+
+That is Cobb-Douglas with inputs below one: `HC_next = exp(… + σ₁ log τ_p + …)` and
+`log τ_p < 0`, so a larger elasticity *reduces* output. `τ_p` and `HC` cannot both be
+matched by moving `σ₁` alone.
+
+**What this needs is a calibration decision, and it is yours.** The levers that move `τ_p`
+without collapsing `HC` are the units of the production inputs (`R_t` and the scale of
+`τ_p`, `e_p`) and the weight on the child's skill (`φ₃`, `λ₂`, `ψ_terminal`). Which moments
+you want to match — parental time use, the HC distribution, or both — determines the answer.
 
 ## 🟡 P5 — Linear continuation moves policies (parent side fixed)
 

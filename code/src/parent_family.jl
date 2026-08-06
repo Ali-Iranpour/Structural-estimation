@@ -87,7 +87,7 @@ mutable struct Parent_child_interaction_age_specific_AR1
     lambda_2_vector::Vector{Float64}             # Child's utility from human capital
     mu_vector::Vector{Float64}                   # Parameter for bargining inside the family
     rho::Float64                  # risk aversion
-    eta::Float64                  # Frisch elasticity
+    eta::Float64                  # curvature of the parent's leisure CRRA (was: Frisch)
     tax_lambda::Float64           # Tax progressivity
     tau::Float64                  # Labor income tax
     r::Float64                    # Interest rate
@@ -180,7 +180,16 @@ function Parent_child_interaction_age_specific_AR1(;
         # --- Slope/Intercept parameters for ALL age-specific variables ---
         beta_0 = 0.96,     beta_1 = 0.0,
         phi_1_0 = 1.0,     phi_1_1 = 0.0,
-        phi_2_0 = 20.0,     phi_2_1 = 0.0,
+        # P10: 0.8, not 20.0. phi_2 used to scale a Frisch labor disutility
+        # -phi_2*h^(1+eta)/(1+eta); it now weights the parent's leisure CRRA
+        # phi_2*l_p^(1-eta)/(1-eta), a completely different scale. 0.8 reproduces the old
+        # simulated labor supply almost exactly -- mean h_p 0.2860 against 0.2848 -- which
+        # is the one moment that can be held fixed while the leisure term is restored.
+        # NOTE: tau_p is NOT pinned by phi_2. It comes out at 0.011-0.023 for every phi_2
+        # from 0.05 to 3.0, because the FOC phi_2*l^(-eta) = beta*dV/dHC*HC_next*sigma_1/tau_p
+        # scales with phi_2 on both sides. tau_p is set by sigma_1 and the value of the
+        # child's HC. See docs/ERRORS.md P10 for the calibration tension that creates.
+        phi_2_0 = 0.8,      phi_2_1 = 0.0,
         phi_3_0 = 0.03,     phi_3_1 = 0.0,
         R_0 = 2.0,         R_1 = 0.06,
         sigma_1_0 = -1.8,  sigma_1_1 = -0.02,
@@ -387,10 +396,36 @@ const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
 # of the gradient at lambda*1e4. The floor is a numerical guard, not economics: it only
 # applies at trial points that violate the nonlinear leisure constraint, and the optimum
 # keeps leisure far above 1e-4 because lambda*log(l) -> -Inf as l -> 0.
-const LEISURE_FLOOR = 1e-4
-@inline log_leisure(l::Float64) =
-    l >= LEISURE_FLOOR ? log(l) : log(LEISURE_FLOOR) + (l - LEISURE_FLOOR) / LEISURE_FLOOR
-@inline d_log_leisure(l::Float64) = l >= LEISURE_FLOOR ? 1.0 / l : 1.0 / LEISURE_FLOOR
+#
+# P10: the floor is 1e-2, not 1e-4, because the PARENT's leisure now enters as CRRA with
+# curvature `eta`. The bounded derivative below the floor is L^(-eta); at eta = 2 that is
+# 1e8 with L = 1e-4 but 1e4 with L = 1e-2. Verified slack -- see the check in the docstring
+# of `util_total`.
+const LEISURE_FLOOR = 1e-2
+
+"""
+    crra_leisure(l, nu)   /   d_crra_leisure(l, nu)
+
+`l^(1-nu)/(1-nu)`, or `log(l)` at `nu = 1`, LINEARIZED below `LEISURE_FLOOR`:
+
+    l >= L :  l^(1-nu)/(1-nu)                        d/dl = l^(-nu)
+    l <  L :  L^(1-nu)/(1-nu) + L^(-nu) * (l - L)    d/dl = L^(-nu)
+
+Value and slope both match at `L`, so the pair is C1 rather than merely continuous, and the
+derivative is bounded by `L^(-nu)` everywhere. Flattening below the floor instead -- the
+earlier version -- left a derivative CLIFF of `1/L` there, and one SLSQP step across it came
+back NaN.
+"""
+@inline function crra_leisure(l::Float64, nu::Float64)
+    L = LEISURE_FLOOR
+    base(x) = nu == 1.0 ? log(x) : x ^ (1.0 - nu) / (1.0 - nu)
+    return l >= L ? base(l) : base(L) + L ^ (-nu) * (l - L)
+end
+@inline d_crra_leisure(l::Float64, nu::Float64) = (l >= LEISURE_FLOOR ? l : LEISURE_FLOOR) ^ (-nu)
+
+# The CHILD's leisure stays logarithmic, per model.txt.
+@inline log_leisure(l::Float64)   = crra_leisure(l, 1.0)
+@inline d_log_leisure(l::Float64) = d_crra_leisure(l, 1.0)
 
 
 """
@@ -713,8 +748,9 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
         dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
         dutil_de_p = 0.0
-        dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
-        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
+        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
+        dutil_dh_p = dutil_dl_p
+        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c) + dutil_dl_p
 
         # Partial derivatives of HC_next
         dHC_next_dt_p = HC_next * model.sigma_1_vector[t] / t_p
@@ -786,7 +822,7 @@ end
 
     if length(grad) > 0
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_dh_p = - model.phi_2_vector[t] * (h_p ^ model.eta)
+        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
         term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
         grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da_sum * (-1)
@@ -796,8 +832,9 @@ end
         # d k_next / d h_p = 0. The term was a leftover from when k was parental human
         # capital accumulating by learning-by-doing; it told the optimizer that working
         # more makes you college-educated.
-        grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da_sum * marginal)
-        grad[5] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
+        grad[4] = dutil_dl_p + model.beta_vector[t] * (dV_da_sum * marginal)
+        grad[5] = term_leisure_c + dutil_dl_p +
+                  model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
     return f
 end
@@ -839,9 +876,9 @@ end
         grad[1] = model.phi_1_vector[t] * (c_p ^ (-model.rho)) - model.beta_vector[t] * dV_da_sum
         grad[2] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
         # P1: no dV_dk_sum -- see obj_work_period_full.
-        grad[3] = -model.phi_2_vector[t] * (h_p ^ model.eta) +
-                  model.beta_vector[t] * (marginal * dV_da_sum)
-        grad[4] = model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
+        dutil_dl_p = -model.phi_2_vector[t] * d_crra_leisure(leisure, model.eta)   # P10
+        grad[3] = dutil_dl_p + model.beta_vector[t] * (marginal * dV_da_sum)
+        grad[4] = dutil_dl_p + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
     return util_now + model.beta_vector[t] * V_next
 end
@@ -858,8 +895,11 @@ end
     rho = model.rho
     eta = model.eta
     u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
-    disutil_h = - model.phi_2_vector[t] * (h_p ^ (1.0 + eta) / (1.0 + eta))
-    u_parent = u_cons + disutil_h
+    # P10: the parent's own leisure, restored. It was replaced by a Frisch labor disutility
+    # -phi_2*h^(1+eta)/(1+eta), which has no tau_p in it at all -- so parental time with the
+    # child was free, and util_parent returned the identical value at tau_p = 0.05 and 0.90.
+    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)
+    u_parent = u_cons + u_leisure
     u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) +
             (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log_leisure(leisure_c) +
                                         model.lambda_2_vector[t] * log(HC))
@@ -871,8 +911,8 @@ end
     rho = model.rho
     eta = model.eta
     u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
-    disutil_h = - model.phi_2_vector[t] * (h_p ^ (1.0 + eta) / (1.0 + eta))
-    return u_cons + disutil_h + model.phi_3_vector[t] * log(HC)
+    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)   # P10
+    return u_cons + u_leisure + model.phi_3_vector[t] * log(HC)
 end
 
 

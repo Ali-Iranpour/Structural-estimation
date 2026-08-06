@@ -165,7 +165,7 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 |---|---|---|
 | `T` | 17 | periods (child ages 0–17) |
 | `rho`, `eta` | 1.5, 2.0 | CRRA; inverse Frisch |
-| `phi_1_0, phi_2_0, phi_3_0` | 1.0, 20.0, 0.03 | consumption / labor disutility / child HC weights |
+| `phi_1_0, phi_2_0, phi_3_0` | 1.0, **0.8**, 0.03 | consumption / **parental leisure** / child HC weights. `phi_2` weights `l_p^(1-eta)/(1-eta)` with `l_p = 1 - h_p - tau_p`; it was 20.0 when it scaled a Frisch labor disutility (P10) |
 | `lambda_1_0, lambda_2_0` | 0.7, 0.3 | child's leisure / HC weights |
 | `mu_0, mu_1` | 1.0, −0.04 | welfare weight `μ̃_t = 1` for `t ≤ 6`, then `μ_0 + μ_1(t−6)`. The boundary is `T_CHILD_VOICE` in `parent_family.jl` — one constant, six call sites |
 | `tau`, `tax_lambda` | 0.18, 0.82 | progressive tax `λ(wh)^(1−τ)` |
