@@ -49,7 +49,9 @@ both theoretical masks. **One caveat remains — see P5.**
 
 | # | Issue | File | Severity |
 |---|---|---|---|
-| P10 | Leisure restored (`φ₂` 20.0 → 0.8); **`τ_p` = 0.011 is too low and `σ₁` cannot fix it** | parent_family | 🟡 |
+| P11 | HC block recalibrated for a declining `τ_p`; **college share collapsed 19.1% → 0.1%** | parent_family | 🟠 |
+| P12 | `σ₂₁ × 1.5` counterfactual no longer solves under the new HC block | parent_family | 🟡 |
+| P10 | Leisure restored (`φ₂` 20.0 → 0.8); `τ_p` level now targeted — see P11 | parent_family | 🟡 |
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
 | P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
 | G3 | `create_focused_grid` builds a non-monotone grid when the range is under 3.0 | both | ⚪ |
@@ -57,6 +59,49 @@ both theoretical masks. **One caveat remains — see P5.**
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
 
 ---
+
+## 🟠 P11 — The HC recalibration gave a declining `τ_p` but killed the college margin
+
+**What was asked and delivered.** `σ₃₁` was `+0.06`, so self-productivity *rose* with age
+(0.09 → 0.24) and the persistence chain from an early investment to `T` was
+`≈ 0.15^16 = 1e-14`. Skill had no memory, so there was no reason to front-load, and `τ_p`
+came out **rising** (0.004 → 0.058). The block was recalibrated together and now gives:
+
+| t | 1 | 5 | 9 | 13 | 15 | 17 |
+|---|---|---|---|---|---|---|
+| **τ_p** | **0.400** | 0.352 | 0.310 | 0.258 | 0.196 | 0.082 |
+| i_c | 0 | 0 | 0.161 | 0.094 | 0.071 | 0.032 |
+| h_p | 0.195 | 0.246 | 0.279 | 0.315 | 0.378 | 0.491 |
+
+Monotone decline from 0.40, passing 0.20 at t = 15. `h_p` holds at 0.290 against its 0.285
+target. `i_c` is no longer flat *in time* either.
+
+**What it cost, and this is unresolved.** Mean terminal parental assets fell **20.97 → 9.39**,
+and the college/work frontier sits at parental assets of **46–55**. With the asset
+distribution halved, almost nobody clears it: **college share 19.1% → 0.1%** (4 of 5,000).
+
+The mechanism is a genuine trade-off, not a bug. Raising `φ₃`/`λ₂` from 0.03/0.3 to 1.0/1.0
+makes the child's skill ~30× more valuable, so the parent pours resources into `τ_p` and
+`e_p` instead of saving — and college is financed out of savings. **Time went from leisure,
+not from work** (`l_p` 0.70 → 0.41, `h_p` unchanged), so labor income is intact; it is
+education spending and the transfer that crowd out the asset stock.
+
+**Raising `R_0` does not fix it** — tested: at `R_0 = 2.2` human capital reaches 11.7 and
+the psychic cost `κ/(HC+1)⁴` falls to 0.0002, yet the college share is **0.05%, lower still**;
+`R_0 ≥ 2.8` fails to solve. The binding constraint is the parental asset distribution
+against the college threshold, not the psychic cost.
+
+**The levers, and the choice is yours.** Lower `college_cost` or the `a_req` threshold so
+college does not require the top of the asset distribution; raise `omega` so more of the
+parent's resources arrive as a transfer; or accept a smaller `φ₃`/`λ₂` and a flatter `τ_p`.
+Which one depends on whether the college share or the time-use profile is the moment you
+most want to match — they are in direct tension here.
+
+## 🟡 P12 — One counterfactual arm no longer solves
+
+`σ₂₁ × 1.5` (education-expenditure slope) fails under the new HC block; the other 24 arms
+in notebook cell 29 solve. Not yet diagnosed. Likely the same class as the earlier solver
+failures — a state where the recalibrated technology drives an input to its bound.
 
 ## 🟡 P10 — Parental leisure restored; the calibration tension it exposes is open
 
