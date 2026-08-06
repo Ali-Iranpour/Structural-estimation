@@ -83,7 +83,7 @@ Average wage of household $i$ in period $t$ is denoted $w_{it}$, and $\text{Both
     \qquad \varepsilon_{it} \sim \mathcal{N}(0,\sigma^2),
     \qquad \rho = 0.95, \quad \sigma = 0.2,
 \end{equation}
-discretized onto a finite state space by Tauchen's method. The approximation is deliberate: $\rho < 1$ makes the shock stationary, so the transfer problem can integrate over a well-defined ergodic distribution.
+discretized onto a finite state space by Rouwenhorst's method, which matches the unconditional variance and the first-order autocorrelation of the AR(1) exactly at any number of nodes (Kopecky and Suen, 2010); Tauchen's method overstates the unconditional standard deviation by 31\% at these parameters. The approximation is deliberate: $\rho < 1$ makes the shock stationary, so the transfer problem can integrate over a well-defined ergodic distribution.
 
 
 
