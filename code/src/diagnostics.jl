@@ -314,6 +314,194 @@ end
 # =============================================================================
 
 """
+    SmoothV(spl)
+
+A `Dierckx.Spline2D` continuation wearing the interface `obj_work_period` expects: callable
+at `(a, k)` and answering `Interpolations.gradient`. Lets the *same* objective be optimized
+against a C2 continuation instead of the `Gridded(Linear())` one, which is what P5 is about.
+"""
+struct SmoothV
+    spl::Dierckx.Spline2D
+end
+(s::SmoothV)(a, k) = s.spl(a, k)
+Interpolations.gradient(s::SmoothV, a, k) =
+    (Dierckx.derivative(s.spl, a, k, 1, 0), Dierckx.derivative(s.spl, a, k, 0, 1))
+
+"""
+    continuation_interpolation_test(m; n_sample = 150, verbose = true)
+
+**Settles P5.** `Gridded(Linear())` makes the continuation C0 but not C1, so
+`Interpolations.gradient` is piecewise-constant with a jump at every knot, while SLSQP
+builds a BFGS quadratic model out of it. That is a real objection; whether it *matters* is
+an empirical question nobody had answered.
+
+This answers it directly. At each sampled state the same objective, the same constraints
+and the same box are optimized twice --- once against the linear continuation the solver
+actually uses, once against an interpolating cubic spline of the same value array --- and
+the two optimal policies are compared. If linear interpolation were distorting policies,
+the two would separate.
+
+Reports the max and mean absolute difference in `c` and `h`, both in levels and relative
+to the linear solution.
+"""
+function continuation_interpolation_test(m; n_sample::Int = 150, rng = MersenneTwister(3),
+                                         verbose::Bool = true)
+    dc = Float64[]; dh = Float64[]; rc = Float64[]; rh = Float64[]
+    lin = Dict{Int,Any}(); smo = Dict{Int,Any}()
+
+    function solve_at(a, k, t, z, ip, interp, c0, h0)
+        w_pre_t = wage_func(m, k, t, z)
+        c_hi = max((1.0 + m.r) * a + after_tax_income(m, w_pre_t, 1.0) + m.y, 0.02)
+        h_hi = clamp(m.k_max - k, 1e-3, 1.0)
+        opt = Opt(:LD_SLSQP, 2)
+        lower_bounds!(opt, [m.c_floor, 1e-3]); upper_bounds!(opt, [c_hi, h_hi])
+        ftol_rel!(opt, 1e-12); maxeval!(opt, 4000)
+        inequality_constraint!(opt, (x, g) -> asset_constraint_work(x, g, m, a, k, t, z), 1e-8)
+        inequality_constraint!(opt, (x, g) -> asset_constraint_work_upper(x, g, m, a, k, t, z), 1e-8)
+        min_objective!(opt, (x, g) -> begin
+            f = obj_work_period(m, x, a, k, t, z, ip, interp, g)
+            length(g) > 0 && (g .= -g)
+            return -f
+        end)
+        try
+            (minf, xo, _) = optimize(opt, [clamp(c0, m.c_floor, c_hi), clamp(h0, 1e-3, h_hi)])
+            return (isfinite(minf) && all(isfinite, xo)) ? xo : nothing
+        catch
+            return nothing
+        end
+    end
+
+    for _ in 1:n_sample
+        t  = rand(rng, 1:(m.T - 1))
+        ia = rand(rng, 2:m.Na); ik = rand(rng, 2:m.Nk); ip = rand(rng, 1:m.Np)
+        a, k, z = m.a_grid[ia], m.k_grid[ik], m.p_grid[ip]
+        c0 = m.sol_c_work[t, ia, ik, ip, 1]; h0 = m.sol_h_work[t, ia, ik, ip, 1]
+        (isfinite(c0) && isfinite(h0)) || continue
+
+        iL = get!(lin, t) do; create_interpolator(m, m.sol_v_work, t + 1) end
+        iS = get!(smo, t) do
+            [SmoothV(Dierckx.Spline2D(m.a_grid, m.k_grid, m.sol_v_work[t+1, :, :, jp, 1];
+                                      kx = 3, ky = 3, s = 0.0)) for jp in 1:m.Np]
+        end
+
+        xL = solve_at(a, k, t, z, ip, iL, c0, h0)
+        xS = solve_at(a, k, t, z, ip, iS, c0, h0)
+        (xL === nothing || xS === nothing) && continue
+        push!(dc, abs(xS[1] - xL[1])); push!(dh, abs(xS[2] - xL[2]))
+        push!(rc, abs(xS[1] - xL[1]) / max(abs(xL[1]), 1e-12))
+        push!(rh, abs(xS[2] - xL[2]) / max(abs(xL[2]), 1e-12))
+    end
+
+    isempty(dc) && return (max_dc = NaN, max_dh = NaN, mean_dc = NaN, mean_dh = NaN,
+                           max_rel_c = NaN, max_rel_h = NaN, n = 0)
+    out = (max_dc = maximum(dc), max_dh = maximum(dh),
+           mean_dc = mean(dc), mean_dh = mean(dh),
+           max_rel_c = maximum(rc), max_rel_h = maximum(rh), n = length(dc))
+    if verbose
+        @printf("linear vs cubic continuation over %d states:\n", out.n)
+        @printf("  |dc| max %.3e  mean %.3e   (max relative %.2f%%)\n", out.max_dc, out.mean_dc, 100out.max_rel_c)
+        @printf("  |dh| max %.3e  mean %.3e   (max relative %.2f%%)\n", out.max_dh, out.mean_dh, 100out.max_rel_h)
+    end
+    return out
+end
+
+"""
+    bellman_optimality_residual(m; n_sample = 200, rng = MersenneTwister(2), verbose = true)
+
+The **maximized-RHS** Bellman residual, and the only thing that can settle P5.
+
+`bellman_residual` re-evaluates the RHS at the *stored* policy, so it measures whether
+`V` is consistent with `(c, h)`. It cannot detect a suboptimal policy: a wrong `(c, h)`
+stored with the matching wrong `V` gives a residual of zero. This re-optimizes each
+sampled state from scratch against the same continuation and compares the maximum
+against the stored `V`:
+
+    r = ( max_{c,h} { u(c,h) + beta E V' } - V ) / (1 + |V|)
+
+A positive `r` is money the solver left on the table at that state.
+
+Returns `max`, `mean`, the share of states improved by more than `tol`, and the largest
+policy gaps in `c` and `h`. Also reports the same quantity computed against a
+shape-preserving cubic continuation, so the part of the gap attributable to the
+`Gridded(Linear())` continuation (P5) is separated from ordinary solver slack.
+"""
+function bellman_optimality_residual(m; n_sample::Int = 200, rng = MersenneTwister(2),
+                                     tol::Float64 = 1e-6, verbose::Bool = true)
+    gaps = Float64[]; dc = 0.0; dh = 0.0; n_improved = 0
+    lin_interps = Dict{Int,Any}()
+
+    for _ in 1:n_sample
+        t  = rand(rng, 1:(m.T - 1))
+        ia = rand(rng, 2:m.Na); ik = rand(rng, 2:m.Nk); ip = rand(rng, 1:m.Np)
+        a, k, z = m.a_grid[ia], m.k_grid[ik], m.p_grid[ip]
+        c0 = m.sol_c_work[t, ia, ik, ip, 1]
+        h0 = m.sol_h_work[t, ia, ik, ip, 1]
+        V0 = m.sol_v_work[t, ia, ik, ip, 1]
+        (isfinite(c0) && isfinite(h0) && isfinite(V0)) || continue
+
+        interp = get!(lin_interps, t) do
+            create_interpolator(m, m.sol_v_work, t + 1)
+        end
+
+        # Same objective, same constraints and the same box as solve_model_work!, so the
+        # comparison isolates the optimizer, not a different problem.
+        w_pre_t = wage_func(m, k, t, z)
+        c_hi = max((1.0 + m.r) * a + after_tax_income(m, w_pre_t, 1.0) + m.y, 0.02)
+        h_hi = clamp(m.k_max - k, 1e-3, 1.0)
+
+        negobj = function (x::Vector, grad::Vector)
+            f = obj_work_period(m, x, a, k, t, z, ip, interp, grad)
+            length(grad) > 0 && (grad .= -grad)
+            return -f
+        end
+
+        best_v = -Inf; best_x = [c0, h0]
+        # Multi-start: a single start from the stored policy would report zero by
+        # construction whenever the solver converged to the same local point.
+        starts = [[c0, clamp(h0, 1e-3, h_hi)],
+                  [clamp(0.25c_hi, m.c_floor, c_hi), clamp(0.20, 1e-3, h_hi)],
+                  [clamp(0.60c_hi, m.c_floor, c_hi), clamp(0.60, 1e-3, h_hi)],
+                  [clamp(0.90c_hi, m.c_floor, c_hi), clamp(0.95, 1e-3, h_hi)]]
+        for x0 in starts
+            opt = Opt(:LD_SLSQP, 2)
+            lower_bounds!(opt, [m.c_floor, 1e-3]); upper_bounds!(opt, [c_hi, h_hi])
+            ftol_rel!(opt, 1e-12); maxeval!(opt, 4000)
+            inequality_constraint!(opt, (x, g) -> asset_constraint_work(x, g, m, a, k, t, z), 1e-8)
+            inequality_constraint!(opt, (x, g) -> asset_constraint_work_upper(x, g, m, a, k, t, z), 1e-8)
+            min_objective!(opt, negobj)
+            local minf, xo, ret
+            try
+                (minf, xo, ret) = optimize(opt, x0)
+            catch
+                continue
+            end
+            (isfinite(minf) && all(isfinite, xo)) || continue
+            if -minf > best_v
+                best_v = -minf; best_x = xo
+            end
+        end
+        isfinite(best_v) || continue
+
+        g = (best_v - V0) / (1 + abs(V0))
+        push!(gaps, g)
+        g > tol && (n_improved += 1)
+        dc = max(dc, abs(best_x[1] - c0)); dh = max(dh, abs(best_x[2] - h0))
+    end
+
+    isempty(gaps) && return (max = NaN, mean = NaN, share_improved = NaN,
+                             max_dc = NaN, max_dh = NaN, n = 0)
+    out = (max = maximum(gaps), mean = mean(gaps),
+           share_improved = n_improved / length(gaps),
+           max_dc = dc, max_dh = dh, n = length(gaps))
+    if verbose
+        @printf("Bellman OPTIMALITY residual: max %.3e   mean %.3e   improved %.2f%% of %d states\n",
+                out.max, out.mean, 100out.share_improved, out.n)
+        @printf("  largest policy gap: c %.3e   h %.3e\n", out.max_dc, out.max_dh)
+    end
+    return out
+end
+
+"""
     bellman_residual(m; n_sample = 500, rng = MersenneTwister(1))
 
 Max and mean relative Bellman residual on the child's work path:

@@ -174,6 +174,14 @@ function table_college_work(path_choice, name::AbstractString;
 end
 
 """
+    ASSET_RESCALE
+
+Model asset units -> thousands of U.S. dollars. Every table that prints an asset must
+apply it, or the same quantity appears in two units across the paper (M1).
+"""
+const ASSET_RESCALE = 10
+
+"""
     table_outcomes(models, labels, name; ...)
 
 End-of-family outcomes across arms, in the format of `resource_summary.tex`.
@@ -182,7 +190,7 @@ End-of-family outcomes across arms, in the format of `resource_summary.tex`.
 function table_outcomes(models::Vector, labels::Vector{<:AbstractString}, name::AbstractString;
                         caption::AbstractString = "End-of-Family Outcomes",
                         label::AbstractString = "outcomes_summary",
-                        rescale::Real = 10,
+                        rescale::Real = ASSET_RESCALE,
                         note::AbstractString = "Means computed over the simulated cohort at the end of the family stage.",
                         params...)
     @assert length(models) == length(labels)
@@ -206,8 +214,13 @@ Per-belief-group outcomes, in the format of `hetero_table.tex`.
 """
 function table_belief_groups(belief_type, belief_values, init_assets, final_assets, final_hc,
                              name::AbstractString;
-                             caption::AbstractString = "Outcomes by Subjective Belief Group (Assets \$\\times 10^3\$)",
+                             caption::AbstractString = "Outcomes by Subjective Belief Group",
                              label::AbstractString = "belief_groups",
+                             # M1: this table reported assets in raw model units while its
+                             # caption claimed x 10^3 and table_outcomes multiplied by 10.
+                             # Two different units for the same quantity in one paper. The
+                             # factor now lives in one place and both tables use it.
+                             rescale::Real = ASSET_RESCALE,
                              note::AbstractString = "Means by belief group; belief value is the subjective annual human-capital increment from college.",
                              params...)
     rows = Vector{Vector{String}}()
@@ -216,15 +229,16 @@ function table_belief_groups(belief_type, belief_values, init_assets, final_asse
         isempty(idx) && continue
         push!(rows, [fmt_int(m),
                      fmt_num(belief_values[m]; digits = 3),
-                     fmt_num(mean(filter(isfinite, init_assets[idx]));  digits = 3),
-                     fmt_num(mean(filter(isfinite, final_assets[idx])); digits = 3),
+                     fmt_num(mean(filter(isfinite, init_assets[idx]))  * rescale; digits = 3),
+                     fmt_num(mean(filter(isfinite, final_assets[idx])) * rescale; digits = 3),
                      fmt_num(mean(filter(isfinite, final_hc[idx]));     digits = 3),
                      fmt_int(length(idx))])
     end
     write_table(name; caption = caption, label = label, colspec = "cccccc", small = true,
-                header = ["Belief Group", "Belief Value", "Init.\\ Asset",
-                          "Mean Final Asset", "Mean Final HC", "N Agents"],
-                rows = rows, notes = [note], n_groups = length(rows), params...)
+                header = ["Belief Group", "Belief Value", "Init.\\ Asset\\tnote{a}",
+                          "Mean Final Asset\\tnote{a}", "Mean Final HC", "N Agents"],
+                rows = rows, tnotes = ["a" => "Values in thousands of U.S.\\ dollars."],
+                notes = [note], n_groups = length(rows), params...)
 end
 
 """
