@@ -485,20 +485,26 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
 
             opt = Opt(:LD_SLSQP, 5)
             lower_bounds!(opt, [0.01, 1e-4, 0.01, 1e-4, 1e-4])
-            upper_bounds!(opt, [100, 1.0, 100, 1.0, 1.0])
+            upper_bounds!(opt, [100.0, 1.0, 100.0, 1.0, 1.0])
             inequality_constraint!(opt, constraint_min_leisure_full, TOL_CONSTR)
             inequality_constraint!(opt, constraint_child_time, TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_full(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_max(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
 
             min_objective!(opt, obj_wrapper)
-            init = [
+            # Warm start from t+1, CLAMPED into this period's box. An out-of-box initial
+            # guess makes NLopt return :INVALID_ARGS with NaN, which then propagates
+            # backwards through every earlier period -- the same failure already fixed on
+            # the child side, where terminal consumption exceeded a hardcoded cap.
+            lo = [0.01, 1e-4, 0.01, 1e-4, 1e-4]
+            hi = [100.0, 1.0, 100.0, 1.0, 1.0]
+            init = clamp.([
                 model.sol_c[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_i[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_e[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_h[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_t[t+1, i_a, i_k, i_hc, i_p],
-            ]
+            ], lo, hi)
             xtol_rel!(opt, 1e-4)
             maxeval!(opt, 1000)
             (minf, x_opt, ret) = optimize(opt, init)
@@ -556,18 +562,26 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             end
 
             opt = Opt(:LD_SLSQP, 4)
-            lower_bounds!(opt, [0.01, 0.01, 1e-6, 1e-6])
+            # T9: the time floors were 1e-6 here against 1e-4 in the full-model loop, for
+            # the same variables. grad[4] carries HC_next * sigma_1 / t_p, so a floor of
+            # 1e-6 lets that term reach 1e6 -- the same gradient blow-up that killed the
+            # full-model loop through the leisure floor, 100x worse. Both loops now use
+            # 1e-4. The floor is slack at the optimum: Cobb-Douglas HC production sends
+            # HC_next -> 0 as t_p -> 0, and log(HC) is in utility, so the optimum keeps
+            # t_p far away from it.
+            lower_bounds!(opt, [0.01, 0.01, 1e-4, 1e-4])
             upper_bounds!(opt, [100.0, 100.0, 1.0, 1.0])
             inequality_constraint!(opt, constraint_min_leisure_parentonly, TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_parentonly(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_max_parentonly(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
             min_objective!(opt, obj_wrapper)
-            init = [
+            # Clamped for the same reason as the full-model loop above.
+            init = clamp.([
                 model.sol_c[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_e[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_h[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_t[t+1, i_a, i_k, i_hc, i_p],
-            ]
+            ], [0.01, 0.01, 1e-4, 1e-4], [100.0, 100.0, 1.0, 1.0])
             xtol_rel!(opt, 1e-4)
             maxeval!(opt, 1000)
             (minf, x_opt, ret) = optimize(opt, init)
