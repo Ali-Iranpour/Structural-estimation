@@ -374,6 +374,27 @@ const LEISURE_FLOOR = 1e-4
 
 
 """
+    budget_ceiling(model, assets, capital, t, p_shock)
+
+The most the parent could possibly spend this period: all wealth, all labor income at
+`h = 1`, plus transfers. `c` and `e` are bounded by this rather than by a constant.
+
+A fixed box of `[0, 100]` on each let SLSQP evaluate `c = e = 100` at a state holding
+`a = 0.25`, giving `a_next = -174` against a grid starting at 0. The continuation is then
+`Line()`-extrapolated 174 units past its edge, which returned `dV/dHC = -45` -- wrong sign,
+wrong magnitude -- and the resulting gradient of 6e4 destroyed the BFGS model and came back
+as a NaN iterate. The asset constraint is nonlinear, so SLSQP is free to violate it; the
+box is what has to keep the iterates near the feasible set.
+
+Same fix, and the same reasoning, as `c_hi` in the child's `solve_model_work!`.
+"""
+@inline function budget_ceiling(model::Parent_child_interaction_age_specific_AR1,
+                                assets::Float64, capital::Float64, t::Int, p_shock::Float64)
+    w = wage_func(model, capital, t, p_shock)
+    return max((1.0 + model.r) * assets + model.tax_lambda * w ^ (1 - model.tau) + model.y, 0.02)
+end
+
+"""
     snap_parent(x, lo, hi; tol = 1e-10)
 
 Clamp only floating-point-sized violations of `[lo, hi]`; leave genuine excursions visible
@@ -434,8 +455,9 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         end
 
         opt = Opt(:LD_SLSQP, 5)
+        bmax = budget_ceiling(model, assets, capital, t, p_shock)
         lower_bounds!(opt, [1e-4, 1e-4, 1e-4, 1e-4, 1e-4])
-        upper_bounds!(opt, [100, 1.0, 100, 1.0, 1.0])
+        upper_bounds!(opt, [bmax, 1.0, bmax, 1.0, 1.0])
         min_objective!(opt, obj_wrapper)
         inequality_constraint!(opt, constraint_min_leisure_full, TOL_CONSTR)
         inequality_constraint!(opt, constraint_child_time, TOL_CONSTR)
@@ -504,8 +526,9 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             end
 
             opt = Opt(:LD_SLSQP, 5)
+            bmax = budget_ceiling(model, assets, capital, t, p_shock)
             lower_bounds!(opt, [0.01, 1e-4, 0.01, 1e-4, 1e-4])
-            upper_bounds!(opt, [100.0, 1.0, 100.0, 1.0, 1.0])
+            upper_bounds!(opt, [bmax, 1.0, bmax, 1.0, 1.0])
             inequality_constraint!(opt, constraint_min_leisure_full, TOL_CONSTR)
             inequality_constraint!(opt, constraint_child_time, TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_full(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
@@ -517,7 +540,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             # backwards through every earlier period -- the same failure already fixed on
             # the child side, where terminal consumption exceeded a hardcoded cap.
             lo = [0.01, 1e-4, 0.01, 1e-4, 1e-4]
-            hi = [100.0, 1.0, 100.0, 1.0, 1.0]
+            hi = [bmax, 1.0, bmax, 1.0, 1.0]
             init = clamp.([
                 model.sol_c[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_i[t+1, i_a, i_k, i_hc, i_p],
@@ -589,8 +612,9 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             # 1e-4. The floor is slack at the optimum: Cobb-Douglas HC production sends
             # HC_next -> 0 as t_p -> 0, and log(HC) is in utility, so the optimum keeps
             # t_p far away from it.
+            bmax = budget_ceiling(model, assets, capital, t, p_shock)
             lower_bounds!(opt, [0.01, 0.01, 1e-4, 1e-4])
-            upper_bounds!(opt, [100.0, 100.0, 1.0, 1.0])
+            upper_bounds!(opt, [bmax, bmax, 1.0, 1.0])
             inequality_constraint!(opt, constraint_min_leisure_parentonly, TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_parentonly(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_max_parentonly(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
@@ -601,7 +625,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                 model.sol_e[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_h[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_t[t+1, i_a, i_k, i_hc, i_p],
-            ], [0.01, 0.01, 1e-4, 1e-4], [100.0, 100.0, 1.0, 1.0])
+            ], [0.01, 0.01, 1e-4, 1e-4], [bmax, bmax, 1.0, 1.0])
             xtol_rel!(opt, 1e-4)
             maxeval!(opt, 1000)
             (minf, x_opt, ret) = optimize(opt, init)
