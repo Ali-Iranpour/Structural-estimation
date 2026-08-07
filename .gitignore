@@ -16,3 +16,6 @@ output/reports/*.log
 *.jl.cov
 *.jl.mem
 _nb_smoketest.jl
+
+# SMM search output — regenerate with `julia --project=.. smm.jl`
+output/data/smm_estimates.toml
