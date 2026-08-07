@@ -76,6 +76,15 @@ const LOCAL_MAX  = argval("--localmax", QUICK ?  60 :  200)
 # The polish is a single search but an expensive one -- measured at ~344 evaluations
 # uncapped on a 3-restart smoke run, which at 1.3 s each is not free. Capped.
 const POLISH_MAX = argval("--polishmax", QUICK ? 120 : 500)
+# Local-stage batch width. Wider = faster but degrades TikTak toward plain
+# multistart; see the measured table in src/tiktak.jl. Default follows the
+# reference repo's #cores <= sqrt(#restarts).
+const BATCH = argval("--batch", max(1, min(Threads.nthreads(), floor(Int, sqrt(N_RESTARTS)))))
+# Threads are OFF by default and must stay off here: NLopt.jl is not safe under
+# concurrent optimize calls, and this objective is thousands of them. Measured --
+# `-t 8` with parallel=true kills the process silently (exit 0, no output); `-t 1`
+# completes. Use Distributed/pmap for many cores; see the header of src/tiktak.jl.
+const PARALLEL = "--parallel" in ARGS
 
 # Two grid settings, and the distinction matters.
 #
@@ -212,48 +221,105 @@ to_theta(x) = [link_inv(PARS[i], x[i]) for i in eachindex(PARS)]
 # =============================================================================
 # 3. Cached model solves
 # =============================================================================
-# Tier 0: the child's work and college value functions, cached on college_cost rounded to
-# 0.1. Nothing else in the estimated set enters them.
-# Both caches are keyed on parameters only, so they MUST be cleared when the grid
-# changes -- otherwise a verify-grid run would silently reuse search-grid solves.
+# THREAD SAFETY AND MEMORY. Two things force the design here.
+#
+#   (1) `simulate_moments` MUTATES the child it is handed -- it writes sim_a_init,
+#       sim_k_init, and then simulate_model_family! fills every sim_* array. A cache
+#       that hands the same object to two threads is a data race. Tier 0 is only ever
+#       READ (its solution arrays are shared by reference), so it can be shared under a
+#       lock; Tier 1 hands out a mutable child, so it is THREAD-LOCAL.
+#
+#   (2) One cached child holds six 5-D solution arrays: 19.6 MB at the search grids,
+#       66 MB at the production grids. An earlier unbounded run reached 283 Tier-1
+#       entries, which is 5.5 GB on an 8 GB machine. Both caches are therefore CAPPED
+#       with simple FIFO eviction.
+const TIER0_CAP = 32                      # ~630 MB at search grids
 const TIER0 = Dict{NTuple{2,Float64},Any}()
+const TIER0_ORDER = NTuple{2,Float64}[]
+const TIER0_LOCK = ReentrantLock()
+
 ccost_key(cc) = round(cc, digits = 1)
 r_key(rr)     = round(rr / 0.005) * 0.005
+
 function tier0(cc, rr)
     key = (ccost_key(cc), r_key(rr))
-    get!(TIER0, key) do
-        t0 = time()
+    lock(TIER0_LOCK) do
+        haskey(TIER0, key) && return TIER0[key]
         g = GRIDS[]
         ch = ConSavLaborCollege_AR1(simN = g.simN, Na = g.c_na, Nk = g.c_nk, Nt = g.c_nt,
                                     sigma_eps = 0.5, rho = 1.5, a_max = 100.0, w = 20.0,
                                     seed = SEED, college_cost = key[1], r = key[2])
         solve_model_work!(ch); solve_model_college!(ch)
-        @printf("    [tier0] college_cost %.1f, r %.3f solved in %.1fs (cache %d)\n",
-                key[1], key[2], time() - t0, length(TIER0) + 1); flush(stdout)
-        ch
+        TIER0[key] = ch; push!(TIER0_ORDER, key)
+        while length(TIER0_ORDER) > TIER0_CAP
+            delete!(TIER0, popfirst!(TIER0_ORDER))
+        end
+        return ch
     end
 end
 
-# Tier 1: transfer stage + terminal spline, cached on (college_cost, omega, kappa_terminal).
+# Tier 1: the transfer solution and the terminal spline. SHARED and lock-protected,
+# and it stores ONLY immutable arrays -- never a child model. An earlier version kept
+# per-thread caches of child objects indexed by Threads.threadid(); that is unsafe on
+# Julia >= 1.9, where tasks MIGRATE between threads, so threadid() is not stable for the
+# life of a task. Storing only immutable data removes the problem at the root: there is
+# no per-thread state left to get wrong.
 const TIER1 = Dict{NTuple{4,Float64},Any}()
-function child_for(cc, rr, omega, psi, kap)
+const TIER1_ORDER = NTuple{4,Float64}[]
+const TIER1_LOCK = ReentrantLock()
+const TIER1_CAP_N = 64          # small: 4 transfer arrays + a spline, not a model
+
+function transfer_for(cc, rr, omega, psi, kap)
     key = (ccost_key(cc), r_key(rr), round(omega, digits = 5), round(kap, digits = 5))
-    get!(TIER1, key) do
+    lock(TIER1_LOCK) do
+        haskey(TIER1, key) && return TIER1[key]
         base = tier0(cc, rr)
         g = GRIDS[]
         ch = ConSavLaborCollege_AR1(simN = g.simN, Na = g.c_na, Nk = g.c_nk, Nt = g.c_nt,
                                     sigma_eps = 0.5, rho = 1.5, a_max = 100.0, w = 20.0,
-                                    seed = SEED, omega = omega, college_cost = ccost_key(cc),
-                                    r = r_key(rr), psi_terminal = psi, kappa_terminal = kap)
-        # share the Tier-0 solution; the transfer stage only reads these
+                                    seed = SEED, omega = omega, college_cost = key[1],
+                                    r = key[2], psi_terminal = psi, kappa_terminal = kap)
         ch.sol_c_work = base.sol_c_work;       ch.sol_h_work = base.sol_h_work
         ch.sol_v_work = base.sol_v_work
         ch.sol_c_college = base.sol_c_college; ch.sol_h_college = base.sol_h_college
         ch.sol_v_college = base.sol_v_college
         optimal_transfer_work!(ch); optimal_transfer_college!(ch)
-        (child = ch, V = terminal_value_spline(ch; s = 10.0))
+        val = (tr_c = ch.sol_tr_college, tr_w = ch.sol_tr_work,
+               trv_c = ch.sol_tr_v_college, trv_w = ch.sol_tr_v_work,
+               V = terminal_value_spline(ch; s = 10.0))
+        TIER1[key] = val; push!(TIER1_ORDER, key)
+        while length(TIER1_ORDER) > TIER1_CAP_N
+            delete!(TIER1, popfirst!(TIER1_ORDER))
+        end
+        return val
     end
 end
+
+"""
+    child_for(...) -> (child, V)
+
+A FRESH child per call, sharing the cached solution and transfer arrays by reference
+and owning only its own simulation arrays. Fresh because `simulate_model_family!`
+writes into `sim_*`, so a shared object cannot be handed to concurrent callers.
+"""
+function child_for(cc, rr, omega, psi, kap)
+    base = tier0(cc, rr)
+    t1   = transfer_for(cc, rr, omega, psi, kap)
+    g    = GRIDS[]
+    ch = ConSavLaborCollege_AR1(simN = g.simN, Na = g.c_na, Nk = g.c_nk, Nt = g.c_nt,
+                                sigma_eps = 0.5, rho = 1.5, a_max = 100.0, w = 20.0,
+                                seed = SEED, omega = omega, college_cost = ccost_key(cc),
+                                r = r_key(rr), psi_terminal = psi, kappa_terminal = kap)
+    ch.sol_c_work = base.sol_c_work;       ch.sol_h_work = base.sol_h_work
+    ch.sol_v_work = base.sol_v_work
+    ch.sol_c_college = base.sol_c_college; ch.sol_h_college = base.sol_h_college
+    ch.sol_v_college = base.sol_v_college
+    ch.sol_tr_college = t1.tr_c;           ch.sol_tr_work = t1.tr_w
+    ch.sol_tr_v_college = t1.trv_c;        ch.sol_tr_v_work = t1.trv_w
+    return (child = ch, V = t1.V)
+end
+
+n_tier1() = length(TIER1)
 
 # =============================================================================
 # 4. theta -> simulated moments
@@ -379,6 +445,7 @@ function estimate()
            local_maxeval = LOCAL_MAX,
            polish_alg = :LN_BOBYQA, polish_tol = 1e-10, polish_maxeval = POLISH_MAX,
            extra_seeds = [copy(X0)],
+           parallel = PARALLEL, batch = BATCH,
            on_sobol = on_sobol, on_local = on_local)
 end
 
@@ -462,7 +529,13 @@ end
 Switch grid setting and drop both caches, which hold solves at the old grid.
 """
 function use_grids!(g::Grids)
-    GRIDS[] = g; empty!(TIER0); empty!(TIER1)
+    GRIDS[] = g
+    lock(TIER0_LOCK) do
+        empty!(TIER0); empty!(TIER0_ORDER)
+    end
+    lock(TIER1_LOCK) do
+        empty!(TIER1); empty!(TIER1_ORDER)
+    end
 end
 
 banner(s) = (println("\n", "="^86); println(s); println("="^86))
@@ -485,6 +558,9 @@ banner("SMM by TikTak" * (QUICK ? "  [QUICK]" : "") *
         N_SOBOL + N_RESTARTS*LOCAL_MAX + POLISH_MAX,
         1.3*(N_SOBOL + N_RESTARTS*LOCAL_MAX + POLISH_MAX)/3600)
 @printf("the incumbent calibration is forced into the seed pool (documented deviation)\n")
+@printf("threads: %d, parallel = %s%s\n", Threads.nthreads(), PARALLEL,
+        PARALLEL ? @sprintf("  (local batch %d)", BATCH) :
+                   "   -- NLopt is not thread-safe here; use Distributed for many cores")
 
 @printf("\nbaseline objective at the current calibration: Q = %.4f\n", objective(X0))
 T_ZERO[] = time(); N_EVAL[] = 0; N_FAIL[] = 0
@@ -493,7 +569,7 @@ flush(stdout)
 banner("Searching")
 res = estimate()
 @printf("\n%d evaluations (%d failed), %d Tier-0 and %d Tier-1 solves cached, %.1f minutes\n",
-        res.n_eval, N_FAIL[], length(TIER0), length(TIER1), (time() - t_start) / 60)
+        res.n_eval, N_FAIL[], length(TIER0), n_tier1(), (time() - t_start) / 60)
 @printf("Q: best Sobol point %.4f  ->  after local stage %.4f  ->  after polish %.4f\n",
         res.f_sobol_best, res.f_prepolish, res.f)
 @printf("restarts that improved the incumbent: %d of %d\n",
