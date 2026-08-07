@@ -11,6 +11,7 @@ the child's birth to age 18; the child is then followed to age 68.
 | I want to… | Go to |
 |---|---|
 | Run the model | [`docs/GUIDE.md`](docs/GUIDE.md) |
+| Estimate the parameters | [`docs/SMM.md`](docs/SMM.md) — SMM by TikTak, and every open decision we settled |
 | Read the model as written in the paper | [`docs/model.txt`](docs/model.txt) |
 | Find which code implements which equation | [`docs/MODEL.md`](docs/MODEL.md) |
 | Know what's currently broken | [`docs/ERRORS.md`](docs/ERRORS.md) — every error, severity, file and line |
@@ -25,12 +26,14 @@ the child's birth to age 18; the child is then followed to age 68.
 .
 ├── code/
 │   ├── run_all.jl                  ONE reproducible end-to-end run (--quick to smoke test)
+│   ├── smm.jl                      parameter estimation — SMM by TikTak
 │   ├── transfer_CRRA_wage.ipynb    interactive driver: counterfactuals, figures
 │   └── src/
 │       ├── paths.jl                every path in the project — nothing else hard-codes one
 │       ├── manifest.jl             run provenance (git SHA, versions, parameters)
 │       ├── diagnostics.jl          accuracy checks: Bellman residuals, domains, gradients
 │       ├── tables.jl               LaTeX tables (threeparttable) + PDF build
+│       ├── tiktak.jl               TikTak global optimizer (AGK 2022), standalone
 │       ├── parent_family.jl        parent problem: struct, solver, simulators
 │       ├── child_lifecycle.jl      child lifecycle — CANONICAL, no retirement
 │       ├── child_lifecycle_ret.jl  superseded, reference only
