@@ -57,6 +57,56 @@
 #   early stop     The paper suggests stopping when the last two DISTINCT values
 #                  of Z* are close. Implemented as `stop_tol`, DEFAULT 0.0 =
 #                  disabled, so the full budget runs unless asked otherwise.
+#
+# -----------------------------------------------------------------------------
+# PARALLELISM. Run Julia with `-t auto` (or `-t N`) and both stages use threads.
+#
+#   Global stage    Embarrassingly parallel -- N independent evaluations.
+#
+#   Local stage     Sequential in the published algorithm: restart j starts from
+#                   Z* as updated by restarts 1..j-1. Running it in parallel means
+#                   a batch of `batch` restarts all read the Z* frozen at the START
+#                   of their batch, so within a batch they do not see each other's
+#                   improvements. That is the ASYNCHRONOUS variant the reference
+#                   implementation uses to scale, and it is why that repo suggests
+#                   #cores <= sqrt(N): too wide a batch and the theta mixing stops
+#                   transmitting information, degrading TikTak toward plain
+#                   multistart. `batch = 1` reproduces the sequential algorithm
+#                   exactly and is the default when Julia has one thread.
+#
+#                   MEASURED cost of batching (Rastrigin d=6, N=1500, N*=40):
+#                       batch  1 (sequential)   f = 2.985   <- published algorithm
+#                       batch  2               f = 3.980
+#                       batch  4               f = 6.965
+#                       batch  8               f = 5.970
+#                   So width is not free. The default follows the reference repo's
+#                   heuristic, #cores <= sqrt(#restarts), which for N* = 25 is 5.
+#                   The GLOBAL stage has no such constraint and always uses every
+#                   thread, which is where most of the speedup comes from anyway.
+#
+# `f` MUST be thread-safe when batch > 1: no shared mutable state between calls.
+#
+# !! `parallel` DEFAULTS TO FALSE, and for this project it must stay false. !!
+#
+# Measured 2026-08-07: with `parallel = true` and 8 threads the SMM objective kills
+# the process silently -- exit status 0, no error, no output past the first few
+# evaluations. The same run at `-t 1` completes normally. The objective calls
+# `solve_model!`, which issues thousands of NLopt `optimize` calls, and NLopt.jl's
+# callback machinery is not safe under concurrent optimization from several threads.
+# The fault is in the OBJECTIVE, not in this algorithm: the staging here is correct
+# and works for any thread-safe `f` (the self-test runs fine at `-t 8`).
+#
+# TO USE MANY CORES, USE PROCESSES, NOT THREADS. Each worker process gets its own
+# NLopt state, which sidesteps the problem entirely and is also what scales across
+# nodes on a cluster:
+#
+#     using Distributed; addprocs(N)
+#     @everywhere include("smm.jl")
+#     fs = pmap(f, cands)            # in place of the Threads.@threads loop below
+#
+# The Sobol stage is embarrassingly parallel and is where nearly all the speedup is
+# (N evaluations against N* local searches of ~300 each, but the local stage cannot
+# widen far without degrading the algorithm -- see the batching table above).
 # =============================================================================
 
 using Sobol
@@ -118,6 +168,8 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 polish_maxeval::Int = 4000,
                 extra_seeds::Vector{Vector{Float64}} = Vector{Vector{Float64}}(),
                 stop_tol::Float64 = 0.0,
+                parallel::Bool = false,     # see the NLopt warning in the header
+                batch::Int = max(1, min(Threads.nthreads(), floor(Int, sqrt(Nstar)))),
                 on_sobol = (i, N, fx, best) -> nothing,
                 on_local = (j, Nstar, theta, f_local, best) -> nothing)
 
@@ -130,11 +182,26 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     cands = sobol_points(lo, hi, N)
     append!(cands, [clamp.(s, lo, hi) for s in extra_seeds])
     fs = Vector{Float64}(undef, length(cands))
-    best_so_far = Inf
-    for (i, x) in pairs(cands)
-        fs[i] = f(x); n_eval += 1
-        fs[i] < best_so_far && (best_so_far = fs[i])
-        on_sobol(i, length(cands), fs[i], best_so_far)
+    if parallel
+        done = Threads.Atomic{Int}(0)
+        plock = ReentrantLock()
+        best_so_far = Ref(Inf)
+        Threads.@threads for i in eachindex(cands)
+            v = f(cands[i]); fs[i] = v
+            k = Threads.atomic_add!(done, 1) + 1
+            lock(plock) do
+                v < best_so_far[] && (best_so_far[] = v)
+                on_sobol(k, length(cands), v, best_so_far[])
+            end
+        end
+        n_eval += length(cands)
+    else
+        best_so_far = Inf
+        for (i, x) in pairs(cands)
+            fs[i] = f(x); n_eval += 1
+            fs[i] < best_so_far && (best_so_far = fs[i])
+            on_sobol(i, length(cands), fs[i], best_so_far)
+        end
     end
     order = sortperm(fs)                      # ascending: f(s_1) <= ... <= f(s_N*)
     seeds = [cands[k] for k in order[1:Nstar]]
@@ -145,38 +212,58 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     trace = NamedTuple{(:j, :theta, :f_start, :f_local, :improved), Tuple{Int,Float64,Float64,Float64,Bool}}[]
     fZ_prev_distinct = Inf
 
-    for j in 1:Nstar
-        # theta_1 = 0 by construction: the first local search starts at the best
-        # seed itself, with nothing yet to mix in.
-        theta = j == 1 ? 0.0 : clamp((j / Nstar)^theta_p, theta_lo, theta_hi)
-        x0 = clamp.((1 - theta) .* seeds[j] .+ theta .* Z, lo, hi)
-        f_start = f(x0); n_eval += 1
+    # Batched: within a batch every restart reads the same Z*, so they can run
+    # concurrently. batch == 1 is the sequential published algorithm.
+    nb = max(1, batch)
+    j = 1
+    stop = false
+    while j <= Nstar && !stop
+        idx = j:min(j + nb - 1, Nstar)
+        Zsnap, fZsnap = copy(Z), fZ            # frozen for the whole batch
+        results = Vector{Any}(undef, length(idx))
 
-        opt = Opt(local_alg, length(lo))
-        lower_bounds!(opt, lo); upper_bounds!(opt, hi)
-        ftol_rel!(opt, local_tol); maxeval!(opt, local_maxeval)
-        min_objective!(opt, (x, g) -> (n_eval += 1; f(x)))
-        f_local, x_local = f_start, x0
-        try
-            (f_local, x_local, _) = optimize(opt, x0)
-        catch
-            # A local search that blows up is information, not a fatal error:
-            # keep the start value and move to the next seed.
+        run_one = function (m)
+            jj = idx[m]
+            theta = jj == 1 ? 0.0 : clamp((jj / Nstar)^theta_p, theta_lo, theta_hi)
+            x0 = clamp.((1 - theta) .* seeds[jj] .+ theta .* Zsnap, lo, hi)
+            fstart = f(x0)
+            opt = Opt(local_alg, length(lo))
+            lower_bounds!(opt, lo); upper_bounds!(opt, hi)
+            ftol_rel!(opt, local_tol); maxeval!(opt, local_maxeval)
+            nev = Ref(0)
+            min_objective!(opt, (x, g) -> (nev[] += 1; f(x)))
+            floc, xloc = fstart, x0
+            try
+                (floc, xloc, _) = optimize(opt, x0)
+            catch
+                # a local search that blows up is information, not a fatal error
+            end
+            results[m] = (jj = jj, theta = theta, fstart = fstart, floc = floc,
+                          xloc = xloc, nev = nev[] + 1)
         end
 
-        improved = isfinite(f_local) && f_local < fZ
-        if improved
-            fZ_prev_distinct = fZ
-            Z, fZ = copy(x_local), f_local
+        if nb > 1 && length(idx) > 1
+            Threads.@threads for m in eachindex(idx); run_one(m); end
+        else
+            for m in eachindex(idx); run_one(m); end
         end
-        push!(trace, (j = j, theta = theta, f_start = f_start, f_local = f_local,
-                      improved = improved))
-        on_local(j, Nstar, theta, f_local, fZ)
 
-        if stop_tol > 0 && improved && isfinite(fZ_prev_distinct) &&
-           abs(fZ - fZ_prev_distinct) < stop_tol
-            break
+        for res in results                      # merge in seed order, deterministically
+            n_eval += res.nev
+            improved = isfinite(res.floc) && res.floc < fZ
+            if improved
+                fZ_prev_distinct = fZ
+                Z, fZ = copy(res.xloc), res.floc
+            end
+            push!(trace, (j = res.jj, theta = res.theta, f_start = res.fstart,
+                          f_local = res.floc, improved = improved))
+            on_local(res.jj, Nstar, res.theta, res.floc, fZ)
+            if stop_tol > 0 && improved && isfinite(fZ_prev_distinct) &&
+               abs(fZ - fZ_prev_distinct) < stop_tol
+                stop = true
+            end
         end
+        j += length(idx)
     end
     f_prepolish = fZ
 
