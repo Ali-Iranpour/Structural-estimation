@@ -77,10 +77,25 @@ const LOCAL_MAX  = argval("--localmax", QUICK ?  60 :  200)
 # uncapped on a 3-restart smoke run, which at 1.3 s each is not free. Capped.
 const POLISH_MAX = argval("--polishmax", QUICK ? 120 : 500)
 
-# search grids (small); the winner is re-verified at production grids at the end
-const C_NA, C_NK, C_NT = QUICK ? (20, 20, 4) : (30, 30, 6)
-const P_NA, P_NHC, P_NP = QUICK ? (12, 12, 5) : (16, 16, 5)
-const SIMN = QUICK ? 500 : 2000
+# Two grid settings, and the distinction matters.
+#
+# SEARCH grids are deliberately coarse: at ~1.3 s per evaluation a few thousand
+# evaluations is ~2 h, where the production grids cost ~5 s and the same budget
+# would be ~7 h. That is affordable only because the earlier refinement study
+# showed the state grids are already converged -- DOUBLING any of them moved the
+# college share by at most 0.15pp, and parent Nhc 30 -> 60 moved it by 0.00.
+#
+# VERIFY grids are the production ones. The winner is re-evaluated there at the
+# end, and BOTH moment vectors are reported, so any moment that is an artefact
+# of the coarse search surface is visible rather than hidden.
+struct Grids
+    c_na::Int; c_nk::Int; c_nt::Int
+    p_na::Int; p_nhc::Int; p_np::Int
+    simN::Int
+end
+const SEARCH_GRIDS = Grids(20, 20, 4, 12, 12, 5, 500)
+const VERIFY_GRIDS = QUICK ? SEARCH_GRIDS : Grids(30, 30, 6, 30, 30, 7, 5000)
+const GRIDS = Ref(SEARCH_GRIDS)
 
 # =============================================================================
 # 1. Moments
@@ -199,6 +214,8 @@ to_theta(x) = [link_inv(PARS[i], x[i]) for i in eachindex(PARS)]
 # =============================================================================
 # Tier 0: the child's work and college value functions, cached on college_cost rounded to
 # 0.1. Nothing else in the estimated set enters them.
+# Both caches are keyed on parameters only, so they MUST be cleared when the grid
+# changes -- otherwise a verify-grid run would silently reuse search-grid solves.
 const TIER0 = Dict{NTuple{2,Float64},Any}()
 ccost_key(cc) = round(cc, digits = 1)
 r_key(rr)     = round(rr / 0.005) * 0.005
@@ -206,7 +223,8 @@ function tier0(cc, rr)
     key = (ccost_key(cc), r_key(rr))
     get!(TIER0, key) do
         t0 = time()
-        ch = ConSavLaborCollege_AR1(simN = SIMN, Na = C_NA, Nk = C_NK, Nt = C_NT,
+        g = GRIDS[]
+        ch = ConSavLaborCollege_AR1(simN = g.simN, Na = g.c_na, Nk = g.c_nk, Nt = g.c_nt,
                                     sigma_eps = 0.5, rho = 1.5, a_max = 100.0, w = 20.0,
                                     seed = SEED, college_cost = key[1], r = key[2])
         solve_model_work!(ch); solve_model_college!(ch)
@@ -222,7 +240,8 @@ function child_for(cc, rr, omega, psi, kap)
     key = (ccost_key(cc), r_key(rr), round(omega, digits = 5), round(kap, digits = 5))
     get!(TIER1, key) do
         base = tier0(cc, rr)
-        ch = ConSavLaborCollege_AR1(simN = SIMN, Na = C_NA, Nk = C_NK, Nt = C_NT,
+        g = GRIDS[]
+        ch = ConSavLaborCollege_AR1(simN = g.simN, Na = g.c_na, Nk = g.c_nk, Nt = g.c_nt,
                                     sigma_eps = 0.5, rho = 1.5, a_max = 100.0, w = 20.0,
                                     seed = SEED, omega = omega, college_cost = ccost_key(cc),
                                     r = r_key(rr), psi_terminal = psi, kappa_terminal = kap)
@@ -250,8 +269,9 @@ rather than an exception, so one bad corner cannot abort a whole search.
 function simulate_moments(theta)
     s10, s11, s20, s21, s30, s40, s41, p2, p3, R0, om, kap, cc, rr = theta
     t1 = child_for(cc, rr, om, PSI_TERM, kap)
+    g = GRIDS[]
     m = Parent_child_interaction_age_specific_AR1(
-            Na = P_NA, Nk = 2, Nhc = P_NHC, Np = P_NP, w = 12.5, simN = SIMN, seed = SEED,
+            Na = g.p_na, Nk = 2, Nhc = g.p_nhc, Np = g.p_np, w = 12.5, simN = g.simN, seed = SEED,
             sigma_1_0 = s10, sigma_1_1 = s11, sigma_2_0 = s20, sigma_2_1 = s21,
             sigma_3_0 = s30, sigma_3_1 = 0.0, sigma_4_0 = s40, sigma_4_1 = s41,
             phi_2_0 = p2, phi_3_0 = p3, lambda_2_0 = p3, R_0 = R0, R_1 = 0.0,
@@ -365,20 +385,34 @@ end
 # =============================================================================
 # 7. Report
 # =============================================================================
+qval(ms) = ms === nothing ? NaN : sum(WEIGHTS .* ((ms .- TARGETS) ./ SCALES) .^ 2)
+
 function report(x, Q)
     theta = to_theta(x)
-    ms = simulate_moments(theta)
+    ms = simulate_moments(theta)                       # at the search grids
+    println("\nre-evaluating the winner at the production grids ...")
+    use_grids!(VERIFY_GRIDS)
+    mv = simulate_moments(theta)
+    Qv = qval(mv)
+    use_grids!(SEARCH_GRIDS)
+
     println("\n", "="^86)
     println("MOMENT FIT      (display units: money x10, college share in %)")
     println("="^86)
-    @printf("  %-26s %12s %12s %10s   %s\n", "moment", "target", "simulated", "rel.err", "")
+    @printf("  %-26s %10s | %10s %8s | %10s %8s  %s\n",
+            "moment", "target", "search", "err", "PRODUCTION", "err", "")
     for (i, mm) in enumerate(MOMENTS)
-        rel = (ms[i] - mm.target) / SCALES[i]
-        flag = abs(rel) < 0.10 ? "ok" : abs(rel) < 0.30 ? "~" : "MISS"
-        @printf("  %-26s %12.4f %12.4f %9.1f%%   %s\n",
-                mm.name, mm.target * mm.scale, ms[i] * mm.scale, 100rel, flag)
+        rel  = (ms[i] - mm.target) / SCALES[i]
+        relv = mv === nothing ? NaN : (mv[i] - mm.target) / SCALES[i]
+        flag = !isfinite(relv) ? "?" : abs(relv) < 0.10 ? "ok" : abs(relv) < 0.30 ? "~" : "MISS"
+        @printf("  %-26s %10.4f | %10.4f %7.1f%% | %10.4f %7.1f%%  %s\n",
+                mm.name, mm.target * mm.scale, ms[i] * mm.scale, 100rel,
+                mv === nothing ? NaN : mv[i] * mm.scale, 100relv, flag)
     end
-    @printf("\n  weighted objective Q = %.4f\n", Q)
+    @printf("\n  weighted objective Q:  search grids %.4f   PRODUCTION grids %.4f\n", Q, Qv)
+    abs(Qv - Q) > 0.5 * max(Q, 1e-9) &&
+        println("  WARNING: Q moves by more than 50% between grids -- the search surface is\n" *
+                "           not a faithful stand-in for the production model here.")
 
     println("\n", "="^86)
     println("ESTIMATED PARAMETERS")
@@ -393,7 +427,7 @@ function report(x, Q)
     rr = theta[findfirst(p -> p.name == "r", PARS)]
     @printf("\n  Euler check: (beta(1+r))^(1/rho) = %.5f per period -> c_p x%.3f over 16 periods\n",
             (BETA_0*(1+rr))^(1/1.5), ((BETA_0*(1+rr))^(1/1.5))^16)
-    return theta, ms
+    return theta, (mv === nothing ? ms : mv)
 end
 
 function save_results(theta, ms, Q)
@@ -422,13 +456,26 @@ function save_results(theta, ms, Q)
 end
 
 # =============================================================================
+"""
+    use_grids!(g)
+
+Switch grid setting and drop both caches, which hold solves at the old grid.
+"""
+function use_grids!(g::Grids)
+    GRIDS[] = g; empty!(TIER0); empty!(TIER1)
+end
+
 banner(s) = (println("\n", "="^86); println(s); println("="^86))
 t_start = time()
 banner("SMM by TikTak" * (QUICK ? "  [QUICK]" : "") *
        @sprintf("   %d parameters, %d moments,  N = %d Sobol,  N* = %d restarts",
                 length(PARS), length(MOMENTS), N_SOBOL, N_RESTARTS))
-@printf("child grid %dx%dx%d   parent grid %dx%dx%d   simN %d   seed %d\n",
-        C_NA, C_NK, C_NT, P_NA, 2, P_NHC, SIMN, SEED)
+@printf("search grids: child %dx%dx%d  parent %dx%dx%d  Np %d  simN %d\n",
+        SEARCH_GRIDS.c_na, SEARCH_GRIDS.c_nk, SEARCH_GRIDS.c_nt,
+        SEARCH_GRIDS.p_na, 2, SEARCH_GRIDS.p_nhc, SEARCH_GRIDS.p_np, SEARCH_GRIDS.simN)
+@printf("verify grids: child %dx%dx%d  parent %dx%dx%d  Np %d  simN %d   seed %d\n",
+        VERIFY_GRIDS.c_na, VERIFY_GRIDS.c_nk, VERIFY_GRIDS.c_nt,
+        VERIFY_GRIDS.p_na, 2, VERIFY_GRIDS.p_nhc, VERIFY_GRIDS.p_np, VERIFY_GRIDS.simN, SEED)
 @printf("beta fixed at %.2f;  r is estimated (it is the only lever left on the consumption slope)\n",
         BETA_0)
 @printf("theta_j = clamp((j/N*)^%.2f, %.2f, %.3f);  local Nelder-Mead ftol 1e-3, max %d evals;  polish BOBYQA ftol 1e-10\n",
