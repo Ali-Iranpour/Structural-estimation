@@ -52,13 +52,30 @@ include(joinpath(SRC, "manifest.jl"))
 include(joinpath(SRC, "diagnostics.jl"))
 include(joinpath(SRC, "child_lifecycle.jl"))
 include(joinpath(SRC, "parent_family.jl"))
+include(joinpath(SRC, "tiktak.jl"))
 
 const QUICK  = "--quick" in ARGS
 const SEED   = 1234
 argval(flag, dflt) = (i = findfirst(==(flag), ARGS);
                       i === nothing ? dflt : parse(Int, ARGS[i+1]))
-const N_STARTS = argval("--starts", QUICK ? 2 : 6)
-const N_EVALS  = argval("--evals",  QUICK ? 60 : 400)
+# TikTak budget.
+#
+# MEASURED: Nelder-Mead at ftol 1e-3 in 14 dimensions converges in ~295 function
+# evaluations. At ~1.3 s per evaluation that is ~6.4 min per restart, so the cost
+# is dominated by the LOCAL stage, not by the Sobol stage:
+#
+#     N = 1000 Sobol             1000 evals   ~22 min
+#     N* = 50 restarts x 295    14750 evals   ~5.3 h      <- dominates
+#
+# N* = 25 with the local searches capped at 200 evaluations brings the total to
+# ~6000 evaluations, about 2.2 h. N* = 25 is 2.5% of N, still inside the paper's
+# 1-10% guidance. Raise --restarts for a longer, more reliable run.
+const N_SOBOL    = argval("--sobol",    QUICK ? 120 : 1000)
+const N_RESTARTS = argval("--restarts", QUICK ?  10 :   25)
+const LOCAL_MAX  = argval("--localmax", QUICK ?  60 :  200)
+# The polish is a single search but an expensive one -- measured at ~344 evaluations
+# uncapped on a 3-restart smoke run, which at 1.3 s each is not free. Capped.
+const POLISH_MAX = argval("--polishmax", QUICK ? 120 : 500)
 
 # search grids (small); the winner is re-verified at production grids at the end
 const C_NA, C_NK, C_NT = QUICK ? (20, 20, 4) : (30, 30, 6)
@@ -276,79 +293,73 @@ const SCALES  = [max(abs(mm.target), 0.05) for mm in MOMENTS]   # relative error
 const PENALTY = 1.0e4
 
 # ---- progress tracking -------------------------------------------------------
-# The search is a few thousand model solves. Without this it is a silent hour.
-const BUDGET   = N_STARTS * N_EVALS       # upper bound; starts can stop early
-const N_EVAL   = Ref(0)
-const N_FAIL   = Ref(0)
-const BEST_Q   = Ref(Inf)
-const CUR_START = Ref(1)
-const T_ZERO   = Ref(time())
-const REPORT_EVERY = 25
+# TikTak has two stages with different cost profiles, so they get separate
+# reporting: the Sobol stage is a known number of single evaluations, while a
+# local search is a variable number, estimated from the restarts done so far.
+const N_EVAL  = Ref(0)
+const N_FAIL  = Ref(0)
+const T_ZERO  = Ref(time())
+const SOBOL_EVERY = 25
 
-fmt_hms(sec) = sec < 0 || !isfinite(sec) ? "  --  " :
+fmt_hms(sec) = (sec < 0 || !isfinite(sec)) ? "  --  " :
     (h = floor(Int, sec/3600); m = floor(Int, (sec % 3600)/60); ss = floor(Int, sec % 60);
      h > 0 ? @sprintf("%dh%02dm", h, m) : @sprintf("%2dm%02ds", m, ss))
+bar(pct) = (n = clamp(round(Int, pct/2.5), 0, 40); repeat("#", n) * repeat("-", 40-n))
 
-function tick!(Q)
-    N_EVAL[] += 1
-    Q >= PENALTY && (N_FAIL[] += 1)
-    Q < BEST_Q[] && (BEST_Q[] = Q)
-    if N_EVAL[] % REPORT_EVERY == 0
-        el   = time() - T_ZERO[]
-        per  = el / N_EVAL[]
-        left = max(BUDGET - N_EVAL[], 0) * per
-        pct  = 100 * N_EVAL[] / BUDGET
-        bar  = repeat("#", clamp(round(Int, pct/2.5), 0, 40))
-        @printf("  [%-40s] %5.1f%%  %5d/%d  start %d  elapsed %s  ETA %s  best Q %9.4f  fails %d\n",
-                bar, pct, N_EVAL[], BUDGET, CUR_START[], fmt_hms(el), fmt_hms(left),
-                BEST_Q[], N_FAIL[])
-        flush(stdout)
-    end
+function on_sobol(i, ntot, fx, best)
+    (i % SOBOL_EVERY == 0 || i == ntot) || return
+    el = time() - T_ZERO[]; eta = el/i * (ntot - i)
+    @printf("  sobol  [%s] %5.1f%%  %5d/%d   elapsed %s  ETA %s   best Q %9.4f   fails %d\n",
+            bar(100i/ntot), 100i/ntot, i, ntot, fmt_hms(el), fmt_hms(eta), best, N_FAIL[])
+    flush(stdout)
+end
+
+const T_LOCAL0 = Ref(0.0)
+function on_local(j, nstar, theta, f_local, best)
+    j == 1 && (T_LOCAL0[] = time())
+    el = time() - T_LOCAL0[]; eta = j == 0 ? 0.0 : el/j * (nstar - j)
+    @printf("  local  [%s] %5.1f%%  restart %3d/%d  theta %.3f  this %9.4f   best Q %9.4f   elapsed %s  ETA %s\n",
+            bar(100j/nstar), 100j/nstar, j, nstar, theta, f_local, best,
+            fmt_hms(el), fmt_hms(eta))
+    flush(stdout)
 end
 
 "Weighted relative distance. Returns PENALTY on a failed solve."
 function objective(x::Vector{Float64})
     ms = simulate_moments(to_theta(x))
-    Q = (ms === nothing || any(!isfinite, ms)) ? PENALTY :
-        sum(WEIGHTS .* ((ms .- TARGETS) ./ SCALES) .^ 2)
-    tick!(Q)
-    return Q
+    N_EVAL[] += 1
+    if ms === nothing || any(!isfinite, ms)
+        N_FAIL[] += 1
+        return PENALTY
+    end
+    return sum(WEIGHTS .* ((ms .- TARGETS) ./ SCALES) .^ 2)
 end
+
 
 # =============================================================================
 # 6. Search
 # =============================================================================
 """
-    estimate() -> (x, Q, evals)
+    estimate() -> TikTakResult
 
-BOBYQA from several starts. BOBYQA rather than Nelder-Mead because it builds a
-quadratic model and handles box bounds natively, which matters when the boundary
-is where the solver fails. Start 1 is the current calibration, so the search can
-never return something worse than where it began.
+TikTak (Arnoud, Guvenen & Kleineberg 2022). See `src/tiktak.jl` for the
+algorithm and for the decisions the paper leaves open.
+
+The incumbent calibration is injected via `extra_seeds`. That is a deliberate
+deviation from the published algorithm, which seeds only from Sobol points: it
+guarantees the estimate is never worse than the calibration we started from,
+which matters here because a uniform random point in 14 dimensions usually fails
+to solve at all.
 """
 function estimate()
-    rng = MersenneTwister(SEED)
-    bestx, bestQ, total = copy(X0), Inf, 0
-    for s in 1:N_STARTS
-        CUR_START[] = s
-        x0 = s == 1 ? copy(X0) : XLO .+ rand(rng, length(PARS)) .* (XHI .- XLO)
-        opt = Opt(:LN_BOBYQA, length(PARS))
-        lower_bounds!(opt, XLO); upper_bounds!(opt, XHI)
-        maxeval!(opt, N_EVALS); xtol_rel!(opt, 1e-4); ftol_rel!(opt, 1e-6)
-        nev = 0
-        min_objective!(opt, (x, g) -> (nev += 1; objective(x)))
-        local Q, xo
-        try
-            (Q, xo, _) = optimize(opt, x0)
-        catch e
-            @printf("  start %d: aborted (%s)\n", s, first(sprint(showerror, e), 60)); continue
-        end
-        total += nev
-        @printf("  start %d: Q = %10.4f after %4d evals%s\n", s, Q, nev,
-                Q < bestQ ? "   <- best" : "")
-        Q < bestQ && (bestQ = Q; bestx = copy(xo))
-    end
-    return bestx, bestQ, total
+    tiktak(objective, XLO, XHI;
+           N = N_SOBOL, Nstar = N_RESTARTS,
+           theta_p = 0.5, theta_lo = 0.1, theta_hi = 0.995,   # settled 2026-08-07
+           local_alg = :LN_NELDERMEAD, local_tol = 1e-3,      # TikTak-nm3
+           local_maxeval = LOCAL_MAX,
+           polish_alg = :LN_BOBYQA, polish_tol = 1e-10, polish_maxeval = POLISH_MAX,
+           extra_seeds = [copy(X0)],
+           on_sobol = on_sobol, on_local = on_local)
 end
 
 # =============================================================================
@@ -393,8 +404,10 @@ function save_results(theta, ms, Q)
         @printf(io, "timestamp  = \"%s\"\n", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))
         @printf(io, "git_commit = \"%s\"\n", git_sha())
         @printf(io, "objective  = %.6f\n", Q)
-        @printf(io, "starts     = %d\nmax_evals  = %d\nseed       = %d\n",
-                N_STARTS, N_EVALS, SEED)
+        @printf(io, "sobol_N    = %d\nrestarts   = %d\nseed       = %d\n",
+                N_SOBOL, N_RESTARTS, SEED)
+        @printf(io, "optimizer  = \"TikTak (Arnoud-Guvenen-Kleineberg 2022)\"\n")
+        @printf(io, "beta_0     = %.4f   # fixed, not estimated\n", BETA_0)
         println(io, "\n[parameters]")
         for (i, p) in enumerate(PARS)
             @printf(io, "%-16s = %.6f\n", p.name, theta[i])
@@ -411,21 +424,34 @@ end
 # =============================================================================
 banner(s) = (println("\n", "="^86); println(s); println("="^86))
 t_start = time()
-banner("SMM" * (QUICK ? "  [QUICK]" : "") *
-       @sprintf("   %d parameters, %d moments, %d starts x %d evals",
-                length(PARS), length(MOMENTS), N_STARTS, N_EVALS))
+banner("SMM by TikTak" * (QUICK ? "  [QUICK]" : "") *
+       @sprintf("   %d parameters, %d moments,  N = %d Sobol,  N* = %d restarts",
+                length(PARS), length(MOMENTS), N_SOBOL, N_RESTARTS))
 @printf("child grid %dx%dx%d   parent grid %dx%dx%d   simN %d   seed %d\n",
         C_NA, C_NK, C_NT, P_NA, 2, P_NHC, SIMN, SEED)
+@printf("beta fixed at %.2f;  r is estimated (it is the only lever left on the consumption slope)\n",
+        BETA_0)
+@printf("theta_j = clamp((j/N*)^%.2f, %.2f, %.3f);  local Nelder-Mead ftol 1e-3, max %d evals;  polish BOBYQA ftol 1e-10\n",
+        0.5, 0.1, 0.995, LOCAL_MAX)
+@printf("budget: %d Sobol + up to %d x %d local + %d polish = %d evaluations (~%.1f h at 1.3 s each)\n",
+        N_SOBOL, N_RESTARTS, LOCAL_MAX, POLISH_MAX,
+        N_SOBOL + N_RESTARTS*LOCAL_MAX + POLISH_MAX,
+        1.3*(N_SOBOL + N_RESTARTS*LOCAL_MAX + POLISH_MAX)/3600)
+@printf("the incumbent calibration is forced into the seed pool (documented deviation)\n")
 
-@printf("beta fixed at %.2f;  r is estimated (it is the only lever left on the consumption slope)\n", BETA_0)
 @printf("\nbaseline objective at the current calibration: Q = %.4f\n", objective(X0))
-println("\nprogress: one line per $(REPORT_EVERY) evaluations")
-T_ZERO[] = time(); N_EVAL[] = 0; N_FAIL[] = 0; BEST_Q[] = Inf
+T_ZERO[] = time(); N_EVAL[] = 0; N_FAIL[] = 0
 flush(stdout)
+
 banner("Searching")
-bestx, bestQ, nev = estimate()
+res = estimate()
 @printf("\n%d evaluations (%d failed), %d Tier-0 and %d Tier-1 solves cached, %.1f minutes\n",
-        nev, N_FAIL[], length(TIER0), length(TIER1), (time() - t_start) / 60)
-theta, ms = report(bestx, bestQ)
-save_results(theta, ms, bestQ)
+        res.n_eval, N_FAIL[], length(TIER0), length(TIER1), (time() - t_start) / 60)
+@printf("Q: best Sobol point %.4f  ->  after local stage %.4f  ->  after polish %.4f\n",
+        res.f_sobol_best, res.f_prepolish, res.f)
+@printf("restarts that improved the incumbent: %d of %d\n",
+        count(t -> t.improved, res.trace), length(res.trace))
+
+theta, ms = report(res.x, res.f)
+save_results(theta, ms, res.f)
 banner(@sprintf("DONE in %.1f minutes", (time() - t_start) / 60))
