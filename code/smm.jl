@@ -281,6 +281,8 @@ function transfer_for(cc, rr, omega, psi, kap)
                                     r = key[2], psi_terminal = psi, kappa_terminal = kap)
         ch.sol_c_work = base.sol_c_work;       ch.sol_h_work = base.sol_h_work
         ch.sol_v_work = base.sol_v_work
+        ch.sol_c_grad = base.sol_c_grad;       ch.sol_h_grad = base.sol_h_grad
+        ch.sol_v_grad = base.sol_v_grad
         ch.sol_c_college = base.sol_c_college; ch.sol_h_college = base.sol_h_college
         ch.sol_v_college = base.sol_v_college
         optimal_transfer_work!(ch); optimal_transfer_college!(ch)
@@ -312,6 +314,8 @@ function child_for(cc, rr, omega, psi, kap)
                                 r = r_key(rr), psi_terminal = psi, kappa_terminal = kap)
     ch.sol_c_work = base.sol_c_work;       ch.sol_h_work = base.sol_h_work
     ch.sol_v_work = base.sol_v_work
+    ch.sol_c_grad = base.sol_c_grad;       ch.sol_h_grad = base.sol_h_grad
+    ch.sol_v_grad = base.sol_v_grad
     ch.sol_c_college = base.sol_c_college; ch.sol_h_college = base.sol_h_college
     ch.sol_v_college = base.sol_v_college
     ch.sol_tr_college = t1.tr_c;           ch.sol_tr_work = t1.tr_w

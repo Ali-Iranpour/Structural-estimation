@@ -67,6 +67,8 @@ check_solution(child)
 # X4: check_solution allows NaN blanket-wide, so a solver failure INSIDE the feasible
 # region would pass. This compares the NaN pattern against the two theoretical masks.
 check_feasibility_mask(child)
+# The graduate arrays are NaN for t <= t_college by construction; assert exactly that.
+check_grad_mask(child)
 # C16: the solution can leave the grid where the simulation does not. Reports both the
 # off-grid share and how often the k_max ceiling binds.
 check_solver_domain(child; throw_on_fail = false)

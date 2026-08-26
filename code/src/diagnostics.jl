@@ -62,6 +62,9 @@ function check_solution(m; throw_on_fail::Bool = true, verbose::Bool = true)
         "sol_h_work"        => m.sol_h_work,
         "sol_tr_work"       => m.sol_tr_work,
         "sol_tr_v_work"     => m.sol_tr_v_work,
+        "sol_v_grad"        => m.sol_v_grad,
+        "sol_c_grad"        => m.sol_c_grad,
+        "sol_h_grad"        => m.sol_h_grad,
         "sol_v_college"     => m.sol_v_college,
         "sol_c_college"     => m.sol_c_college,
         "sol_tr_college"    => m.sol_tr_college,
@@ -73,9 +76,41 @@ function check_solution(m; throw_on_fail::Bool = true, verbose::Bool = true)
         # delta_P and kappa_term*log(a_term) diverges. N13 gave the parent its own grid
         # starting at delta_P, so the work transfer is now defined at every parental node
         # and a NaN there is a real failure. Inf is never allowed in any array.
+        # The grad arrays hold the GRADUATE's working life and are allocated over the
+        # full horizon but filled only from t_college+1: a graduate has no working life
+        # before then, so t <= t_college is NaN by construction, exactly t_college/T of
+        # each array. check_grad_mask below asserts that pattern rather than trusting it.
         allow_nan = ["sol_v_college", "sol_c_college", "sol_h_college",
-                     "sol_tr_college", "sol_tr_v_college"],
+                     "sol_tr_college", "sol_tr_v_college",
+                     "sol_v_grad", "sol_c_grad", "sol_h_grad"],
         throw_on_fail = throw_on_fail, verbose = verbose)
+end
+
+"""
+    check_grad_mask(m)
+
+The graduate arrays are NaN exactly where the graduate has no working life, that is
+`t <= t_college`, and finite everywhere else. Blanket-allowing NaN on them would hide a
+solver failure inside the region that IS solved, so the pattern is asserted here the
+same way `check_feasibility_mask` does it for the college arrays.
+"""
+function check_grad_mask(m; throw_on_fail::Bool = true, verbose::Bool = true)
+    bad_nan = 0; bad_finite = 0; tot = 0
+    for t in 1:m.T, ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Na
+        v = m.sol_v_grad[t, ia, ik, ip, 1]
+        tot += 1
+        if t <= m.t_college
+            isnan(v) || (bad_finite += 1)
+        else
+            isnan(v) && (bad_nan += 1)
+        end
+    end
+    verbose && @printf("grad NaN mask vs t_college: %d NaN where solved, %d finite where unsolved (of %d)\n",
+                       bad_nan, bad_finite, tot)
+    if throw_on_fail && (bad_nan > 0 || bad_finite > 0)
+        error("sol_v_grad NaN pattern does not match t <= t_college")
+    end
+    return (bad_nan = bad_nan, bad_finite = bad_finite, checked = tot)
 end
 
 """
