@@ -99,6 +99,9 @@ banner("4. Child adulthood, conditional on the parent's terminal states")
 # -----------------------------------------------------------------------------
 child.sim_a_init .= parent.sim_a[:, parent.T + 1]
 child.sim_k_init .= parent.sim_hc[:, parent.T + 1]
+# BothCollege is a fixed household type, so any column of parent.sim_k holds it. It
+# feeds the kappa_ParEd term in the child's psychic cost of college.
+child.sim_bc_init .= parent.sim_k[:, 1]
 _, path_choice, _ = simulate_model_family!(child)
 check_simulation(child; throw_on_fail = false)
 

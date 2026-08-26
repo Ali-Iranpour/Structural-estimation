@@ -1593,6 +1593,16 @@ end
 #   (was notebook cell 49)
 # -----------------------------------------------------------------------------
 
+"""
+    simulate_model_family_hetero!(base_child, child_models, belief_type, ...)
+
+Heterogeneous beliefs about the return to college.
+
+⚠️ CALLER CHANGE: `child_models[m]` must now differ in **`beta_E`**, the log college
+wage premium, not in `college_boost`. `college_boost` no longer affects anything --
+college buys `beta_E` in the wage rather than an increment to the human-capital
+stock. Construct the bins with e.g. `ConSavLaborCollege_AR1(; beta_E = b_m, ...)`.
+"""
 function simulate_model_family_hetero!(
     base_child::ConSavLaborCollege_AR1,
     child_models::Vector{ConSavLaborCollege_AR1},
@@ -1600,7 +1610,7 @@ function simulate_model_family_hetero!(
     verbose::Bool = true
 )
     # -- Unpack grids/dims --
-    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = base_child
+    @unpack simN, T, t_college, r, college_cost, a_min = base_child
     @unpack a_grid, k_grid, p_grid, p_transition, Np = base_child
     @unpack ap_grid = base_child                  # N13: transfer arrays live on this grid
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = base_child
@@ -1608,8 +1618,19 @@ function simulate_model_family_hetero!(
     @unpack Nt, t_weight = base_child
 
     num_bins = length(child_models)
-    belief_values = [child_models[m].college_boost for m in 1:num_bins]
-    college_boost_true = base_child.college_boost
+    # Beliefs are now about beta_E, the log college wage premium, rather than about
+    # an increment to the human-capital stock. This is closer to Bleemer (2018), which
+    # measures beliefs about the EARNINGS return to college, and it is what the wage
+    # equation in child_lifecycle.jl actually contains. Decisions are still taken under
+    # the biased number: the family enrols and transfers believing beta_E^m, the child
+    # consumes through college believing it, and the truth arrives as a one-time
+    # surprise at labour-market entry. What is no longer needed is the reconciliation
+    # term k + b* + (T_E-1)(b* - b_m), which existed only to reconcile a perceived
+    # STOCK with the true one over four years. With no stock there is no drift.
+    # The belief now acts entirely through child_models[m], each solved at its own
+    # beta_E: those supply interp_*_college_belief and sol_tr_*_college_belief, which
+    # are what the enrolment and transfer decisions are read from. There is no longer
+    # a belief term in any law of motion, so no belief vector is needed here.
 
     # -- Work interpolators --
     interp_c_work = [
@@ -1733,10 +1754,20 @@ function simulate_model_family_hetero!(
                 sim_wage[i, t] = 0.0
             else
                 # ----- Working -----
-                c = interp_c_work[t, p_idx](a, k)
-                h = interp_h_work[t, p_idx](a, k)
+                # A graduate's working life is solved with E = 1 into the college
+                # arrays, so read it from there.
+                if path_choice[i] == :college
+                    c = interp_c_college_belief[m, 1, t, p_idx](a, k)
+                    h = interp_h_college_belief[m, 1, t, p_idx](a, k)
+                else
+                    c = interp_c_work[t, p_idx](a, k)
+                    h = interp_h_work[t, p_idx](a, k)
+                end
                 p_shock = p_grid[p_idx]
-                w_pre = wage_func(base_child, k, t, p_shock)
+                # base_child carries the TRUE beta_E, so a graduate's realized wage is
+                # the correct one: the belief only ever governed the decision.
+                E_i = path_choice[i] == :college ? 1.0 : 0.0
+                w_pre = wage_func(base_child, k, t, E_i, p_shock)
                 sim_wage[i, t] = w_pre / WAGE_SCALING_FACTOR
                 sim_income[i, t] = after_tax_income(base_child, w_pre, h)
             end
@@ -1747,21 +1778,14 @@ function simulate_model_family_hetero!(
 
             # Update states for next period (if t < T)
             if t < T
-                if path_choice[i] == :college
-                    if t < t_college
-                        a_next = (1 + r) * a - c - college_cost + y
-                        k_next = k + belief_values[m]
-                    elseif t == t_college
-                        a_next = (1 + r) * a - c - college_cost + y
-                        k_next = k + college_boost_true + 3 * (college_boost_true - belief_values[m])
-                    else
-                        a_next = (1 + r) * a + sim_income[i, t] - c + y
-                        k_next = k + h
-                    end
+                if path_choice[i] == :college && t <= t_college
+                    a_next = (1 + r) * a - c - college_cost + y
                 else
                     a_next = (1 + r) * a + sim_income[i, t] - c + y
-                    k_next = k + h
                 end
+                # Human capital is fixed at theta for life, so there is no perceived
+                # stock to drift from the true one and no correction to apply.
+                k_next = k
                 # C15: snap only float-sized violations, matching both child simulators.
                 # `max(a_next, a_min)` rewrote the budget law by replacing a genuinely
                 # negative asset with a_min, and left the upper domain unguarded.
