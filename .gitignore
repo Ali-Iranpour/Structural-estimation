@@ -12,6 +12,10 @@ output/data/
 output/reports/*.aux
 output/reports/*.log
 
+# Docs: LaTeX sources/builds and the paper library are kept locally only.
+docs/latex/
+docs/papers/
+
 # Julia
 *.jl.cov
 *.jl.mem
