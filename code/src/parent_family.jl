@@ -1710,8 +1710,13 @@ function simulate_model_family_hetero!(
         HC = sim_k_init[i]
         # C14: below col_min[m] the college branch was never solved -- -Inf, as in
         # discrete_college_choice, rather than an extrapolation of the feasible slice.
+        # The kappa_ParEd term in the psychic cost is additive and constant across the
+        # college years, so it enters here as a closed-form value offset rather than as
+        # an extra state. base_child carries the true kappa_ParEd; the belief concerns
+        # beta_E only, not the psychic cost.
         f_college = parent_assets >= col_min[m] ?
-                    sol_tr_v_college_interp_belief[m, it, ip](parent_assets, HC) : -Inf
+                    sol_tr_v_college_interp_belief[m, it, ip](parent_assets, HC) +
+                        pared_value_offset(base_child, base_child.sim_bc_init[i]) : -Inf
         f_work = sol_tr_v_work_interp[ip](parent_assets, HC)
         if f_college > f_work
             path_choice[i] = :college
