@@ -221,7 +221,7 @@ function table_belief_groups(belief_type, belief_values, init_assets, final_asse
                              # Two different units for the same quantity in one paper. The
                              # factor now lives in one place and both tables use it.
                              rescale::Real = ASSET_RESCALE,
-                             note::AbstractString = "Means by belief group; belief value is the subjective annual human-capital increment from college.",
+                             note::AbstractString = "Means by belief group; belief value is the subjective log college wage premium, \$\\beta_E^m\$.",
                              params...)
     rows = Vector{Vector{String}}()
     for m in 1:maximum(belief_type)
