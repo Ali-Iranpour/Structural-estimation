@@ -325,6 +325,50 @@ const WAGE_SCALING_FACTOR = 0.584
 # should stay inside the grid; `check_simulation` reports any excursion.
 # ---------------------------------------------------------------------------
 
+"""
+    college_premium_profile(model, E_age)   -- internal helper
+    beta_E_from_rce(model, rce)
+
+Convert a believed college/high-school earnings RATIO into the model's `beta_E`.
+
+`rce` is what the belief survey elicits: a single number for how much more a college
+graduate earns, e.g. 1.5 for "50% more". The model does not carry a single premium --
+it carries a profile, `beta_E + gamma1E*age + gamma2E*age^2`, worth 0.25 at 22 and
+0.51 at 50 -- so a scalar belief has to be anchored to a horizon. The anchor here is
+the **unweighted career average over the graduate's working life**, ages
+`t_college+1 .. T`, which is the natural reading of "relative college earnings" as one
+number covering a career.
+
+A believer's profile is the estimated one shifted in parallel:
+
+    beta_E^m = beta_E* + [log(rce_m) - anchor*]
+
+and since `anchor* = beta_E* + mean_a(gamma1E*a + gamma2E*a^2)`, the true intercept
+cancels:
+
+    beta_E^m = log(rce_m) - mean_a(gamma1E*a + gamma2E*a^2)
+
+so the mapping depends only on the interaction terms, not on where `beta_E*` happens
+to sit. Beliefs shift the LEVEL of the premium and leave its SHAPE at the estimated
+one.
+
+This replaces `college_boost = (rce - 1)/0.4`, which inverted the old
+`w0*(1 + alpha*HC)` wage at `HC = 0` to express the same belief as a human-capital
+increment. Under a log wage the belief is already in the model's units and no
+inversion is needed -- which is also closer to Bleemer and Zafar (2018), who elicit
+beliefs about the EARNINGS return.
+"""
+function college_premium_anchor(model::ConSavLaborCollege_AR1)
+    ages = [model_age(t) for t in (model.t_college + 1):model.T]
+    return sum(model.gamma1E * a + model.gamma2E * a^2 for a in ages) / length(ages)
+end
+
+beta_E_from_rce(model::ConSavLaborCollege_AR1, rce::Real) =
+    log(rce) - college_premium_anchor(model)
+
+beta_E_from_rce(model::ConSavLaborCollege_AR1, rce::AbstractVector) =
+    [beta_E_from_rce(model, r) for r in rce]
+
 # ================================
 # Progressive tax helpers
 # ================================

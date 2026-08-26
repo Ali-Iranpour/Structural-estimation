@@ -206,3 +206,74 @@ Checks that pass: the college premium now **rises** in `θ` (0.358 → 0.566 acr
 support, against 0.495 → 0.376 before); human capital is exactly constant over life;
 the hours ceiling never binds; and the graduate and high-school value functions
 genuinely differ.
+
+---
+
+## 7. Heterogeneous beliefs
+
+Beliefs were about `college_boost`, the subjective human-capital increment per college
+year. They are now about **`beta_E`**, the log college wage premium, which is what
+Bleemer and Zafar (2018) actually elicit.
+
+### The mapping
+
+The survey elicits `rce`, a single believed ratio of college to high-school earnings
+(1.5 = "50% more"). The model does not carry a single premium: it carries a profile,
+`beta_E + gamma1E*age + gamma2E*age²`, worth 0.25 at 22 and 0.51 at 50. So a scalar
+belief has to be anchored to a horizon. The anchor is the **career average over the
+graduate's working life**, ages 22–68:
+
+```
+beta_E^m = beta_E* + [log(rce_m) − anchor*]
+         = log(rce_m) − mean_a(gamma1E·a + gamma2E·a²)      = log(rce_m) − 0.7374
+```
+
+The true intercept cancels, so the mapping depends only on the interaction terms.
+A believer's premium profile is the estimated one shifted in parallel: beliefs move the
+**level**, the **shape** stays at the estimated one. `beta_E_from_rce(model, rce)` in
+`child_lifecycle.jl` does this and is exact — the career average of a believer's own
+profile reproduces `log(rce_m)` to machine precision.
+
+This replaces `college_boost = (rce − 1)/0.4`, which inverted the old
+`w0*(1 + alpha*HC)` wage at `HC = 0` to re-express the belief as a stock increment.
+Under a log wage no inversion is needed: the belief is already in the model's units.
+
+### The belief distribution is near-unbiased, which is a useful property
+
+The existing draw is `rce = 1 + 2·Beta(2,5)` on [1,3], binned in 20 steps of 0.1.
+
+| | value |
+|---|---|
+| `E[log rce]` | 0.432 |
+| true career-average premium | 0.443 |
+| `sd[log rce]` | 0.199 |
+
+Beliefs are therefore **unbiased on average with genuine dispersion**, so the exercise
+isolates the effect of belief *heterogeneity* rather than mixing it with a level bias.
+Kept as is by decision. If you later want Bleemer and Zafar's underestimation result,
+that is a deliberate downward shift of the mean, not a property of the current draw.
+
+Verified: the college share rises monotonically in the believed premium, from 0% at
+`rce = 1.1` to 67% at `rce = 2.7`.
+
+### Notebook change
+
+`college_boost_belief_bin` is replaced by `beta_E_belief_bin` in cells 40, 78, 79, 80
+and the single-belief variant. Everything else in those cells is unchanged, including
+copying `base_child`'s work solution into each belief model — that is the `E = 0`
+high-school solution, which beliefs do not touch. `solve_model_college!` gives each
+belief model its own `E = 1` graduate working life at its own `beta_E`.
+
+```julia
+# was:  college_boost_belief_bin = (rce_mid .- 1) ./ 0.4
+#       college_boost_belief_bin = round.(college_boost_belief_bin, digits=3)
+beta_E_belief_bin = round.(beta_E_from_rce(base_child, rce_mid), digits=4)
+
+# and in the child-model loop:
+#   college_boost = college_boost_belief_bin[m]   ->   beta_E = beta_E_belief_bin[m]
+```
+
+⚠️ `psi_from_belief_linear` in those cells is calibrated on the `college_boost` scale
+(`b_min = 0.125`, `b_anchor = 1.8`) and would be meaningless against `beta_E`. It is
+unused — `ERRORS.md` N5 records that `psi_terminal` is deliberately held common across
+belief types — but the dead code should either be removed or re-anchored.

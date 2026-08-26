@@ -4,8 +4,8 @@ name       = "baseline_college_work_choice"
 caption    = "College vs.\ Work Decisions in the Baseline"
 label      = "tab:college_work_choice"
 n_rows     = 3
-timestamp  = "2026-08-26 22:43:57"
-git_commit = "cebcb83-dirty"
+timestamp  = "2026-08-26 22:57:05"
+git_commit = "4972574-dirty"
 julia      = "1.11.3"
 
 [parameters]

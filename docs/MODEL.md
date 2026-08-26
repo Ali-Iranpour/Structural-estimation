@@ -85,8 +85,8 @@ correct rule agent-by-agent, so solve and simulate currently disagree.
 | Psychic cost | `κ_X = κ/(HC+1)²` | ⚠️ **C:485 uses `(k+1)^4`** |
 | Budget | `a' = (1+r)a − c − c_college + b` | `obj_college_period_general` — C:389; `asset_constraint_college` — C:436 |
 | HC (homogeneous) | `HC' = HC + h^E` | `k_next = capital + college_boost` |
-| HC (perceived, belief `b_m`) | `H̃C' = H̃C + b_m` | `k_next = k + belief_values[m]` — P:1160 |
-| Graduation correction | `HC' = H̃C + b* + (T_E−1)(b* − b_m)` | `k + college_boost_true + 3*(…)` — P:1160 ✓ `3 = T_E − 1` |
+| Belief about the college return | perceived `β_E^m` in the wage | `child_models[m].beta_E` — P:1620 |
+| Graduation correction | **removed** — no perceived stock to reconcile | the truth arrives as a one-time surprise at entry |
 | Taste shock at entry | `+ ε₀` only at `t = 18` | `(t==1 ? ε : 0.0)` in `obj_college_period_general` ✓ |
 | Bellman | `V^E`, continuation → `V^W` after `t_college` | `solve_model_college!` — C:257 |
 
