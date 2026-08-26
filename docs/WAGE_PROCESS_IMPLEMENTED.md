@@ -273,7 +273,9 @@ beta_E_belief_bin = round.(beta_E_from_rce(base_child, rce_mid), digits=4)
 #   college_boost = college_boost_belief_bin[m]   ->   beta_E = beta_E_belief_bin[m]
 ```
 
-⚠️ `psi_from_belief_linear` in those cells is calibrated on the `college_boost` scale
-(`b_min = 0.125`, `b_anchor = 1.8`) and would be meaningless against `beta_E`. It is
-unused — `ERRORS.md` N5 records that `psi_terminal` is deliberately held common across
-belief types — but the dead code should either be removed or re-anchored.
+`psi_from_belief_linear` in those cells has been **deleted**. It was calibrated on the
+`college_boost` scale (`b_min = 0.125`, `b_anchor = 1.8`), which no longer exists, and
+it was already dead: `ERRORS.md` N5 records that `psi_terminal` is deliberately held
+common across belief types, and every model was built with `psi_terminal = 4.0`
+regardless. It also shadowed `m` immediately before `for m in 1:num_bins`. Removed from
+cells 40, 78, 79 and 80; N5 updated to record it.

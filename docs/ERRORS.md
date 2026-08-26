@@ -426,7 +426,7 @@ experiment with a number attached, not an untried idea.
 
 | # | Why |
 |---|---|
-| N5 | `psi_terminal_belief_bin` unused — **deliberate modelling choice**, confirmed by the author. Beliefs shift the perceived college boost only; `ψ_term` is held common across belief types. |
+| N5 | `psi_terminal_belief_bin` unused — **deliberate modelling choice**, confirmed by the author: `ψ_term` is held common across belief types. **Dead code now removed (2026-08-26).** The `b_min`/`b_anchor`/`ψ_anchor`/`psi_from_belief_linear` block computed `psi_terminal_belief_bin` in notebook cells 40, 78, 79 and 80 and never used it — every model was built with `psi_terminal = 4.0`. It was also anchored on the `college_boost` scale, which no longer exists now that beliefs concern `β_E`, and it shadowed `m` immediately before `for m in 1:num_bins`. |
 | N6 | Belief correction — **the original finding was wrong.** It cancels exactly to `k₀ + 4b*` for every belief; the claim mistakenly applied the correction to `k₀` rather than to `k_{t_college}`. |
 | N7 | Res-vs-Exp arms asymmetric (child `y=1.08`, parent `y=1.2`) — **deliberate**, confirmed by the author. |
 | P8 | `Age` units — **code is correct.** `wage2_styled.do:132` re-indexes age 26 → model period 1, so `β_age * t` is right. |
