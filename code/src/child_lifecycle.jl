@@ -59,6 +59,12 @@ mutable struct ConSavLaborCollege_AR1
 
     # --- Solution arrays (5D: T, Na, Nk, Np, Nt) ---
     sol_c_work::Array{Float64, 5}; sol_h_work::Array{Float64, 5}; sol_v_work::Array{Float64, 5}
+    # The GRADUATE's working life (E = 1). Held separately from the college arrays
+    # because it is ep-free, like the work arrays: carrying the taste-shock dimension
+    # on it wasted Nt-1 of every Nt entries.
+    sol_c_grad::Array{Float64, 5}; sol_h_grad::Array{Float64, 5}; sol_v_grad::Array{Float64, 5}
+    # The STUDY years only, t = 1..t_college. This is the one object that genuinely
+    # varies in the taste shock, and only at t = 1, where eps_0 enters.
     sol_c_college::Array{Float64, 5}; sol_h_college::Array{Float64, 5}; sol_v_college::Array{Float64, 5}
 
     # --- Solution arrays (4D: Na, Nk, Np, Nt) ---
@@ -79,7 +85,7 @@ mutable struct ConSavLaborCollege_AR1
     # MersenneTwister(2222) in the heterogeneous parent one -- so arms that should have
     # differed only in the parameter under study also differed in who drew which eps.
     draws_uniform_t::Vector{Float64}
-    w_vec::Vector{Float64}; college_cost::Float64; college_boost::Float64
+    college_cost::Float64
     # --- Psychic cost of college: kappa_0 + kappa_theta*log(theta)
     #                                       + kappa_ParEd*BothCollege
     kappa_0::Float64          # level
@@ -123,7 +129,6 @@ function ConSavLaborCollege_AR1(;
                 simN::Int=5000, a_min::Float64=0.0, k_max::Float64=8.0, Nk::Int=30,
                 w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0,
                 phi::Float64=18.0, seed::Int=1234, college_cost::Float64=1.2,
-                college_boost::Float64=2.0,
                 # --- Wage process ------------------------------------------------
                 # Age profile and the college intercept: Daruich & Fernandez (2023)
                 # Appendix Table B3, PSID 1968-2016, quadratic in BIOLOGICAL age,
@@ -254,9 +259,16 @@ function ConSavLaborCollege_AR1(;
     p_transition = mc.p
 
     # --- Initialize solution arrays (5D) ---
-    sol_shape = (T, Na, Nk, Np, Nt)
-    sol_c_work = fill(NaN, sol_shape); sol_h_work = fill(NaN, sol_shape); sol_v_work = fill(NaN, sol_shape)
-    sol_c_college = fill(NaN, sol_shape); sol_h_college = fill(NaN, sol_shape); sol_v_college = fill(NaN, sol_shape)
+    # The taste shock eps_0 enters only at t = 1, on the college branch. Every other
+    # solution slice is eps-free, so carrying Nt on all six arrays wasted about 88% of
+    # them -- 306 MB of 350 MB at production grids. Three shapes instead of one:
+    #   work / grad : eps-free working lives, trailing dimension 1
+    #   college     : the study years only, where eps genuinely varies
+    shape_wk = (T, Na, Nk, Np, 1)
+    shape_cl = (t_college, Na, Nk, Np, Nt)
+    sol_c_work = fill(NaN, shape_wk); sol_h_work = fill(NaN, shape_wk); sol_v_work = fill(NaN, shape_wk)
+    sol_c_grad = fill(NaN, shape_wk); sol_h_grad = fill(NaN, shape_wk); sol_v_grad = fill(NaN, shape_wk)
+    sol_c_college = fill(NaN, shape_cl); sol_h_college = fill(NaN, shape_cl); sol_v_college = fill(NaN, shape_cl)
 
     # --- Initialize half period solution arrays (5D) ---
     tr_shape = (Nap, Nk, Np, Nt)   # N13: parental asset dimension, not the child's
@@ -286,7 +298,6 @@ function ConSavLaborCollege_AR1(;
 
     draws_uniform_p = rand(rng, sim_shape...)
     draws_uniform_t = rand(rng, simN)      # N15: shared across every simulator
-    w_vec = fill(w, T)
 
     return ConSavLaborCollege_AR1(
         T, t_college, rho, beta, phi, eta, y, w, tau, r,
@@ -295,11 +306,13 @@ function ConSavLaborCollege_AR1(;
         psi_terminal, kappa_terminal, omega, mu,
         Nt, t_grid, sigma_eps, t_weight,
         Np, p_grid, p_transition, p_ar1, sigma_p,
-        sol_c_work, sol_h_work, sol_v_work, sol_c_college, sol_h_college, sol_v_college,
+        sol_c_work, sol_h_work, sol_v_work,
+        sol_c_grad, sol_h_grad, sol_v_grad,
+        sol_c_college, sol_h_college, sol_v_college,
         sol_tr_college, sol_tr_work, sol_tr_v_college, sol_tr_v_work,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
         sim_a_init, sim_k_init, sim_p_init_idx, sim_bc_init, sim_income, sim_wage,
-        draws_uniform_p, draws_uniform_t, w_vec, college_cost, college_boost,
+        draws_uniform_p, draws_uniform_t, college_cost,
         kappa_0, kappa_theta, kappa_ParEd,
         lnw0, beta_E, alpha_theta, alpha_thetaE, gamma1, gamma1E, gamma2, gamma2E,
         m_theta, tax_lambda,
@@ -562,11 +575,11 @@ Fills the college arrays. Two stages:
 function solve_model_college!(model::ConSavLaborCollege_AR1)
     @unpack T, t_college, Na, Nk, Np, a_grid, k_grid, p_grid, c_floor = model
     @unpack sol_c_college, sol_h_college, sol_v_college, sol_v_work = model
+    @unpack sol_c_grad, sol_h_grad, sol_v_grad = model
 
-    # Stage 1: the graduate's working life.
+    # Stage 1: the graduate's working life, into its own eps-free arrays.
     solve_model_work!(model; E = 1.0,
-                      sol_c = sol_c_college, sol_h = sol_h_college,
-                      sol_v = sol_v_college,
+                      sol_c = sol_c_grad, sol_h = sol_h_grad, sol_v = sol_v_grad,
                       t_min = t_college + 1, label = "graduate working")
 
     a_req = compute_min_assets(model)
@@ -581,8 +594,10 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
             # Continuation: for t < t_college the next period is a college year and its
             # value is only defined on the feasible slice; at t == t_college the next
             # period is the work path, defined everywhere.
+            # At t = t_college the next period is the GRADUATE's first working year,
+            # which now lives in sol_v_grad.
             interp = t + 1 > t_college ?
-                create_interpolator(model, model.sol_v_college, t + 1) :
+                create_interpolator(model, model.sol_v_grad, t + 1) :
                 create_interpolator_college(model, model.sol_v_college, t + 1, a_req)
 
             for i_p in 1:Np, i_k in 1:Nk, i_a in 1:Na
@@ -933,7 +948,7 @@ end
 # Simulation (AR1 Shock Only + Shock-free Retirement)
 # --------------------------
 function simulate_model_child!(model::ConSavLaborCollege_AR1)
-    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
+    @unpack simN, T, t_college, r, college_cost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition = model
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
     @unpack sim_p_idx, sim_a_init, sim_k_init, sim_bc_init, sim_p_init_idx, draws_uniform_p, y = model
@@ -953,12 +968,12 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     # College (same as before)
     interp_c_college = [
         [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_c_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
-            for t in 1:T, i_p in 1:model.Np]
+            for t in 1:t_college, i_p in 1:model.Np]
         for i_t in 1:Nt
     ]
     interp_h_college = [
         [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_h_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
-            for t in 1:T, i_p in 1:model.Np]
+            for t in 1:t_college, i_p in 1:model.Np]
         for i_t in 1:Nt
     ]
     interp_v_college = [
@@ -968,6 +983,18 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     ]
 
     # Work (per shock)
+    # The graduate's working life: same shape as the work interpolators, read from
+    # the grad arrays. Before the split these WERE the work arrays, so a graduate
+    # and a high-school worker at the same stock got the same policy.
+    interp_c_grad = [
+        LinearInterpolation((a_grid, k_grid), model.sol_c_grad[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:model.Np
+    ]
+    interp_h_grad = [
+        LinearInterpolation((a_grid, k_grid), model.sol_h_grad[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:model.Np
+    ]
+
     interp_c_work = [
         LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
         for t in 1:T, i_p in 1:model.Np
@@ -1032,8 +1059,8 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
                 # E = 1, so it must be read from there, not from the work arrays.
                 grad_i = path_choice[i] == :college
                 if grad_i
-                    c = interp_c_college[1][t, p_idx](a, k)
-                    h = interp_h_college[1][t, p_idx](a, k)
+                    c = interp_c_grad[t, p_idx](a, k)
+                    h = interp_h_grad[t, p_idx](a, k)
                 else
                     c = interp_c_work[t, p_idx](a, k)
                     h = interp_h_work[t, p_idx](a, k)
@@ -1395,7 +1422,7 @@ end
 # Simulation (AR1 Shock Only + Family Optimization)
 # --------------------------
 function simulate_model_family!(model::ConSavLaborCollege_AR1)
-    @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
+    @unpack simN, T, t_college, r, college_cost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition, Np = model
     @unpack ap_grid = model                       # N13: transfer arrays live on this grid
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
@@ -1415,15 +1442,27 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     # College policy interpolators
     interp_c_college = [
         [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_c_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
-            for t in 1:T, i_p in 1:Np]
+            for t in 1:t_college, i_p in 1:Np]
         for i_t in 1:Nt
     ]
     interp_h_college = [
         [LinearInterpolation((a_grid[csl(t)], k_grid), model.sol_h_college[t, csl(t), :, i_p, i_t]; extrapolation_bc=Flat())
-            for t in 1:T, i_p in 1:Np]
+            for t in 1:t_college, i_p in 1:Np]
         for i_t in 1:Nt
     ]
     # Work policy interpolators
+    # The graduate's working life: same shape as the work interpolators, read from
+    # the grad arrays. Before the split these WERE the work arrays, so a graduate
+    # and a high-school worker at the same stock got the same policy.
+    interp_c_grad = [
+        LinearInterpolation((a_grid, k_grid), model.sol_c_grad[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:Np
+    ]
+    interp_h_grad = [
+        LinearInterpolation((a_grid, k_grid), model.sol_h_grad[t, :, :, i_p, 1]; extrapolation_bc=Flat())
+        for t in 1:T, i_p in 1:Np
+    ]
+
     interp_c_work = [
         LinearInterpolation((a_grid, k_grid), model.sol_c_work[t, :, :, i_p, 1]; extrapolation_bc=Flat())
         for t in 1:T, i_p in 1:Np
@@ -1531,8 +1570,8 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
                 # Graduates' working life lives in the COLLEGE arrays (E = 1).
                 E_i = path_choice[i] == :college ? 1.0 : 0.0
                 if E_i == 1.0
-                    c = interp_c_college[1][t, p_idx](a, k)
-                    h = interp_h_college[1][t, p_idx](a, k)
+                    c = interp_c_grad[t, p_idx](a, k)
+                    h = interp_h_grad[t, p_idx](a, k)
                 else
                     c = interp_c_work[t, p_idx](a, k)
                     h = interp_h_work[t, p_idx](a, k)

@@ -4,8 +4,8 @@ name       = "baseline_outcomes"
 caption    = "End-of-Family Outcomes: Baseline"
 label      = "tab:baseline_outcomes"
 n_rows     = 2
-timestamp  = "2026-08-26 22:57:05"
-git_commit = "4972574-dirty"
+timestamp  = "2026-08-26 23:37:22"
+git_commit = "b5f1348-dirty"
 julia      = "1.11.3"
 
 [parameters]

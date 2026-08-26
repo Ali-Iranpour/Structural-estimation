@@ -247,15 +247,119 @@ monotone. Nothing checks it; the failure surfaces much later, inside Interpolati
 **Fix.** Make the focus point a fraction of the range rather than a constant, or assert
 `a_focus < a_max`.
 
-## ⏸️ C2 — Psychic cost uses the wrong power
+## ✅ C2 — Psychic cost uses the wrong power — **superseded 2026-08-26**
 
 `kappa/(HC+1)^4` in code against `kappa/(HC+1)^2` in `model.txt`. At `HC = 1, kappa = 5`:
-0.31 vs 1.25. **Deferred out of scope by instruction.**
+0.31 vs 1.25. Deferred at the time, then **retired by replacing the power form
+altogether**: the psychic cost is now `kappa_0 + kappa_theta*log(theta)
++ kappa_ParEd*BothCollege`, the log form both Colas (2021) and Daruich & Fernández
+(2023) use. There is no exponent left to disagree about.
 
-## ⏸️ C8 — Duplicate `discrete_draw`; unused `Nt` dimension
+⚠️ Note for calibration: `kappa_0 + kappa_theta*log(theta)` crosses **zero at
+theta = 3.86** while mean theta is 3.44, so a good part of the sample receives a
+psychic *benefit* from college and the channel is doing little work. `kappa_0` is the
+natural lever and belongs in the SMM parameter set. See
+`docs/WAGE_PROCESS_IMPLEMENTED.md`.
 
-In the **superseded** `child_lifecycle_ar1.jl` only. Harmless while it stays
-reference-only. **Deferred out of scope by instruction.**
+## ✅ C8 — Unused `Nt` dimension — **fixed 2026-08-26 (in the LIVE file)**
+
+The original finding was scoped to the superseded `child_lifecycle_ar1.jl`. The same
+waste was present in the **live** `child_lifecycle.jl` and is now removed.
+
+The taste shock `eps_0` enters at `t = 1` on the college branch only. Every other
+solution slice was written with `.=` across the whole `Nt` dimension and read back at
+index 1, so all six solution arrays carried `Nt` copies of identical data — about
+**88% waste**, 306 MB of 350 MB at production grids. Three shapes replace one:
+
+| array | shape | why |
+|---|---|---|
+| `sol_*_work` | `(T, Na, Nk, Np, 1)` | eps-free |
+| `sol_*_grad` | `(T, Na, Nk, Np, 1)` | eps-free; **new** — the graduate's working life, split out of the college arrays |
+| `sol_*_college` | `(t_college, Na, Nk, Np, Nt)` | the study years, the only place eps varies |
+
+**Verified behaviour-preserving, not assumed.** Work-array sums fell by a factor of
+exactly `Nt` (5.000000 on the test model), which is pure duplicate removal, while
+`sol_tr_work`, `sol_tr_college`, the college share and every `sim_*` array came back
+bit-identical. Measured **18.36 MB → 2.56 MB**, a 7.2× cut, and 42.6 MB for nine arrays
+at production grids.
+
+This matters for estimation: `smm.jl` caps its caches (`TIER0_CAP = 32`) *because* of
+the per-child footprint, having once reached 5.5 GB on an 8 GB machine. That cap can now
+be raised several-fold.
+
+⚠️ One consequence: `sol_*_grad` is NaN for `t <= t_college` by construction, since a
+graduate has no working life before then. Rather than blanket-allow NaN there and lose
+the ability to detect a real solver failure, **`check_grad_mask` asserts the pattern**,
+the way `check_feasibility_mask` does for the college arrays. It reports
+`0 NaN where solved, 0 finite where unsolved (of 102000)`.
+
+## 🟠 SMM readiness after the wage respecification — **assessed 2026-08-26**
+
+`smm.jl` **runs**: a smoke run (`--quick --sobol 4 --restarts 1 --localmax 3
+--polishmax 3`) completes with exit 0 through Sobol, local and polish stages, and writes
+`smm_estimates.toml`. Mechanically the pipeline is estimation-ready. Statistically there
+are three problems, in order of severity.
+
+**1. The model is under-identified: 14 parameters, 12 moments.**
+
+| | count |
+|---|---|
+| estimated parameters | `sigma_1_0/1_1/2_0/2_1/3_0/4_0/4_1`, `phi_2_0`, `phi_3_0`, `R_0`, `omega`, `kappa_terminal`, `college_cost`, `r` = **14** |
+| targeted moments | `e_p`×2, `tau_p`×2, `i_c`×2, `h_p`×2, terminal assets, `c_p`×2, college share = **12** |
+
+SMM needs at least as many moments as parameters. With 14 > 12 the objective generically
+has a two-dimensional set of exact minimisers, so the reported optimum is one point on a
+manifold and its standard errors are not defined. **No amount of tuning fixes this — it
+needs moments, not effort.** Adding `kappa_0` (recommended on other grounds) makes it
+15 vs 12 and worse; add moments first.
+
+**2. The incumbent calibration is now far from the data.** The baseline objective is
+**Q = 111.80**, against the roughly Q ≈ 3 recorded in `smm.jl`'s own comments before the
+respecification. Four Sobol draws already reach Q = 26.4. Re-estimation is not optional
+tidying; the current parameter vector is simply no longer a good fit.
+
+**3. ⚠️ A latent cache trap.** `tier0` keys on `(college_cost, r)` only, because those
+were the only estimated parameters entering `solve_model_work!`/`solve_model_college!`.
+The wage parameters and the psychic-cost parameters now also enter those solves. They are
+currently constructor defaults and never varied, so the cache is correct **today** — but
+**adding any of them to `PARS` without extending `ccost_key`/`r_key` would silently
+return a child solved at the wrong parameters.** This is the kind of failure that
+produces plausible, wrong estimates rather than an error, so it should be fixed
+pre-emptively if `kappa_0` or `alpha_theta` is ever estimated.
+
+Also unchanged from before: no standard errors, no weight-matrix estimation, no
+over-identification test, and hand-set weights (1.0–3.0). `SMM.md` already records these.
+
+## ✅ Child `Np` convergence — **tested 2026-08-26, converged**
+
+`GUIDE.md` records that raising the **parent's** `Np` from 3 to 7 moved the college
+share **17.85% → 22.40%**, making the shock grid the most consequential numerical choice
+in the model. The equivalent study had never been run for the **child**, which has always
+run at `Np = 5` (`run_all.jl` overrides `Na`, `Nk` and `Nt` but not `Np`). That was the
+largest untested numerical risk in the codebase. It is now measured, at production grids,
+on the full family run:
+
+| `Np` | college share | mean θ | mean wage | child solve | memory |
+|---|---|---|---|---|---|
+| 3 | 0.2002 | 3.4477 | 50.554 | 23.2 s | 25.6 MB |
+| 5 | 0.2000 | 3.4464 | 50.795 | 41.4 s | 42.6 MB |
+| 7 | 0.2002 | 3.4458 | 50.720 | 55.9 s | 59.6 MB |
+| 9 | 0.1998 | 3.4457 | 50.737 | 71.5 s | 76.7 MB |
+
+**The child's shock grid is flat.** The college share spans 0.04pp across `Np ∈ {3,…,9}`,
+mean θ 0.06%, mean wage 0.5%. `Np = 5` is safely converged and even `Np = 3` would do.
+
+This is the **opposite** of the parent's result, and the contrast is the point: the
+parent's investment policy is sharply nonlinear in its shock, whereas the child's
+consumption-savings-labour problem has a value function smooth in `z`, which Rouwenhorst
+integrates accurately at any `N` since it matches the first two moments exactly.
+
+**Opportunity:** dropping the child to `Np = 3` nearly halves the child solve, 41.4 s →
+23.2 s, for a 0.02pp change in the college share. Since `smm.jl` pays the child solve
+once per Tier-0 cache entry, that is close to a free 1.8× on the dominant cost of an
+estimation run.
+
+---
 
 ---
 
@@ -318,8 +422,11 @@ Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
 | **6.0** | **Explicit tests around the college-feasibility threshold**: just below, exactly at, and just above. The dead band between them is now zero wide (N13/C14), so this is a regression test for that. | open |
 | **6.0** | **Standardize monetary units** across simulation arrays and plots. Tables are done — `ASSET_RESCALE` is defined once and both asset tables use it — but parent `sim_wage` still stores `2 ×` the mean parental wage while labelled simply "wage". | partial |
 | **5.5** | **Require zero `MAXEVAL_REACHED`** for final estimation runs. The current 95% floor permits 5% un-converged policies to be stored; runs currently report 100% converged, so tightening the floor costs nothing today. | open |
+| **7.0** | **Add moments to the SMM.** 14 parameters against 12 targeted moments; the model is under-identified. Wage/earnings moments would also let the eight wage parameters be estimated rather than calibrated. See the SMM readiness assessment above. | open |
+| **6.0** | **Add `kappa_0` to `PARS`**, and extend the Tier-0 cache key when doing so. It is the only free lever on the college margin besides `college_cost`, and the psychic cost is currently near zero at mean theta. Do this *after* adding moments, not before. | open |
+| **5.0** | **Centre the shock grid** so `E[z] = 1`. `p_grid = exp.(mc.state_values)` gives `E[z] = 1.2235` by Jensen, a 22% level shift silently absorbed into `lnw0`. Harmless now, but it moves if `sigma_p` or `p_ar1` are ever changed. One line: `exp.(mc.state_values .- sigma_y^2/2)`, then re-derive `lnw0`. | open |
 | **4.5** | **Add timeouts** to the notebook and PDF validation commands. `run_all.jl` can wait indefinitely on `pdflatex`. | open |
-| **4.0** | **Reconsider how the child's HC enters the wage.** It is `w(1 + αk)` with `α = 0.08`, so the *proportional* return to skill decays as `α/(1+αk)` — 7.3% at `k = 3`, 3.1% at `k = 20`. The estimated *parental* wage equation puts education in logs. If the child's skill is measured on a comparable scale, `w·exp(αk)` would hold the proportional return constant. This is a specification question, and it is the main reason the marginal value of HC falls away faster than the marginal value of a transfer. | open |
+| ~~4.0~~ | **done 2026-08-26.** Replaced by a log-linear wage with education and childhood HC separated; see `docs/WAGE_PROCESS_IMPLEMENTED.md`. Original note: **Reconsider how the child's HC enters the wage.** It is `w(1 + αk)` with `α = 0.08`, so the *proportional* return to skill decays as `α/(1+αk)` — 7.3% at `k = 3`, 3.1% at `k = 20`. The estimated *parental* wage equation puts education in logs. If the child's skill is measured on a comparable scale, `w·exp(αk)` would hold the proportional return constant. This is a specification question, and it is the main reason the marginal value of HC falls away faster than the marginal value of a transfer. | **done** |
 
 ---
 

@@ -1675,12 +1675,23 @@ function simulate_model_family_hetero!(
 
     interp_c_college_belief = [
         LinearInterpolation((a_grid[csl(m, t)], k_grid), child_models[m].sol_c_college[t, csl(m, t), :, ip, it]; extrapolation_bc=Flat())
-        for m in 1:num_bins, it in 1:Nt, t in 1:T, ip in 1:Np
+        for m in 1:num_bins, it in 1:Nt, t in 1:t_college, ip in 1:Np
     ]
     interp_h_college_belief = [
         LinearInterpolation((a_grid[csl(m, t)], k_grid), child_models[m].sol_h_college[t, csl(m, t), :, ip, it]; extrapolation_bc=Flat())
-        for m in 1:num_bins, it in 1:Nt, t in 1:T, ip in 1:Np
+        for m in 1:num_bins, it in 1:Nt, t in 1:t_college, ip in 1:Np
     ]
+    # The graduate's working life is belief-specific too: each bin was solved at its own
+    # beta_E, so it has its own post-graduation policies. eps-free, hence no `it`.
+    interp_c_grad_belief = [
+        LinearInterpolation((a_grid, k_grid), child_models[m].sol_c_grad[t, :, :, ip, 1]; extrapolation_bc=Flat())
+        for m in 1:num_bins, t in 1:T, ip in 1:Np
+    ]
+    interp_h_grad_belief = [
+        LinearInterpolation((a_grid, k_grid), child_models[m].sol_h_grad[t, :, :, ip, 1]; extrapolation_bc=Flat())
+        for m in 1:num_bins, t in 1:T, ip in 1:Np
+    ]
+
     sol_tr_v_college_interp_belief = [
         LinearInterpolation((child_models[m].ap_grid[ip0[m]:end], k_grid), child_models[m].sol_tr_v_college[ip0[m]:end, :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, ip in 1:Np
@@ -1762,8 +1773,8 @@ function simulate_model_family_hetero!(
                 # A graduate's working life is solved with E = 1 into the college
                 # arrays, so read it from there.
                 if path_choice[i] == :college
-                    c = interp_c_college_belief[m, 1, t, p_idx](a, k)
-                    h = interp_h_college_belief[m, 1, t, p_idx](a, k)
+                    c = interp_c_grad_belief[m, t, p_idx](a, k)
+                    h = interp_h_grad_belief[m, t, p_idx](a, k)
                 else
                     c = interp_c_work[t, p_idx](a, k)
                     h = interp_h_work[t, p_idx](a, k)
