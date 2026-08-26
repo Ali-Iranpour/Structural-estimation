@@ -4,10 +4,10 @@ name       = "numerical_diagnostics"
 caption    = "Numerical Diagnostics"
 label      = "tab:numerical_diagnostics"
 n_rows     = 17
-timestamp  = "2026-08-07 18:30:05"
-git_commit = "7ed4f2c-dirty"
+timestamp  = "2026-08-26 22:43:58"
+git_commit = "cebcb83-dirty"
 julia      = "1.11.3"
 
 [parameters]
 seed                = 1234
-simN                = 5000
+simN                = 500

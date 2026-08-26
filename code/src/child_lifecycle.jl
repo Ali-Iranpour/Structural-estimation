@@ -31,7 +31,7 @@ end
 # =============================================================================
 mutable struct ConSavLaborCollege_AR1
     T::Int; t_college::Int; rho::Float64; beta::Float64; phi::Float64
-    eta::Float64; alpha::Float64; y::Float64; w::Float64; tau::Float64
+    eta::Float64; y::Float64; w::Float64; tau::Float64
     r::Float64; a_max::Float64; a_min::Float64; Na::Int; k_max::Float64
     Nk::Int; simT::Int; simN::Int
     a_grid::Vector{Float64}; k_grid::Vector{Float64}
@@ -69,6 +69,9 @@ mutable struct ConSavLaborCollege_AR1
     sim_c::Matrix{Float64}; sim_h::Matrix{Float64}; sim_a::Matrix{Float64}
     sim_k::Matrix{Float64}; sim_p_idx::Matrix{Int}
     sim_a_init::Vector{Float64}; sim_k_init::Vector{Float64}; sim_p_init_idx::Vector{Int}
+    # Parent's BothCollege indicator, for the kappa_ParEd term in the psychic cost.
+    # Zeros unless the caller fills it (run_all.jl sets it from the parent block).
+    sim_bc_init::Vector{Float64}
     sim_income::Matrix{Float64}; sim_wage::Matrix{Float64}
     draws_uniform_p::Matrix{Float64}
     # N15: ONE stored set of taste-shock draws, seeded from `seed`. The three simulators
@@ -77,7 +80,25 @@ mutable struct ConSavLaborCollege_AR1
     # differed only in the parameter under study also differed in who drew which eps.
     draws_uniform_t::Vector{Float64}
     w_vec::Vector{Float64}; college_cost::Float64; college_boost::Float64
-    kappa::Float64 # parameter for psychic cost
+    # --- Psychic cost of college: kappa_0 + kappa_theta*log(theta)
+    #                                       + kappa_ParEd*BothCollege
+    kappa_0::Float64          # level
+    kappa_theta::Float64      # ability gradient (NEGATIVE: ability lowers the cost)
+    kappa_ParEd::Float64      # parental-education shift (NEGATIVE)
+
+    # --- Wage process -----------------------------------------------------
+    # ln w_t = lnw0 + beta_E*E + (alpha_theta + alpha_thetaE*E)*theta_tilde
+    #                + (gamma1 + gamma1E*E)*age + (gamma2 + gamma2E*E)*age^2 + ln z
+    # replacing w0*(1 + alpha*HC). See docs/WAGE_PROCESS.md.
+    lnw0::Float64             # log base wage
+    beta_E::Float64           # college intercept shift
+    alpha_theta::Float64      # return to 1 SD of childhood HC, high school
+    alpha_thetaE::Float64     # additional return for graduates
+    gamma1::Float64           # age slope, high school
+    gamma1E::Float64          # additional age slope for graduates
+    gamma2::Float64           # age curvature, high school
+    gamma2E::Float64          # additional curvature for graduates
+    m_theta::Float64          # centring constant for log(theta); pure level shift
     tax_lambda::Float64          # Progressive tax level parameter (HSV/Benabou)
     c_floor::Float64             # Consumption floor; MUST equal the optimizer's lower bound on c
     delta_P::Float64             # Minimum retained parental asset (a_bar^P) at the transfer stage
@@ -93,10 +114,74 @@ function ConSavLaborCollege_AR1(;
                 r::Float64=0.03, a_max::Float64=100.0, Na::Int=30, y::Float64=0.6,
                 # a_min = 0: the work branch admits tr = 0, so 0 must be IN the child's asset
                 # grid or the first child period is evaluated by extrapolation. Was 0.01.
-                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=30.0, Nk::Int=30,
-                w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0, alpha::Float64=0.08,
+                # k_max = 8: HC no longer accumulates, so k only ever holds theta,
+                # which comes from the parent block. Was 30, which wasted most of the
+                # grid on states no agent visits. 8 rather than 6 because the higher
+                # return to childhood HC raises parental investment: theta now reaches
+                # 6.53 at production grids, past the parent's own hc_max of 6.0. See
+                # docs/WAGE_PROCESS_IMPLEMENTED.md.
+                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=8.0, Nk::Int=30,
+                w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0,
                 phi::Float64=18.0, seed::Int=1234, college_cost::Float64=1.2,
-                college_boost::Float64=2.0, kappa::Float64=5.0,
+                college_boost::Float64=2.0,
+                # --- Wage process ------------------------------------------------
+                # Age profile and the college intercept: Daruich & Fernandez (2023)
+                # Appendix Table B3, PSID 1968-2016, quadratic in BIOLOGICAL age,
+                # estimated separately by education with a Heckman selection
+                # correction. High school (0.0234, -0.000199, const 2.247) and
+                # college (0.0552, -0.000513, const 1.953); the E terms are the
+                # college-minus-high-school differences. The implied premium runs
+                # 0.25 at age 22 to 0.51 at age 50.
+                #
+                # alpha_theta is an ELASTICITY of the wage with respect to childhood
+                # human capital, which is what both papers estimate: they regress log
+                # wages on LOG ability. Daruich & Fernandez Table B4 (PSID + NLSY, the
+                # closer data to ours): 0.654 high school, 0.976 college, so
+                # alpha_thetaE = 0.322 and the ratio is 1.49. Colas Table 2 gives
+                # 0.31 / 0.47, ratio 1.52 -- same ratio, half the level.
+                #
+                # NOT standardized per SD. An earlier attempt divided by sd(log theta),
+                # which made the investment incentive alpha_theta / s_theta; at the
+                # dispersion the parent block actually produces (sd(log theta) ~ 0.2)
+                # that is an elasticity near 0.9, above both papers, and parental
+                # investment diverges -- mean theta went 2.11 -> 3.91 in one iteration
+                # with no fixed point. As an elasticity there is no circularity at all:
+                # m_theta is a pure level shift that lnw0 absorbs.
+                # lnw0 is a pure NORMALIZATION, not a paper value: it fixes the units
+                # of the wage. Set so the mean simulated wage matches the previous
+                # w0*(1+alpha*HC) specification at the same grids, which keeps assets,
+                # consumption and the tax base on their existing scale so the rest of
+                # the calibration still applies. Re-derive if the profile parameters
+                # move: shift lnw0 by log(target mean wage / simulated mean wage).
+                lnw0::Float64=log(w) - 0.4144,
+                beta_E::Float64=-0.294,
+                alpha_theta::Float64=0.654,
+                alpha_thetaE::Float64=0.322,
+                gamma1::Float64=0.0234,
+                gamma1E::Float64=0.0318,
+                gamma2::Float64=-0.000199,
+                gamma2E::Float64=-0.000314,
+                # Centring constant only: the wage carries alpha_theta*(log theta -
+                # m_theta), so m_theta shifts the level and nothing else. Set near
+                # E[log theta] from the parent block so lnw0 reads as the log wage of a
+                # child of average childhood human capital. Changing it is exactly
+                # offset by lnw0 and has no behavioural content.
+                m_theta::Float64=0.724,
+                # --- Psychic cost of college -------------------------------------
+                # Colas Table 2: kappa_0 + kappa_theta*log(theta) + kappa_fem*female
+                #                + kappa_ParEd*ParEdu, with (starred entries are
+                # 10,000x the parameter) kappa_0 = 0.44, kappa_theta = -8.3e-4,
+                # kappa_ParEd = -1.7e-4. Signs and the RATIO transport; the LEVELS
+                # cannot -- their utility is c^(1-gamma)/(1-gamma) at gamma = 1.9 with
+                # consumption in dollars, ours is rho = 1.5 with c of order 0.1-5, so
+                # a kappa of 4e-4 is meaningless here. The level is therefore set to
+                # reproduce the total discounted psychic cost of the old
+                # kappa/(HC+1)^4 form over the four college years, across the range of
+                # theta the model actually visits; the ratio
+                # kappa_ParEd / kappa_theta = 0.205 is Colas's.
+                kappa_0::Float64=0.0462,
+                kappa_theta::Float64=-0.0342,
+                kappa_ParEd::Float64=-0.0070,
                 # Shock parameters (AR1 only)
                 p_ar1::Float64=0.95, sigma_p::Float64=0.2, Np::Int=5,
                 # Preference shock parameters
@@ -190,6 +275,7 @@ function ConSavLaborCollege_AR1(;
     # Draws below ap_min previously landed on rows where the terminal value diverges.
     sim_a_init = ap_min .+ rand(rng, simN) .* (min(20.0, ap_max) - ap_min)
     sim_k_init = rand(rng, simN) .* 5
+    sim_bc_init = zeros(simN)
     # C6 (Phase 0.5c): draw the initial child shock from the STATIONARY distribution --
     # the same distribution the transfer problem integrates over. Starting everyone at the
     # median state meant the transfer was optimal against a distribution no simulated child
@@ -203,7 +289,7 @@ function ConSavLaborCollege_AR1(;
     w_vec = fill(w, T)
 
     return ConSavLaborCollege_AR1(
-        T, t_college, rho, beta, phi, eta, alpha, y, w, tau, r,
+        T, t_college, rho, beta, phi, eta, y, w, tau, r,
         a_max, a_min, Na, k_max, Nk, simT, simN, a_grid, k_grid,
         ap_grid, Nap, ap_min, ap_max,
         psi_terminal, kappa_terminal, omega, mu,
@@ -212,8 +298,11 @@ function ConSavLaborCollege_AR1(;
         sol_c_work, sol_h_work, sol_v_work, sol_c_college, sol_h_college, sol_v_college,
         sol_tr_college, sol_tr_work, sol_tr_v_college, sol_tr_v_work,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
-        sim_a_init, sim_k_init, sim_p_init_idx, sim_income, sim_wage,
-        draws_uniform_p, draws_uniform_t, w_vec, college_cost, college_boost, kappa, tax_lambda,
+        sim_a_init, sim_k_init, sim_p_init_idx, sim_bc_init, sim_income, sim_wage,
+        draws_uniform_p, draws_uniform_t, w_vec, college_cost, college_boost,
+        kappa_0, kappa_theta, kappa_ParEd,
+        lnw0, beta_E, alpha_theta, alpha_thetaE, gamma1, gamma1E, gamma2, gamma2E,
+        m_theta, tax_lambda,
         c_floor, delta_P
     )
 end
@@ -239,10 +328,32 @@ const WAGE_SCALING_FACTOR = 0.584
 # ================================
 # Progressive tax helpers
 # ================================
-# Pre-tax hourly wage (no taxes here)
-@inline function wage_func(model::ConSavLaborCollege_AR1, k::Float64, t::Int, p_shock::Float64)
-    base_wage = model.w_vec[t] * (1 + model.alpha * k)
-    return base_wage * p_shock * WAGE_SCALING_FACTOR
+# Model period t = 1 is biological age 18, so age = 17 + t. The age profile is
+# calibrated in biological age (Daruich & Fernandez Table B3), not in model time.
+const AGE_AT_T1 = 18
+@inline model_age(t::Int) = AGE_AT_T1 + t - 1
+
+# Pre-tax hourly wage (no taxes here).
+#
+#   ln w = lnw0 + beta_E*E + (alpha_theta + alpha_thetaE*E)*(log theta - m_theta)
+#               + (gamma1 + gamma1E*E)*age + (gamma2 + gamma2E*E)*age^2 + ln z
+#
+# alpha_theta is an ELASTICITY with respect to childhood human capital.
+#
+# `theta` is childhood human capital at 18, FIXED for life -- it no longer
+# accumulates -- and `E` is the college indicator. Replaces w0*(1 + alpha*HC),
+# which welded childhood skill, college and experience into one stock and priced
+# all three with a single alpha. See docs/WAGE_PROCESS.md.
+@inline function wage_func(model::ConSavLaborCollege_AR1, theta::Float64, t::Int,
+                           E::Float64, p_shock::Float64)
+    th  = log(max(theta, 1e-8)) - model.m_theta
+    age = model_age(t)
+    lw  = model.lnw0 +
+          model.beta_E * E +
+          (model.alpha_theta + model.alpha_thetaE * E) * th +
+          (model.gamma1 + model.gamma1E * E) * age +
+          (model.gamma2 + model.gamma2E * E) * age * age
+    return exp(lw) * p_shock * WAGE_SCALING_FACTOR
 end
 
 # After-tax labor income: λ * (w*h)^(1 - τ)
@@ -281,9 +392,26 @@ end
 # ================================
 # Work-path solver (progressive tax, no retirement)
 # ================================
-function solve_model_work!(model::ConSavLaborCollege_AR1)
+"""
+    solve_model_work!(model; E, sol_c, sol_h, sol_v, t_min, label)
+
+The working-life problem for one education group. `E` is the college indicator,
+which now enters only through the wage; it no longer has a counterpart in the law
+of motion, because human capital does not accumulate.
+
+Called twice. `E = 0` fills the work arrays over the whole horizon. `E = 1` fills
+the college arrays from `t_college+1` onward, which is the graduate's working
+life -- these used to be a straight copy of the high-school solution, so
+graduates and non-graduates faced an identical wage at the same stock.
+"""
+function solve_model_work!(model::ConSavLaborCollege_AR1;
+                           E::Float64 = 0.0,
+                           sol_c::Array = model.sol_c_work,
+                           sol_h::Array = model.sol_h_work,
+                           sol_v::Array = model.sol_v_work,
+                           t_min::Int = 1,
+                           label::String = "working")
     @unpack T, Na, Nk, Np, a_grid, k_grid, p_grid = model
-    @unpack sol_c_work, sol_h_work, sol_v_work = model
     @unpack y, c_floor = model
 
     # ---- Final period (t = T): work, consume everything, no bequest ----
@@ -292,7 +420,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
         p_shock = p_grid[i_p]
 
         function obj_wrapper(h_vec::Vector, grad::Vector)
-            f = obj_last_period(model, h_vec, assets, capital, T, p_shock, grad)
+            f = obj_last_period(model, h_vec, assets, capital, T, E, p_shock, grad)
             if length(grad) > 0
                 grad[:] = -grad[:]
             end
@@ -309,23 +437,23 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
         check_nlopt!(ret, minf, h_vec, "work terminal ia=$i_a ik=$i_k ip=$i_p")
 
         h_opt = h_vec[1]
-        w_pre = wage_func(model, capital, T, p_shock)
+        w_pre = wage_func(model, capital, T, E, p_shock)
         cons  = assets + after_tax_income(model, w_pre, h_opt) + y
 
-        sol_h_work[T, i_a, i_k, i_p, :] .= h_opt
-        sol_c_work[T, i_a, i_k, i_p, :] .= cons
-        sol_v_work[T, i_a, i_k, i_p, :] .= -minf
+        sol_h[T, i_a, i_k, i_p, :] .= h_opt
+        sol_c[T, i_a, i_k, i_p, :] .= cons
+        sol_v[T, i_a, i_k, i_p, :] .= -minf
     end
 
-    # ---- Working ages (t = T-1 down to 1) ----
-    @showprogress 1 "Solving working model..." for t in (T-1):-1:1
-        interp = create_interpolator(model, sol_v_work, t + 1)
+    # ---- Working ages (t = T-1 down to t_min) ----
+    @showprogress 1 "Solving $label model..." for t in (T-1):-1:t_min
+        interp = create_interpolator(model, sol_v, t + 1)
         for i_p in 1:Np, i_k in 1:Nk, i_a in 1:Na
             assets, capital = a_grid[i_a], k_grid[i_k]
             p_shock = p_grid[i_p]
 
             function obj_wrapper(x::Vector, grad::Vector)
-                f = obj_work_period(model, x, assets, capital, t, p_shock, i_p, interp, grad)
+                f = obj_work_period(model, x, assets, capital, t, E, p_shock, i_p, interp, grad)
                 if length(grad) > 0
                     grad[:] = -grad[:]  # negate for minimization
                 end
@@ -339,36 +467,33 @@ function solve_model_work!(model::ConSavLaborCollege_AR1)
             # With a fixed cap of 50.0 the initial guess taken from t+1 could
             # exceed it (terminal consumption reaches ~63 at a_max), and NLopt
             # then returns :INVALID_ARGS with NaN, which propagates backwards.
-            w_pre_t = wage_func(model, capital, t, p_shock)
+            w_pre_t = wage_func(model, capital, t, E, p_shock)
             c_hi = max((1.0 + model.r) * assets + after_tax_income(model, w_pre_t, 1.0) + y, 0.02)
 
-            # C16: k' = k + h must stay on the grid. Imposed as a BOX bound on h, not as
-            # a nonlinear constraint: at capital = k_max the constraint k + h <= k_max
-            # requires h <= 0, which is empty against the lower bound of 1e-3, and SLSQP
-            # returns FAILURE. As a box the worst case is a degenerate but feasible
-            # [1e-3, 1e-3]. This makes k_max a real ceiling on human capital rather than a
-            # grid artefact the solver extrapolates past, so k_max must be set above the
-            # reachable range -- check_solver_domain reports how often it binds.
-            h_hi = clamp(model.k_max - capital, 1e-3, 1.0)
+            # C16 is retired. It capped hours at k_max - capital so that k' = k + h
+            # stayed on the grid, which meant a high-HC worker was forced to work
+            # fewer hours because the grid ended, not for any economic reason. With
+            # k' = k the ceiling cannot bind through hours at all.
+            h_hi = 1.0
 
             opt = Opt(:LD_SLSQP, 2)
             lower_bounds!(opt, [c_floor, 1e-3])   # C17: the configured floor, not a literal
             upper_bounds!(opt, [c_hi, h_hi])
             ftol_rel!(opt, 1e-8)
             maxeval!(opt, 1000)
-            inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, p_shock), 1e-6)
+            inequality_constraint!(opt, (x, grad) -> asset_constraint_work(x, grad, model, assets, capital, t, E, p_shock), 1e-6)
             # C16: a' <= a_max. Always feasible -- at c = c_hi the whole budget is consumed
             # and a' = a_min -- so this one can stay a nonlinear constraint.
-            inequality_constraint!(opt, (x, grad) -> asset_constraint_work_upper(x, grad, model, assets, capital, t, p_shock), 1e-6)
+            inequality_constraint!(opt, (x, grad) -> asset_constraint_work_upper(x, grad, model, assets, capital, t, E, p_shock), 1e-6)
             min_objective!(opt, obj_wrapper)
 
-            init = [clamp(sol_c_work[t + 1, i_a, i_k, i_p, 1], c_floor, c_hi),
+            init = [clamp(sol_c[t + 1, i_a, i_k, i_p, 1], c_floor, c_hi),
                     clamp(0.4, 1e-3, h_hi)]
             (minf, x_opt, ret) = optimize(opt, init)
-            check_nlopt!(ret, minf, x_opt, "work t=$t ia=$i_a ik=$i_k ip=$i_p")
-            sol_c_work[t, i_a, i_k, i_p, :] .= x_opt[1]
-            sol_h_work[t, i_a, i_k, i_p, :] .= x_opt[2]
-            sol_v_work[t, i_a, i_k, i_p, :] .= -minf
+            check_nlopt!(ret, minf, x_opt, "$label t=$t ia=$i_a ik=$i_k ip=$i_p")
+            sol_c[t, i_a, i_k, i_p, :] .= x_opt[1]
+            sol_h[t, i_a, i_k, i_p, :] .= x_opt[2]
+            sol_v[t, i_a, i_k, i_p, :] .= -minf
         end
     end
 end
@@ -376,9 +501,29 @@ end
 # ================================
 # College-path solver (unchanged)
 # ================================
+"""
+    solve_model_college!(model)
+
+Fills the college arrays. Two stages:
+
+  1. `t > t_college`: the GRADUATE's working life, solved as a work problem with
+     `E = 1`. This used to be `sol_*_college .= sol_*_work`, which gave a
+     graduate and a high-school worker with the same stock an identical wage --
+     college paid only through the stock increment it added. College now pays
+     through `beta_E` and the education-specific age profile instead, so the two
+     working lives genuinely differ and both have to be solved.
+  2. `t <= t_college`: the study years, consumption and saving only, with the
+     continuation at `t_college+1` taken from stage 1.
+"""
 function solve_model_college!(model::ConSavLaborCollege_AR1)
     @unpack T, t_college, Na, Nk, Np, a_grid, k_grid, p_grid, c_floor = model
     @unpack sol_c_college, sol_h_college, sol_v_college, sol_v_work = model
+
+    # Stage 1: the graduate's working life.
+    solve_model_work!(model; E = 1.0,
+                      sol_c = sol_c_college, sol_h = sol_h_college,
+                      sol_v = sol_v_college,
+                      t_min = t_college + 1, label = "graduate working")
 
     a_req = compute_min_assets(model)
     if a_req[1] > a_grid[end]
@@ -386,13 +531,9 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
               "a_max = $(a_grid[end]). Widen the grid or revisit college_cost / y / c_floor.")
     end
 
-    @showprogress 1 "Solving college model..." for t in T:-1:1
-        if t > t_college
-            sol_c_college[t, :, :, :, :] .= model.sol_c_work[t, :, :, :, :]
-            sol_h_college[t, :, :, :, :] .= model.sol_h_work[t, :, :, :, :]
-            sol_v_college[t, :, :, :, :] .= model.sol_v_work[t, :, :, :, :]
-
-        else
+    # Stage 2: the study years. t > t_college is already solved above.
+    @showprogress 1 "Solving college model..." for t in t_college:-1:1
+        begin
             # Continuation: for t < t_college the next period is a college year and its
             # value is only defined on the feasible slice; at t == t_college the next
             # period is the work path, defined everywhere.
@@ -471,9 +612,9 @@ end
 
 # --- Final period objective: work, consume everything (progressive tax) ---
 @inline function obj_last_period(model::ConSavLaborCollege_AR1, h_vec::Vector, assets::Float64,
-    capital::Float64, t::Int, p_shock::Float64, grad::Vector)
+    capital::Float64, t::Int, E::Float64, p_shock::Float64, grad::Vector)
     h     = h_vec[1]
-    w_pre = wage_func(model, capital, t, p_shock)
+    w_pre = wage_func(model, capital, t, E, p_shock)
     c     = assets + after_tax_income(model, w_pre, h) + model.y
 
     u = util_work(model, c, h)
@@ -486,14 +627,17 @@ end
 
 # --- Work period objective (progressive-tax income) ---
 @inline function obj_work_period(model::ConSavLaborCollege_AR1, x::Vector, assets::Float64, capital::Float64,
-    t::Int, p_shock::Float64, i_p::Int, interp, grad::Vector)
+    t::Int, E::Float64, p_shock::Float64, i_p::Int, interp, grad::Vector)
     c, h = x[1], x[2]
-    w_pre  = wage_func(model, capital, t, p_shock)
+    w_pre  = wage_func(model, capital, t, E, p_shock)
     y_lab  = after_tax_income(model, w_pre, h)               # λ (w h)^(1-τ)
     dy_dh  = d_after_tax_dh(model, w_pre, h)                 # λ (1-τ) w (w h)^(-τ)
 
     a_next = (1.0 + model.r) * assets + y_lab - c + model.y
-    k_next = capital + h
+    # Human capital no longer accumulates: k' = k = theta, fixed for life. The
+    # dV/dk term that used to enter grad[2] is therefore gone -- it encoded
+    # learning by doing, which this specification removes.
+    k_next = capital
 
     # Expectation over future persistent shocks
     V_next = 0.0
@@ -506,11 +650,10 @@ end
             Vj = interp_jp(a_next, k_next)
             gradV = Interpolations.gradient(interp_jp, a_next, k_next)
             dV_da = gradV[1]
-            dV_dk = gradV[2]
 
             V_next  += p_trans_prob * Vj
             gradV_c += p_trans_prob * (-dV_da)                      # ∂a_next/∂c = -1
-            gradV_h += p_trans_prob * (dy_dh * dV_da + dV_dk)       # ∂a_next/∂h = dy_dh, ∂k_next/∂h = 1
+            gradV_h += p_trans_prob * (dy_dh * dV_da)               # ∂a_next/∂h = dy_dh, ∂k_next/∂h = 0
         end
     end
 
@@ -534,7 +677,8 @@ end
 )
     c = c_vec[1]
     a_next = (1 + model.r) * assets - c - model.college_cost + model.y
-    k_next = capital + model.college_boost
+    # College no longer adds to the stock; it buys beta_E in the wage instead.
+    k_next = capital
 
     V_next = 0.0
     gradV_c = 0.0
@@ -566,9 +710,9 @@ end
 # asset transitions and 5.00% of HC transitions -- where the continuation value is a
 # `Line()` extrapolation. Forward simulation reported 0%, so nothing caught it.
 @inline function asset_constraint_work_upper(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
-    assets::Float64, capital::Float64, t::Int, p_shock::Float64)
+    assets::Float64, capital::Float64, t::Int, E::Float64, p_shock::Float64)
     c, h = x[1], x[2]
-    w_pre = wage_func(model, capital, t, p_shock)
+    w_pre = wage_func(model, capital, t, E, p_shock)
     a_next = (1.0 + model.r) * assets + after_tax_income(model, w_pre, h) - c + model.y
     g = a_next - model.a_max
     if length(grad) > 0
@@ -578,14 +722,13 @@ end
     return g
 end
 
-# k' = k + h <= k_max. Linear in h, so the gradient is constant.
-# The k' <= k_max ceiling is imposed as a box bound on h in solve_model_work!, not here:
-# as a nonlinear constraint it is infeasible at capital = k_max. See the comment there.
+# There is no k' constraint any more: human capital is fixed at theta, so k' = k
+# can never leave the grid and k_max cannot bind through hours.
 
 @inline function asset_constraint_work(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
-    assets::Float64, capital::Float64, t::Int, p_shock::Float64)
+    assets::Float64, capital::Float64, t::Int, E::Float64, p_shock::Float64)
     c, h = x[1], x[2]
-    w_pre = wage_func(model, capital, t, p_shock)
+    w_pre = wage_func(model, capital, t, E, p_shock)
     y_lab = after_tax_income(model, w_pre, h)
     a_next = (1.0 + model.r) * assets + y_lab - c + model.y
     g = model.a_min - a_next
@@ -624,13 +767,35 @@ end
     return cons_utility - labor_disutility
 end
 
+"""
+    pared_value_offset(model, bc)
+
+Value offset from the `kappa_ParEd * BothCollege` term in the psychic cost.
+
+The term is additive in utility and constant across the college years -- theta is
+fixed, so nothing about it varies with t -- and it does not interact with
+consumption. It therefore shifts the college value by a closed-form annuity and
+leaves every college policy unchanged, so it can be applied once at the
+college-vs-work comparison instead of being carried as an extra state. This is
+exact, not an approximation.
+"""
+@inline function pared_value_offset(model::ConSavLaborCollege_AR1, bc::Float64)
+    disc = sum(model.beta^s for s in 0:(model.t_college - 1))
+    return -model.kappa_ParEd * bc * disc      # kappa_ParEd < 0 -> raises V_college
+end
+
 @inline function util_college(model::ConSavLaborCollege_AR1, c::Float64, k::Float64)
     if model.rho == 1.0
         cons_utility = log(c)
     else
         cons_utility = (c^(1.0 - model.rho)) / (1.0 - model.rho)
     end
-    psychic_cost = model.kappa / (k + 1.0)^4
+    # kappa_X = kappa_0 + kappa_theta*log(theta), with kappa_theta < 0 so that
+    # ability lowers the cost (Colas 2021, Daruich & Fernandez 2023 both use a log
+    # form and both find a negative gradient). The parental-education term is
+    # additive and constant over the college years, so it is applied once, as a
+    # value offset at the college-vs-work comparison, rather than carried here.
+    psychic_cost = model.kappa_0 + model.kappa_theta * log(max(k, 1e-8))
     return cons_utility - psychic_cost
 end
 
@@ -727,7 +892,7 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     @unpack simN, T, t_college, r, college_cost, college_boost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition = model
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
-    @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = model
+    @unpack sim_p_idx, sim_a_init, sim_k_init, sim_bc_init, sim_p_init_idx, draws_uniform_p, y = model
     @unpack Nt, t_weight = model
 
     # -- 1. Precompute interpolators --
@@ -786,7 +951,8 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
         a0, k0, p0_idx = sim_a_init[i], sim_k_init[i], sim_p_init_idx[i]
         i_t = eps_indices[i]
         # -Inf enters ONLY here, at the discrete comparison.
-        EV_college = a0 >= a_req_sim[1] ? interp_v_college[i_t][p0_idx](a0, k0) : -Inf
+        EV_college = a0 >= a_req_sim[1] ?
+            interp_v_college[i_t][p0_idx](a0, k0) + pared_value_offset(model, sim_bc_init[i]) : -Inf
         EV_work    = interp_v_work[p0_idx](a0, k0)
         path_choice[i] = EV_college > EV_work ? :college : :work
     end
@@ -818,10 +984,19 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
 
             else
                 # ----- Working, progressive tax -----
-                c = interp_c_work[t, p_idx](a, k)
-                h = interp_h_work[t, p_idx](a, k)
+                # A graduate's working life is solved in the COLLEGE arrays with
+                # E = 1, so it must be read from there, not from the work arrays.
+                grad_i = path_choice[i] == :college
+                if grad_i
+                    c = interp_c_college[1][t, p_idx](a, k)
+                    h = interp_h_college[1][t, p_idx](a, k)
+                else
+                    c = interp_c_work[t, p_idx](a, k)
+                    h = interp_h_work[t, p_idx](a, k)
+                end
                 p_shock = p_grid[p_idx]
-                w_pre = wage_func(model, k, t, p_shock)     # pre-tax hourly wage
+                E_i = grad_i ? 1.0 : 0.0
+                w_pre = wage_func(model, k, t, E_i, p_shock)   # pre-tax hourly wage
                 sim_wage[i, t] = w_pre / WAGE_SCALING_FACTOR
                 sim_income[i, t] = after_tax_income(model, w_pre, h)
             end
@@ -833,12 +1008,11 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
             if t < T
                 if path_choice[i] == :college && t <= t_college
                     a_next = (1 + r) * a - c - college_cost + y
-                    k_next = k + college_boost
-
                 else
                     a_next = (1 + r) * a + sim_income[i, t] - c + y
-                    k_next = k + h
                 end
+                # Human capital is fixed at theta for life on both paths.
+                k_next = k
 
                 # snap() fixes float-sized overshoot only; genuine excursions are left
                 # visible for check_simulation rather than silently clipped.
@@ -1181,7 +1355,7 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
     @unpack a_grid, k_grid, p_grid, p_transition, Np = model
     @unpack ap_grid = model                       # N13: transfer arrays live on this grid
     @unpack sim_a, sim_k, sim_c, sim_h, sim_income, sim_wage = model
-    @unpack sim_p_idx, sim_a_init, sim_k_init, sim_p_init_idx, draws_uniform_p, y = model
+    @unpack sim_p_idx, sim_a_init, sim_k_init, sim_bc_init, sim_p_init_idx, draws_uniform_p, y = model
     @unpack Nt, t_weight = model
 
     # -- 1. Precompute interpolators for policies and transfer values --
@@ -1269,7 +1443,8 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
         # never solved, so it is -Inf here exactly as in discrete_college_choice -- not an
         # extrapolation of the feasible slice.
         f_college = parent_assets >= col_min ?
-                    sol_tr_v_college_interp[it][ip](parent_assets, HC) : -Inf
+                    sol_tr_v_college_interp[it][ip](parent_assets, HC) +
+                        pared_value_offset(model, sim_bc_init[i]) : -Inf
         f_work = sol_tr_v_work_interp[ip](parent_assets, HC)
 
         # Choose path and set transfer
@@ -1309,10 +1484,17 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
                 sim_wage[i, t] = 0.0
             else
                 # ----- Working -----
-                c = interp_c_work[t, p_idx](a, k)
-                h = interp_h_work[t, p_idx](a, k)
+                # Graduates' working life lives in the COLLEGE arrays (E = 1).
+                E_i = path_choice[i] == :college ? 1.0 : 0.0
+                if E_i == 1.0
+                    c = interp_c_college[1][t, p_idx](a, k)
+                    h = interp_h_college[1][t, p_idx](a, k)
+                else
+                    c = interp_c_work[t, p_idx](a, k)
+                    h = interp_h_work[t, p_idx](a, k)
+                end
                 p_shock = p_grid[p_idx]
-                w_pre = wage_func(model, k, t, p_shock)  # Pre-tax hourly wage
+                w_pre = wage_func(model, k, t, E_i, p_shock)  # Pre-tax hourly wage
                 sim_wage[i, t] = w_pre / WAGE_SCALING_FACTOR
                 sim_income[i, t] = after_tax_income(model, w_pre, h)
             end
@@ -1324,11 +1506,11 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
             if t < T
                 if path_choice[i] == :college && t <= t_college
                     a_next = (1 + r) * a - c - college_cost + y
-                    k_next = k + college_boost
                 else
                     a_next = (1 + r) * a + sim_income[i, t] - c + y
-                    k_next = k + h
                 end
+                # Human capital is fixed at theta for life on both paths.
+                k_next = k
                 # snap() fixes float-sized overshoot only; genuine excursions are left
                 # visible for check_simulation rather than silently clipped.
                 sim_a[i, t+1] = snap(a_next, a_min, model.a_max)

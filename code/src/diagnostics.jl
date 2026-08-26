@@ -143,9 +143,11 @@ function check_solver_domain(m; tol_share::Float64 = 0.01, throw_on_fail::Bool =
     for t in 1:(m.T - 1), ip in 1:m.Np, ik in 1:m.Nk, ia in 1:m.Na
         c = m.sol_c_work[t, ia, ik, ip, 1]; h = m.sol_h_work[t, ia, ik, ip, 1]
         (isfinite(c) && isfinite(h)) || continue
-        w_pre = wage_func(m, m.k_grid[ik], t, m.p_grid[ip])
+        # Work arrays are the E = 0 (high school) solution.
+        w_pre = wage_func(m, m.k_grid[ik], t, 0.0, m.p_grid[ip])
         a_n = (1 + m.r) * m.a_grid[ia] + after_tax_income(m, w_pre, h) - c + m.y
-        k_n = m.k_grid[ik] + h
+        # Human capital is fixed at theta, so k' = k and can never leave the grid.
+        k_n = m.k_grid[ik]
         tot += 1
         ea = max(a_n - m.a_max, m.a_min - a_n, 0.0)
         ek = max(k_n - m.k_max, m.k_grid[1] - k_n, 0.0)
@@ -156,10 +158,8 @@ function check_solver_domain(m; tol_share::Float64 = 0.01, throw_on_fail::Bool =
         # is excluded: there k_max - k = 0 and the ceiling binds for any k_max whatsoever,
         # so counting it would report a structural 1/Nk on every model. Binding strictly
         # below the top row is the real signal that k_max is too small.
-        if ik < m.Nk
-            h_hi = clamp(m.k_max - m.k_grid[ik], 1e-3, 1.0)
-            h >= h_hi - 1e-6 && h_hi < 1.0 && (nbind += 1)
-        end
+        # C16 is retired: hours are bounded by 1.0 alone, so the k_max ceiling
+        # cannot bind through h. Kept at zero so the reported field stays defined.
     end
     res = (assets = na / max(tot, 1), hc = nk / max(tot, 1),
            worst_a = worst_a, worst_k = worst_k,
@@ -350,9 +350,9 @@ function continuation_interpolation_test(m; n_sample::Int = 150, rng = MersenneT
     lin = Dict{Int,Any}(); smo = Dict{Int,Any}()
 
     function solve_at(a, k, t, z, ip, interp, c0, h0)
-        w_pre_t = wage_func(m, k, t, z)
+        w_pre_t = wage_func(m, k, t, 0.0, z)
         c_hi = max((1.0 + m.r) * a + after_tax_income(m, w_pre_t, 1.0) + m.y, 0.02)
-        h_hi = clamp(m.k_max - k, 1e-3, 1.0)
+        h_hi = 1.0   # C16 retired: k' = k, so k_max cannot bind through hours
         opt = Opt(:LD_SLSQP, 2)
         lower_bounds!(opt, [m.c_floor, 1e-3]); upper_bounds!(opt, [c_hi, h_hi])
         ftol_rel!(opt, 1e-12); maxeval!(opt, 4000)
@@ -445,9 +445,9 @@ function bellman_optimality_residual(m; n_sample::Int = 200, rng = MersenneTwist
 
         # Same objective, same constraints and the same box as solve_model_work!, so the
         # comparison isolates the optimizer, not a different problem.
-        w_pre_t = wage_func(m, k, t, z)
+        w_pre_t = wage_func(m, k, t, 0.0, z)
         c_hi = max((1.0 + m.r) * a + after_tax_income(m, w_pre_t, 1.0) + m.y, 0.02)
-        h_hi = clamp(m.k_max - k, 1e-3, 1.0)
+        h_hi = 1.0   # C16 retired: k' = k, so k_max cannot bind through hours
 
         negobj = function (x::Vector, grad::Vector)
             f = obj_work_period(m, x, a, k, t, z, ip, interp, grad)
@@ -524,9 +524,9 @@ function bellman_residual(m; n_sample::Int = 500, rng = MersenneTwister(1), verb
         c, h, V = m.sol_c_work[t,ia,ik,ip,1], m.sol_h_work[t,ia,ik,ip,1], m.sol_v_work[t,ia,ik,ip,1]
         (isfinite(c) && isfinite(h) && isfinite(V)) || continue
 
-        w_pre  = wage_func(m, k, t, z)
+        w_pre  = wage_func(m, k, t, 0.0, z)
         a_next = (1 + m.r) * a + after_tax_income(m, w_pre, h) - c + m.y
-        k_next = k + h
+        k_next = k          # human capital is fixed at theta
         interp = get!(interps, t) do
             create_interpolator(m, m.sol_v_work, t + 1)
         end
