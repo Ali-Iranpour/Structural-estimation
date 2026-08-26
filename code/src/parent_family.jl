@@ -181,7 +181,7 @@ function Parent_child_interaction_age_specific_AR1(;
         simN::Int=5000, simT::Int=T, seed::Int=1234,
 
         # --- Slope/Intercept parameters for ALL age-specific variables ---
-        beta_0 = 0.96,     beta_1 = 0.0,
+        beta_0 = 0.97,     beta_1 = 0.0,
         phi_1_0 = 1.0,     phi_1_1 = 0.0,
         # P10: 0.8, not 20.0. phi_2 used to scale a Frisch labor disutility
         # -phi_2*h^(1+eta)/(1+eta); it now weights the parent's leisure CRRA
