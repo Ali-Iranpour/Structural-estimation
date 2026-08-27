@@ -1,27 +1,50 @@
 # =============================================================================
-# parent_family.jl
+# parent_family.jl -- the family stage, t = 1..17 (child ages 1..17)
 #
-# Parent-child family problem (childhood + adolescence, t = 1..17).
-# Extracted verbatim from transfer_CRRA_wage.ipynb so the model can be
-# version-controlled, diffed, and reused without notebook execution-order
-# effects. An untouched copy of the pre-extraction notebook is kept at
-#   archive/Combined Models/Full model/transfer_CRRA_wage_ORIGINAL.ipynb
+# Parents choose consumption, education spending, labour supply and time with the
+# child. From t = T_CHILD_VOICE the child bargains over its own study time. Solved
+# by backward induction with NLopt/SLSQP, then simulated forward. The terminal
+# value is the child's own lifecycle, handed over at age 18 (child_lifecycle.jl).
 #
-# Requires (loaded by the notebook before this file):
-#   Random, NLopt, LinearAlgebra, Interpolations, DataFrames, Statistics,
-#   ProgressMeter, Distributions, StatsBase, QuantEcon, FastGaussQuadrature,
-#   Parameters, Dierckx
-# and the child lifecycle module: include("ConSavLabor_college_ret.jl")
+# LAYOUT
+#   Macro and grid helpers      suppress_output, nonlinspace, create_focused_grid
+#   Constants                   PARENT_DEFAULTS and the solver floors
+#   Model                       struct + constructor
+#   Primitives                  utility, wage, human-capital technology
+#   Constraints                 budget and time
+#   Interpolation               PCHIP continuation, the child value spline
+#   Objectives                  the three SLSQP objectives
+#   Solver                      backward induction
+#   Simulation                  baseline and heterogeneous beliefs
 #
-# NOTE: no logic has been changed in this extraction. Known issues are
-# documented in README.md ("Known issues").
+# THINGS THAT BREAK SILENTLY IF YOU GET THEM WRONG
+#   * `k` here is the parent's BINARY BothCollege indicator -- [0.0, 1.0], drawn
+#     once from Bernoulli(0.3), constant in t. Nk = 2 is exact, not a
+#     discretisation. `k_grid` in child_lifecycle.jl is a DIFFERENT object (the
+#     child's human capital). The child's HC in THIS file is `hc_grid`.
+#   * Keep `hc_max` equal to the child's `k_max`. They are the same object either
+#     side of the age-18 handoff; a mismatch clips the handoff and makes HC above
+#     the child's ceiling worth ZERO to the terminal problem here.
+#   * Grid caps by instruction: assets and HC <= 30 nodes, shocks <= 5.
+#   * NLopt.jl is NOT thread-safe in this project. Parallelise with worker
+#     PROCESSES, never threads: threads produced a silent exit-0 crash.
+#   * `snap_parent` corrects only float-sized violations, by design. A genuinely
+#     out-of-bounds value passes through instead of being silently rewritten.
+#   * Dierckx clamps a Spline2D's VALUE outside its data range but keeps returning
+#     the boundary DERIVATIVE. Take both from `eval_child_value`, never separately:
+#     an inconsistent (value, gradient) pair breaks SLSQP's line search and
+#     surfaces as ROUNDOFF_LIMITED, which reads like a tolerance problem and is not.
+#   * `solve_model!` THROWS below a 95% converged share rather than printing,
+#     because callers wrap it in @suppress_output.
+#
+# The measurements behind the calibration and the numerical choices live in
+# docs/ERRORS.md. Code sites point at the entry rather than repeating it.
 # =============================================================================
 
 
 
 # -----------------------------------------------------------------------------
 # Helper macro: suppress solver output
-#   (was notebook cell 12)
 # -----------------------------------------------------------------------------
 
 
@@ -93,24 +116,12 @@ const PARENT_DEFAULTS = (
     phi_2_0 = 0.5,     phi_2_1 = 0.0,
     phi_3_0 = 1.0,     phi_3_1 = 0.0,
     R_0     = 1.6,     R_1     = 0.0,
-    # sigma_1_1 = -0.08 (was -0.02). Lowering sigma_3 to 0.407 flipped tau_p from flat
-    # to RISING (0.287 -> 0.457): with less carryover, investment close to 18 matters
-    # relatively more, so parents shift time later. A steeper decline in sigma_1 offsets
-    # it. Measured tau_p at t = 1 / 9 / 17:
-    #     -0.02  0.287  0.208  0.457     rising
-    #     -0.05  0.295  0.173  0.330     rising
-    #     -0.08  0.300  0.143  0.226     DECLINING
-    #     -0.11  0.303  0.117  0.150     declining, but tau_p_17 down at 0.15
-    # The profile is U-shaped either way -- that is structural, late investment sits
-    # closest to the age-18 payoff -- so this targets "declining overall", not monotone.
+    # sigma_1_1 = -0.08 offsets the rising tau_p that the lower sigma_3 caused.
+    # Sweep table in docs/ERRORS.md, P12.
     sigma_1_0 = -0.90, sigma_1_1 = -0.08,
     sigma_2_0 = -1.80, sigma_2_1 =  0.02,
-    # sigma_3_0 = -0.90 gives sigma_3 = exp(-0.90) = 0.407, the ~0.4 self-productivity
-    # asked for; sigma_3_1 = 0 holds it flat in t. Was -0.36 (sigma_3 = 0.698), which
-    # overshot that target AND left no room above: the +-0.4 counterfactual arm reached
-    # exp(-0.36+0.4) = 1.041 >= 1, i.e. explosive, so the arm could not be solved at all.
-    # At -0.90 the same +-0.4 arm spans exp(-0.5) = 0.607 and exp(-1.3) = 0.272, both
-    # comfortably stable, so the persistence counterfactual runs symmetrically.
+    # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
+    # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
     sigma_3_0 = -0.90, sigma_3_1 =  0.0,
     sigma_4_0 = -4.50, sigma_4_1 =  0.02,
     lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
@@ -122,10 +133,8 @@ const PARENT_DEFAULTS = (
 
 # -----------------------------------------------------------------------------
 # Solver: backward induction, objectives, utilities, constraints
-#   (was notebook cell 15)
 # -----------------------------------------------------------------------------
 
-# === Put near the top of your file ===
 const TOL_CONSTR = 1e-8
 """
     T_CHILD_VOICE
@@ -144,46 +153,10 @@ Six things key off this boundary: the two backward-induction loops, `mu_vector`,
 constant rather than written out, because they were six scattered literals and changing the
 boundary meant finding all of them.
 """
-#     The human-capital block, recalibrated 2026-08-07
-#
-# `sigma_3_1` was **+0.06**, so self-productivity ROSE with age: 0.09 at t=1 to 0.24 at t=17.
-# The persistence chain from an early investment to T is the product of ~16 such terms --
-# about `0.15^16 = 1e-14` -- so early human capital had no memory at all and there was no
-# reason to front-load. Parental time came out RISING, 0.004 to 0.058, when it should fall.
-#
-# Fixing the sign alone was not enough: the LEVEL had to come up too, and raising it exposed
-# that everything else in the block was scaled to a technology that destroyed skill (HC fell
-# from 0.491 to 0.434 between t=1 and t=2, because every input is far below 1 and Cobb-Douglas
-# maps `R = 2.54` down to 0.855). So the block moved together:
-#
-#     sigma_3_0  -2.40 -> -0.36    self-productivity 0.09 -> 0.70, now FLAT (sigma_3_1 = 0)
-#     sigma_1_0  -1.80 -> -0.90    parental-time elasticity 0.165 -> 0.41
-#     sigma_4_0  -3.50 -> -4.50    child-study elasticity 0.030 -> 0.011
-#     R_0         2.00 ->  1.60    TFP, retuned to keep HC inside hc_grid; R_1 0.06 -> 0
-#     phi_3_0     0.03 ->  1.00    parent's weight on log HC
-#     lambda_2_0  0.30 ->  1.00    child's weight on log HC
-#     phi_2_0     0.80 ->  0.50    leisure weight, to hold labor supply at its target
-#     psi_terminal 1.0 ->  4.00    in the CHILD module -- see below
-#
-# `psi_terminal` had to move with `phi_3`/`lambda_2`. Left at 1.0 while the flow weight went
-# to 1.0, the last period valued skill far less than every earlier one and tau_p collapsed at
-# t = 17 (0.059 against 0.155 once psi rose).
-#
-# Resulting profile, against the 0.40 -> 0.20 target:
-#
-#     t          1      5      9     13     17
-#     tau_p  0.392  0.352  0.310  0.268  0.191
-#     i_c    ~0.14           h_p 0.290 (was 0.285)      HC 1.76 -> 1.95
-#
-# CAVEAT, and it is the honest cost of hitting 0.40: sigma_1 = 0.41 makes the input
-# elasticities sum to 1.29 with sigma_3 = 0.70, i.e. increasing returns. Cunha-Heckman-
-# Schennach-style technologies put self-productivity at 0.85-0.95 and investment elasticities
-# at 0.05-0.20, summing to about 1. At the optimum `sigma_1 * (value share of HC) = tau_p *
-# (price of time)`, so asking the parent to spend 40% of their time on the child REQUIRES
-# either a large sigma_1 or a large skill valuation -- it is a property of the model, not of
-# the solver. If tau_p nearer 0.15 -> 0.08 is acceptable, sigma_1 can sit at ~0.15, squarely
-# in the literature range.
-#
+# The HC block was recalibrated as a unit on 2026-08-07 (sigma_3_1 had the wrong SIGN, so
+# skill had no memory and there was no reason to front-load). The resulting tau_p profile,
+# and the honest cost -- the input elasticities sum to 1.29, i.e. increasing returns, against
+# ~1 in Cunha-Heckman-Schennach -- are in docs/ERRORS.md, P11.
 const T_CHILD_VOICE = 6
 
 """
@@ -208,37 +181,12 @@ const TIME_FLOOR = 1e-3
 
 const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
 
-# P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
-# and h_p are all held positive by box bounds, whereas leisure_c = 1 - t_p - i_c is a
-# NONLINEAR constraint, which SLSQP is free to violate at trial points.
-#
-# The old code returned a flat -1e8 there while still computing the gradient from the
-# smooth formula, so objective and gradient described different functions and the line
-# search accepted steps that worsened the objective. Instead the objective is floored and
-# the gradient was floored to match: below LEISURE_FLOOR the objective was constant in
-# leisure, so its derivative was exactly zero.
-#
-# That was consistent but not enough. `d/dl [lambda*log(max(l, L))]` is `lambda/l` above L
-# and 0 below, so the derivative CLIFFS by lambda/L at the floor. At L = 1e-8 that cliff is
-# about 1.3e7, and SLSQP builds a BFGS quadratic model out of it: one step across the cliff
-# and the iterate comes back NaN. Measured directly -- the parent solve died with
-# |grad| = 1.28e7 at leisure_c = 0 (t_p = 0.3135, i_c = 0.6865, which sum to exactly 1).
-#
-# So the log is LINEARIZED below the floor instead of flattened:
-#
-#     l >= L :  log(l)                    d/dl = 1/l
-#     l <  L :  log(L) + (l - L)/L        d/dl = 1/L
-#
-# Value and slope both match at l = L, so the pair is C1 rather than merely continuous, and
-# the derivative is bounded by 1/L everywhere. L is raised to 1e-4, capping the leisure term
-# of the gradient at lambda*1e4. The floor is a numerical guard, not economics: it only
-# applies at trial points that violate the nonlinear leisure constraint, and the optimum
-# keeps leisure far above 1e-4 because lambda*log(l) -> -Inf as l -> 0.
-#
-# P10: the floor is 1e-2, not 1e-4, because the PARENT's leisure now enters as CRRA with
-# curvature `eta`. The bounded derivative below the floor is L^(-eta); at eta = 2 that is
-# 1e8 with L = 1e-4 but 1e4 with L = 1e-2. Verified slack -- see the check in the docstring
-# of `util_total`.
+# LEISURE_FLOOR guards the ONLY quantity SLSQP can drive non-positive: leisure_c =
+# 1 - t_p - i_c is a nonlinear constraint, not a box bound. Below the floor the log is
+# LINEARIZED, not flattened, so value and slope match at L and the derivative stays
+# bounded by 1/L. 1e-2 rather than 1e-4 because the parent's leisure is CRRA with
+# curvature eta, so the bounded derivative is L^(-eta). Derivation and the 1.28e7
+# gradient cliff it fixes: docs/ERRORS.md, "Numerical guards in the parent solver".
 const LEISURE_FLOOR = 1e-2
 
 # ===========================================================================
@@ -274,16 +222,7 @@ mutable struct Parent_child_interaction_age_specific_AR1
     a_max::Float64                # Max asset level
     a_min::Float64                # Min asset level
     Na::Int                       # Asset grid size
-    # NAMING. `k` in THIS module is the parent's BothCollege indicator: a binary
-    # household type, 0 = no college, 1 = college, drawn once from Bernoulli(0.3) and
-    # constant over t (sim_k[i, t+1] = k). It is neither physical nor human capital.
-    # It enters only through wage_func, as the BothCollege dummy and its age
-    # interactions. Nk = 2 is therefore exact, not an approximation -- k_grid is the
-    # two types themselves, [0.0, 1.0], not a discretization of a continuum.
-    #
-    # WARNING: `k_grid` in child_lifecycle.jl is a DIFFERENT object -- the child's
-    # human capital theta, with k_max = 8.0. Same name, unrelated quantity. The
-    # child's HC inside THIS module is hc_grid.
+    # `k` is the BothCollege indicator, not capital. See the file header.
     k_max::Float64                # = 1.0, the college type
     k_min::Float64                # = 0.0, the no-college type
     Nk::Int                       # = 2, the number of types
@@ -361,26 +300,9 @@ function Parent_child_interaction_age_specific_AR1(;
         # moments barely move (mean terminal assets 22.07 -> 22.13).
         a_max::Float64=100.0, a_min::Float64=0.0, Na::Int=30,
         k_max::Float64=1.0, k_min::Float64=0.0, Nk::Int=2,
-        # hc_max = 10 (was 6.0, briefly 15). MEASURED. The HC technology is unbounded above, so the
-        # SOLVER is asked for HC_next at every grid point including the top corner, where
-        # it reached 10.02 -- 1.25% of stored transitions landed off-grid and were served
-        # by extrapolation, producing the bad gradients that showed up as ROUNDOFF_LIMITED.
-        # The SIMULATION never needed the room (mean 1.71, p99 4.11), which is why raising
-        # the ceiling leaves the baseline unchanged to ~0.1% (hc mean 1.71 -> 1.71, e_p17
-        # 4.78 -> 4.79, terminal assets 10.6 -> 10.6) while taking the three counterfactual
-        # arms that previously failed to 97.3 / 97.1 / 99.1%. This is a numerical fix, not
-        # a respecification. Note child_lifecycle.jl already sized ITS k_max to 8.0 because
-        # HC reaches 6.53 -- the parent's own ceiling was simply never raised to match.
-        #
-        # Do NOT raise it further without also raising Nhc: the focused grid holds 80% of
-        # nodes in [hc_min, hc_min+3], so at hc_max = 25 the remaining 6 nodes cover [3,25],
-        # tail resolution collapses, and the failure mode flips from extrapolation to
-        # maxeval -- baseline 100.0% -> 96.5% and all three arms fail again.
-        #
-        # Re-sized 15 -> 10 after sigma_3_0 went to -0.90: at sigma_3 = 0.407 the solver's
-        # own HC_next tops out at 8.0 (was 10.02) and the simulation at 4.8, so 10 covers
-        # the solver with margin and keeps more resolution than 15 did. Matched by the
-        # child's k_max, which represents the SAME object on the far side of age 18.
+        # hc_max = 10, MATCHED to the child's k_max (same object across the age-18
+        # handoff). Sized to the SOLVER's domain, not the simulation's: raising it
+        # further without raising Nhc collapses tail resolution. See docs/ERRORS.md, P12.
         hc_max::Float64=10.0, hc_min::Float64=0.001, Nhc::Int=30 ,
         # --- simulation details ----
         simN::Int=5000, simT::Int=T, seed::Int=1234,
@@ -388,15 +310,8 @@ function Parent_child_interaction_age_specific_AR1(;
         # --- Slope/Intercept parameters for ALL age-specific variables ---
         beta_0 = 0.97,     beta_1 = 0.0,
         phi_1_0 = PARENT_DEFAULTS.phi_1_0, phi_1_1 = PARENT_DEFAULTS.phi_1_1,
-        # P10: 0.8, not 20.0. phi_2 used to scale a Frisch labor disutility
-        # -phi_2*h^(1+eta)/(1+eta); it now weights the parent's leisure CRRA
-        # phi_2*l_p^(1-eta)/(1-eta), a completely different scale. 0.8 reproduces the old
-        # simulated labor supply almost exactly -- mean h_p 0.2860 against 0.2848 -- which
-        # is the one moment that can be held fixed while the leisure term is restored.
-        # NOTE: tau_p is NOT pinned by phi_2. It comes out at 0.011-0.023 for every phi_2
-        # from 0.05 to 3.0, because the FOC phi_2*l^(-eta) = beta*dV/dHC*HC_next*sigma_1/tau_p
-        # scales with phi_2 on both sides. tau_p is set by sigma_1 and the value of the
-        # child's HC. See docs/ERRORS.md P10 for the calibration tension that creates.
+        # phi_2 weights the parent's leisure CRRA (not the old Frisch disutility), so
+        # its scale changed with P10. tau_p is NOT pinned by it. docs/ERRORS.md, P10.
         phi_2_0 = PARENT_DEFAULTS.phi_2_0, phi_2_1 = PARENT_DEFAULTS.phi_2_1,
         # ---- HC block, recalibrated together (see the note below) ----
         phi_3_0 = PARENT_DEFAULTS.phi_3_0, phi_3_1 = PARENT_DEFAULTS.phi_3_1,
@@ -409,16 +324,8 @@ function Parent_child_interaction_age_specific_AR1(;
         lambda_2_0 = PARENT_DEFAULTS.lambda_2_0, lambda_2_1 = PARENT_DEFAULTS.lambda_2_1,
         # --- Bargaining parameter ---
         mu_0 = PARENT_DEFAULTS.mu_0, mu_1 = PARENT_DEFAULTS.mu_1,
-        # Shock parameters (AR1 only)
-        # Np = 7, not 3. At Np = 3 the parent's shock grid was the binding approximation in
-        # the whole model: raising it to 7 moved the college share 17.85% -> 22.40% and mean
-        # terminal parental assets +8.9%, while DOUBLING any state grid moved the college
-        # share by at most 0.15pp (parent Nhc 30 -> 60 moved it by 0.00). It converges by
-        # 5-7: Np = 5 gives 22.00%, 7 gives 22.40%, 9 gives 22.30%, 13 gives 21.80%.
-        # Np = 5 (was 7). MEASURED: Np 7 -> 5 -> 3 leaves every moment flat to the third
-        # digit (college share 50.75 / 51.50 / 50.75, hc18 2.80, assets 19.1, e_p17 7.5,
-        # tau_p 0.300 -> 0.229), so the Rouwenhorst shock grid is fully converged by 3 and
-        # 5 is a margin, not a requirement.
+        # Np = 5. MEASURED: 7 -> 5 -> 3 leaves every moment flat to the third digit, so
+        # the Rouwenhorst grid is converged by 3 and 5 is margin. docs/ERRORS.md, grid caps.
         p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
         β0 = 2.798937,
         β_bothcollege = 0.3077394,
@@ -438,20 +345,9 @@ function Parent_child_interaction_age_specific_AR1(;
     #k_grid  = range(k_min, k_max, length=Nk)
     #hc_grid = range(hc_min, hc_max, length=Nhc)
 
-    # --- Setup Persistent AR1 Shock ---
-    # Rouwenhorst, not Tauchen. For a Gaussian-innovation AR(1) it matches the unconditional
-    # mean, the unconditional variance and the first-order autocorrelation EXACTLY at every
-    # N -- not asymptotically. Tauchen is built on the unconditional distribution and
-    # degrades as rho -> 1, which is where this model sits. Measured here:
-    #
-    #   rho=0.90 sigma=0.10  N=3 : Tauchen sd +21.5%, persistence +10.8%   Rouwenhorst exact
-    #   rho=0.90 sigma=0.10  N=7 : Tauchen sd +17.1%, persistence  +0.2%   Rouwenhorst exact
-    #   rho=0.95 sigma=0.20  N=5 : Tauchen sd +31.4%, persistence  +4.0%   Rouwenhorst exact
-    #
-    # Standard reference: Kopecky & Suen (2010, RED). Trade-off: Rouwenhorst fixes the grid
-    # half-width at sqrt(N-1)*sigma_z, so there is no `m` knob, and it matches the first two
-    # moments but not higher ones -- the invariant distribution is binomial, normal only as
-    # N grows. Neither matters for the moments this model targets.
+    # Rouwenhorst, not Tauchen: exact on mean, variance and autocorrelation at every N,
+    # whereas Tauchen degrades as rho -> 1, which is where this model sits. Measured
+    # comparison and the trade-off: docs/ERRORS.md, "Rouwenhorst rather than Tauchen".
     mc = rouwenhorst(Np, p_ar1, sigma_p)
     p_grid = exp.(mc.state_values)
     p_transition = mc.p
@@ -959,30 +855,14 @@ function create_interp(model::Parent_child_interaction_age_specific_AR1, sol_v, 
         PchipContinuation(ag, kg, hg, V, D)
     end for i_p in 1:model.Np]
 end
-# ------------------------------------------------
-# Supporting functions 
-# ------------------------------------------------
 # -----------------------------------------------------------------------------
-# Spline domain, and why the gradient has to be clamped with the value
+# Spline domain: why the gradient must be clamped together with the value
 # -----------------------------------------------------------------------------
-# Dierckx clamps a Spline2D's VALUE flat outside its data range but keeps reporting the
-# boundary DERIVATIVE. Measured on the child terminal spline at a_next = 10, with the
-# child's k_max = 8:
-#
-#     HC      V         dV/dHC
-#      8.0   -7.164      1.080
-#     10.0   -7.164      1.080     <- value flat, slope still 1.08
-#     15.0   -7.164      1.080
-#
-# So above the ceiling SLSQP is told "another unit of HC is worth 1.08" while the
-# objective does not actually move. The line search can never realize its predicted
-# decrease, and the solve ends as ROUNDOFF_LIMITED. That is what the period-17
-# counterfactual failures were: not a coarse grid (Nhc 30 -> 40 -> 50 changed nothing,
-# 22/25 each time), but an inconsistent (value, gradient) pair at the boundary.
-#
-# Fix: evaluate at the clamped point and zero the derivative component whose clamp
-# binds, so value and gradient agree. Where the spline saturates its marginal value
-# genuinely IS zero.
+# Dierckx clamps a Spline2D's VALUE outside its data range but keeps returning the
+# BOUNDARY DERIVATIVE, so above the ceiling SLSQP is told HC still pays while the
+# objective does not move -- the line search cannot realize its predicted decrease and
+# the solve ends ROUNDOFF_LIMITED. Measured table and the ruling-out of grid coarseness:
+# docs/ERRORS.md, P12.
 """
     spline_domain(spl) -> (a_lo, a_hi, k_lo, k_hi)
 
@@ -1451,13 +1331,8 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             end
 
             opt = Opt(:LD_SLSQP, 4)
-            # T9: the time floors were 1e-6 here against 1e-4 in the full-model loop, for
-            # the same variables. grad[4] carries HC_next * sigma_1 / t_p, so a floor of
-            # 1e-6 lets that term reach 1e6 -- the same gradient blow-up that killed the
-            # full-model loop through the leisure floor, 100x worse. Both loops now use
-            # 1e-4. The floor is slack at the optimum: Cobb-Douglas HC production sends
-            # HC_next -> 0 as t_p -> 0, and log(HC) is in utility, so the optimum keeps
-            # t_p far away from it.
+            # T9: both loops floor the time choices at 1e-4. At 1e-6 the gradient term
+            # HC_next*sigma_1/t_p reaches 1e6 and blows up the solve. Slack at the optimum.
             bmax = budget_ceiling(model, assets, capital, t, p_shock)
             lower_bounds!(opt, [0.01, 0.01, TIME_FLOOR, TIME_FLOOR])
             upper_bounds!(opt, [bmax, bmax, 1.0, 1.0])
@@ -1809,15 +1684,10 @@ function simulate_model_family_hetero!(
     @unpack Nt, t_weight = base_child
 
     num_bins = length(child_models)
-    # Beliefs are now about beta_E, the log college wage premium, rather than about
-    # an increment to the human-capital stock. This is closer to Bleemer (2018), which
-    # measures beliefs about the EARNINGS return to college, and it is what the wage
-    # equation in child_lifecycle.jl actually contains. Decisions are still taken under
-    # the biased number: the family enrols and transfers believing beta_E^m, the child
-    # consumes through college believing it, and the truth arrives as a one-time
-    # surprise at labour-market entry. What is no longer needed is the reconciliation
-    # term k + b* + (T_E-1)(b* - b_m), which existed only to reconcile a perceived
-    # STOCK with the true one over four years. With no stock there is no drift.
+    # Beliefs are about beta_E, the log college wage premium (Bleemer 2018 measures the
+    # EARNINGS return), not an increment to the HC stock -- so no reconciliation term is
+    # needed. Decisions are taken under the biased number; the truth arrives at
+    # labour-market entry. docs/ERRORS.md, N16.
     # The belief now acts entirely through child_models[m], each solved at its own
     # beta_E: those supply interp_*_college_belief and sol_tr_*_college_belief, which
     # are what the enrolment and transfer decisions are read from. There is no longer
@@ -1872,18 +1742,9 @@ function simulate_model_family_hetero!(
         LinearInterpolation((a_grid[csl(m, t)], k_grid), child_models[m].sol_h_college[t, csl(m, t), :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, t in 1:t_college, ip in 1:Np
     ]
-    # BELIEF TIMING. The bias applies to the DECISION and to the college years only. A
-    # student compares college against work believing the biased premium will hold for the
-    # whole of life, and consumes through college on that belief -- but on graduating they
-    # observe the true wage and re-optimize against it. So the post-graduation policy is
-    # the TRUE one, taken from base_child, NOT the belief-specific one.
-    #
-    # This was previously `child_models[m].sol_c_grad`, i.e. a graduate who kept consuming
-    # on a belief they had already been proved wrong about. Because realized income here
-    # always used the true beta_E, that mismatch had no budget behind it and drove assets
-    # to -192.8 with 27.2% negative; the cap below then had to fire for 23.4% of
-    # agent-periods to contain it. With the true policy, policy and income agree and the
-    # cap becomes the safety net it should be.
+    # BELIEF TIMING: the bias governs the DECISION and the college years only. On
+    # graduating the agent observes the true wage and re-optimizes, so the post-college
+    # policy is the TRUE one from base_child. docs/ERRORS.md, N16.
     if !isassigned(base_child.sol_c_grad, 1) || all(!isfinite, base_child.sol_c_grad)
         error("simulate_model_family_hetero!: base_child has no graduate solution. The " *
               "post-college years use the TRUE policy, so base_child needs " *
@@ -1999,21 +1860,9 @@ function simulate_model_family_hetero!(
                 sim_income[i, t] = after_tax_income(base_child, w_pre, h)
             end
 
-            # BUDGET FEASIBILITY UNDER A WRONG BELIEF.
-            # The consumption policy above is BELIEF-optimal (interp_*_belief, solved at
-            # beta_E_bin[m]) while the income realized above is the TRUE one (base_child).
-            # That asymmetry is deliberate -- the belief governs the decision, not the
-            # paycheck -- but it means an optimistic believer can ask to consume more than
-            # they actually have, and nothing was stopping them: snap_parent only corrects
-            # float-sized violations, so the gap was financed by borrowing the model does
-            # not permit. Measured before this fix: assets hit exactly 0 at the first
-            # post-college period and then diverged monotonically, 27.2% of all simulated
-            # child assets negative, reaching -192.8 against a_min = 0.
-            #
-            # The budget constraint is physical and binds whatever the agent believed, so
-            # cap consumption at resources - a_min. A wrong belief now shows up where it
-            # belongs -- as disappointed CONSUMPTION -- rather than as an impossible asset
-            # position.
+            # A belief-optimal policy meets a TRUE income stream, so it can ask to consume
+            # more than the agent has. The budget binds whatever they believed: cap c at
+            # resources - a_min. docs/ERRORS.md, N16.
             resources = (path_choice[i] == :college && t <= t_college) ?
                         (1 + r) * a - college_cost + y :
                         (1 + r) * a + sim_income[i, t] + y
