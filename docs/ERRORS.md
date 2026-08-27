@@ -97,11 +97,191 @@ parent's resources arrive as a transfer; or accept a smaller `φ₃`/`λ₂` and
 Which one depends on whether the college share or the time-use profile is the moment you
 most want to match — they are in direct tension here.
 
-## 🟡 P12 — One counterfactual arm no longer solves
+## ✅ P12 — Counterfactual arms failing to solve — **fixed 2026-08-27, 25/25 now solve**
 
-`σ₂₁ × 1.5` (education-expenditure slope) fails under the new HC block; the other 24 arms
-in notebook cell 29 solve. Not yet diagnosed. Likely the same class as the earlier solver
-failures — a state where the recalibrated technology drives an input to its bound.
+Started as "one arm fails", grew to four as the arm set was corrected, and turned out to be
+**three independent defects stacked on the same symptom** (`Period N: only X% of grid points
+converged`). Each was found by measurement, not inspection.
+
+**1. The child's terminal spline reported a slope where its value was flat.** Dierckx clamps
+a `Spline2D`'s *value* outside its data range but keeps returning the *boundary derivative*.
+Measured at `a_next = 10`, child `k_max = 8`:
+
+| HC | V | dV/dHC |
+|---|---|---|
+| 8.0 | −7.164 | 1.080 |
+| 10.0 | −7.164 | 1.080 |
+| 15.0 | −7.164 | 1.080 |
+
+So above the ceiling SLSQP was told another unit of HC pays 1.08 while the objective did not
+move; the line search could never realize its predicted decrease and the solve ended
+`ROUNDOFF_LIMITED`. **This was the dominant cause — it alone took 21/25 to 24/25.** Fixed by
+`eval_child_value` in `parent_family.jl`, which evaluates value *and* gradient at the same
+clamped point and zeroes the derivative where the clamp binds. Confirmed it was not a
+resolution problem: `Nhc` 30 → 40 → 50 gave 22/25 every time.
+
+**2. `hc_max` was below the solver's own domain.** The HC technology is unbounded above, so
+the solver is asked for `HC_next` at every grid corner. Measured at the old `hc_max = 6.0`:
+`HC_next` reached **10.02**, with **1.25%** of stored transitions off-grid and served by
+extrapolation. The *simulation* never needed the room (mean 1.71, p99 4.11), which is why
+raising the ceiling moved baseline moments by ~0.1%. Note `child_lifecycle.jl` had already
+sized its own `k_max` to 8.0 because HC reaches 6.53 — the parent's ceiling was simply never
+raised to match. Now `hc_max = 10`, matched by the child's `k_max = 10`.
+
+Raising it is not monotone: at `hc_max = 25` with `Nhc` fixed the focused grid leaves only 6
+nodes above 3.0, tail resolution collapses, and the failure mode flips from extrapolation to
+`maxeval` (baseline 100.0% → 96.5%).
+
+**3. One arm was genuinely explosive, not broken.** `σ₃₀ + 0.4` against `σ₃₀ = −0.36` gives
+`σ₃ = exp(0.04) = 1.041 ≥ 1`, i.e. `HC_{t+1} ∝ HC_t^1.04` — no bounded solution exists. The
+guard added for this rejects it correctly. Resolved by moving the baseline to `σ₃₀ = −0.90`
+(`σ₃ = 0.407`, the ~0.4 originally asked for), which leaves the ±0.4 arm spanning 0.607 and
+0.272 — both stable.
+
+**Side effect, and its fix.** Lowering `σ₃` flipped `τ_p` from flat to rising (0.287 → 0.457):
+with less carryover, investment near 18 matters relatively more. Offset by steepening `σ₁₁`
+from −0.02 to −0.08, measured over `τ_p` at t = 1/9/17:
+
+| `σ₁₁` | t=1 | t=9 | t=17 | |
+|---|---|---|---|---|
+| −0.02 | 0.287 | 0.208 | 0.457 | rising |
+| −0.05 | 0.295 | 0.173 | 0.330 | rising |
+| **−0.08** | **0.300** | **0.143** | **0.226** | **declining** |
+| −0.11 | 0.303 | 0.117 | 0.150 | declining, τ_p₁₇ low |
+
+The profile is U-shaped at every value — structural, since late investment sits closest to
+the age-18 payoff — so this targets "declining overall", not monotone.
+
+## ⚪ Naming: three different labels for the parent's college indicator — **corrected 2026-08-27**
+
+`k` in `parent_family.jl` is the parent's **BothCollege indicator**: binary, drawn once from
+`Bernoulli(0.3)`, constant in `t`, entering only `wage_func`. It was labelled "physical
+capital" (struct fields), "Parent Human capital grid" (`k_grid`) and "Simulated capital"
+(`sim_k`) in three different places. `Nk = 2` is exact, not a discretization.
+
+Checked whether the dimension could be dropped: it cannot. `k_grid = [0.0, 1.0]` already *is*
+the two types, and two types is the minimum that represents a binary. Separately, the child
+module's `k_grid` is a **different object** — the child's human capital θ — and θ is load-
+bearing there: it enters the wage as `(α_θ + α_θE·E)·log θ` with `α_θ = 0.654`, and the
+psychic cost of college as `κ_θ·log k`. Removing it would sever childhood investment from
+adult earnings. Comments corrected in both files; no code change.
+
+## ✅ The age-18 handoff — **verified 2026-08-27**
+
+`parent.sim_hc[:, T+1] → child.sim_k_init` is wired in both drivers (`run_all.jl:103`,
+`smm.jl:361`), so the parent's `hc_grid` and the child's `k_grid` are connected as intended.
+The two ceilings are now matched at 10.0; they had drifted apart (parent 15, child 8), which
+clipped the handoff and, worse, made HC above the child's ceiling worth **zero** to the
+parent's terminal problem, since the terminal spline is only defined over `k_grid`.
+
+## ✅ N16 — Heterogeneous-belief child assets went negative — **fixed 2026-08-27**
+
+27.2% of simulated child assets were negative, reaching **−192.8** against `a_min = 0`. Not a
+plotting artifact and not a transfer shortfall: assets fell through college, hit exactly 0 at
+the first post-college period, then **diverged monotonically** (−2.36, −4.76, −7.19, …).
+
+**Cause — the belief was applied for too long.** The bias is meant to govern the college-vs-work
+DECISION and the college years: a student compares the two paths believing the biased premium
+holds for life, and consumes through college on that belief, but **on graduating observes the
+true wage and re-optimizes against it**. `simulate_model_family_hetero!` instead kept using the
+belief-specific graduate policy (`child_models[m].sol_c_grad`) for the whole working life,
+while realized income always used the true `beta_E` from `base_child`. So a graduate went on
+consuming against a premium they had already been proved wrong about, with no income behind
+it — and nothing stopped them, because `snap_parent` by design (C15) only corrects
+float-sized violations.
+
+**Fix:** post-graduation policies now come from `base_child` (the true `beta_E`) via
+`interp_c_grad_true` / `interp_h_grad_true`. This requires `base_child` to carry a college
+solution, so the notebook now calls `solve_model_college!` / `optimal_transfer_college!` on it;
+the simulator errors clearly if it is missing rather than reading unassigned arrays.
+
+A budget-feasibility cap (`c ≤ resources − a_min`) was added alongside, since a belief-optimal
+college-years policy can still in principle outrun resources. It reports through a warning
+rather than being silent. The two together, measured:
+
+| | negative assets | cap fires | mean assets at t=8 |
+|---|---|---|---|
+| before | 27.17% (min −192.8) | — | −0.308 |
+| cap only (belief policy kept) | 0.00% | **23.4%** | 0.687 |
+| **cap + correct timing** | **0.00%** | **0.19%** | **1.091** |
+
+The cap falling from 23.4% to 0.19% is what identifies the timing as the real defect: with the
+right policy, income and consumption agree and the cap is the safety net it should be, catching
+only interpolation slack at the constraint. Graduates also accumulate faster, as they should,
+having stopped spending against a premium they do not earn.
+
+The homogeneous simulator is unaffected (policy and wage come from the same model): measured
+19 of 104,000 entries below zero, all at −0.000, i.e. float-sized.
+
+## ✅ N17 — The notebook never set `sim_bc_init` — **fixed 2026-08-27**
+
+`sim_bc_init` defaults to `zeros(simN)` and appeared **zero times** in the notebook, while
+`run_all.jl:106` has always set it from `parent.sim_k[:, 1]`. It feeds `pared_value_offset`,
+the `kappa_ParEd * BothCollege` term in the child's psychic cost of college. So every child in
+the notebook was treated as having non-college parents and the parental-education channel in
+the college decision was silently switched off — the notebook and `run_all.jl` were solving
+different models. Added at all 11 handoff sites.
+
+## ✅ N18 — Baseline lines invisible in counterfactual plots — **fixed 2026-08-27**
+
+**Root cause: Julia soft scope silently destroying the baseline.** The two belief cells run
+
+```julia
+for m in 1:num_bins
+    child_model = ConSavLaborCollege_AR1(...)   # <-- rebinds the GLOBAL
+```
+
+A top-level `for` in Julia uses *soft scope*, so assigning a name that already exists in
+global scope **rebinds the global** rather than creating a loop-local. `child_model` already
+held the simulated baseline from cell 21. After the belief loop it held the **last belief
+bin's model** — solved, but never simulated, so its `sim_*` arrays were still `fill(NaN, …)`.
+`baseline_sim` was therefore all-NaN by the time the counterfactual plots ran, and an all-NaN
+series in Plots.jl **still produces a legend entry while drawing nothing** — precisely the
+reported symptom: "(Base)" appeared in every legend with no line anywhere.
+
+Confirmed from the executed notebook rather than by inspection: the baseline's own plot
+(cell 23) renders correctly with human capital at 2.99 / 2.59, while the heterogeneous panel
+shows only 2.885 / 2.66 and its y-axis spans just ~2.65–2.89. Had the baseline series been
+present, the axis would have stretched to 2.59–2.99.
+
+Fixed by renaming the loop-local to `belief_child` in all 5 belief cells (`child_models[]`,
+the collection, is untouched).
+
+Two contributing defects, both real and both fixed alongside:
+
+1. `extract_simulation_by_path` used bare `mean`, so a **single NaN** in a group returned NaN
+   for the whole period. Necessary but not sufficient here — the data was genuinely gone — and
+   still correct, since the child arrays legitimately carry NaN (agents on the other path,
+   periods before a branch opens). Now NaN-robust.
+2. The baseline was drawn in the **same colour** as the counterfactual, dashed, **thinner**
+   (1.0 vs 1.5) and **after** it, so wherever the two nearly coincided it read as one line.
+   Now thicker and semi-transparent (`lw = 4.0, alpha = 0.30`), a faint band behind the solid
+   series.
+
+Also removed two hardcoded `ylims` that could clip a series out of view (`(0,30)` on human
+capital — which is what made the axis evidence above legible; and the consumption y-range
+ignored the baseline), and the assets panel now includes any negative region plus a zero line.
+The below-`a_min` warning threshold is 1e-3, not float epsilon: assets run 0–150, so ~1e-4 is
+interpolation slack at a binding constraint, and warning on it just trains you to ignore the
+warning.
+
+## ⚪ Grid caps — applied 2026-08-27, with one measured cost
+
+Capped by instruction at 30 (assets, HC) and 5 (shock nodes) everywhere. Measured:
+
+| config | college% | hc18 | assets | e_p17 | t_p17 |
+|---|---|---|---|---|---|
+| Na50 Nk50 Nt10 Np7 (was) | **57.70** | 2.79 | 19.7 | 7.49 | 0.227 |
+| Na30 Nk30 Nt10 Np7 | **50.75** | 2.80 | 19.1 | 7.56 | 0.229 |
+| Na30 Nk30 Nt10 Np5 | 51.50 | 2.80 | 19.1 | 7.55 | 0.229 |
+| Na30 Nk30 Nt10 Np3 | 50.75 | 2.80 | 19.1 | 7.54 | 0.229 |
+| Na30 Nk30 Nt5 Np5 | 52.10 | 2.80 | 19.1 | 7.55 | 0.229 |
+
+`Np` (Rouwenhorst) and `Nt` (Gauss-Hermite) are **fully converged**: 7 → 5 → 3 and 10 → 5 leave
+every moment flat to the third digit, so `Np = 3` would also be defensible. The child's
+`Na`/`Nk` 50 → 30 is **not** free: it moves the **college share 57.7% → 50.8%** while leaving
+every other moment unchanged. The college margin is a threshold choice, so its location moves
+with child asset/HC resolution — worth remembering when reading the college-share results.
 
 ## 🟡 P10 — Parental leisure restored; the calibration tension it exposes is open
 
