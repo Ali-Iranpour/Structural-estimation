@@ -12,7 +12,7 @@ check that the notebook runs top-to-bottom on a fresh kernel.
 
 Exit code 0 means every code cell executed.
 """
-import json, re, subprocess, sys, pathlib
+import json, os, re, shutil, subprocess, sys, tempfile, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NB   = ROOT / "code" / "transfer_CRRA_wage.ipynb"
@@ -51,7 +51,14 @@ def main():
     print(f"generated {OUT.relative_to(ROOT)} from {n} code cells")
     if "--gen-only" in sys.argv:
         return 0
-    r = subprocess.run(["julia", "--project=..", OUT.name], cwd=ROOT / "code")
+    # Redirect output/ so a shrunken-grid run cannot leave figures and tables in the
+    # tracked output tree. paths.jl reads STRUCT_EST_OUTPUT.
+    env = dict(os.environ)
+    scratch = tempfile.mkdtemp(prefix="nb_smoketest_out_")
+    env["STRUCT_EST_OUTPUT"] = scratch
+    print(f"output redirected to {scratch}")
+    r = subprocess.run(["julia", "--project=..", OUT.name], cwd=ROOT / "code", env=env)
+    shutil.rmtree(scratch, ignore_errors=True)
     OUT.unlink(missing_ok=True)
     print("\nSMOKE TEST", "PASSED" if r.returncode == 0 else f"FAILED (exit {r.returncode})")
     return r.returncode

@@ -34,7 +34,12 @@ const QUICK = "--quick" in ARGS
 const SEED  = 1234
 
 # grid sizes
-const C_NA, C_NK, C_NT = QUICK ? (20, 20,  6) : (50, 50, 10)
+# Child grids capped at 30 (assets, HC) and 5 (shock nodes) by instruction. NOTE the
+# cost, measured: Na/Nk 50 -> 30 moves the COLLEGE SHARE 57.7% -> 50.8%. Every other
+# moment is unchanged (hc18 2.79 -> 2.80, assets 19.7 -> 19.1, e_p17 7.49 -> 7.56), so
+# the college margin is the one object that wants the finer child grid -- it is a
+# threshold choice and its location moves with asset/HC resolution.
+const C_NA, C_NK, C_NT = QUICK ? (20, 20,  5) : (30, 30, 5)
 const P_NA, P_NK, P_NHC = QUICK ? (10,  2, 10) : (30,  2, 30)
 const SIMN = QUICK ? 500 : 5000
 
@@ -49,12 +54,12 @@ t_start = time()
 # -----------------------------------------------------------------------------
 banner("1. Child lifecycle")
 # -----------------------------------------------------------------------------
-# a_max = 100 for the child, against the parent's 50: the child's asset grid has to cover
-# the parent's TERMINAL assets (its own upper bound) plus the child's own accumulation over
-# 51 periods. At a_max = 50 check_simulation reported 2.87% of simulated child assets above
-# the grid, i.e. the model was being simulated where it had not been solved.
+# a_max = 100 for the child: its asset grid has to cover the parent's TERMINAL assets plus
+# the child's own accumulation over 51 periods. At a_max = 50 check_simulation reported
+# 2.87% of simulated child assets above the grid. Verified at the current parameters: child
+# assets go off-grid 0.00% of the time at 100, and raising it to 200 buys nothing.
 child = ConSavLaborCollege_AR1(Na = C_NA, Nk = C_NK, Nt = C_NT, rho = 1.5,
-                               psi_terminal = 1.0, kappa_terminal = 5.0, omega = 0.3,
+                               psi_terminal = 4.0, kappa_terminal = 5.0, omega = 0.3,
                                a_max = 100.0, w = 20.0, simN = SIMN, seed = SEED)
 solve_model_work!(child)
 solve_model_college!(child)
@@ -64,8 +69,20 @@ println("child solved in $(round(time()-t_start, digits=1))s")
 
 banner("2. Child diagnostics")
 check_solution(child)
+# X4: check_solution allows NaN blanket-wide, so a solver failure INSIDE the feasible
+# region would pass. This compares the NaN pattern against the two theoretical masks.
+check_feasibility_mask(child)
+# The graduate arrays are NaN for t <= t_college by construction; assert exactly that.
+check_grad_mask(child)
+# C16: the solution can leave the grid where the simulation does not. Reports both the
+# off-grid share and how often the k_max ceiling binds.
+check_solver_domain(child; throw_on_fail = false)
 println()
 bellman_residual(child; n_sample = QUICK ? 100 : 500)
+# P5: the consistency residual above re-evaluates the STORED policy, so it detects an
+# inconsistent value but never a suboptimal one. These two do.
+opt_res = bellman_optimality_residual(child; n_sample = QUICK ? 60 : 200)
+cont    = continuation_interpolation_test(child; n_sample = QUICK ? 60 : 150)
 monotonicity_report(child)
 shock_discretization_report(child.p_ar1, child.sigma_p, child.Np)
 
@@ -89,6 +106,9 @@ banner("4. Child adulthood, conditional on the parent's terminal states")
 # -----------------------------------------------------------------------------
 child.sim_a_init .= parent.sim_a[:, parent.T + 1]
 child.sim_k_init .= parent.sim_hc[:, parent.T + 1]
+# BothCollege is a fixed household type, so any column of parent.sim_k holds it. It
+# feeds the kappa_ParEd term in the child's psychic cost of college.
+child.sim_bc_init .= parent.sim_k[:, 1]
 _, path_choice, _ = simulate_model_family!(child)
 check_simulation(child; throw_on_fail = false)
 
@@ -109,6 +129,7 @@ table_outcomes([parent], ["Baseline"], "baseline_outcomes";
 br  = bellman_residual(child; n_sample = QUICK ? 100 : 500, verbose = false)
 mono = monotonicity_report(child; verbose = false)
 sim  = check_simulation(child; throw_on_fail = false, verbose = false)
+dom  = check_solver_domain(child; throw_on_fail = false, verbose = false)
 mcs  = mc_standard_errors(parent.sim_a[:, parent.T + 1])
 table_diagnostics([
     "Minimum converged share (parent solve)" => fmt_num(minimum(d.converged_share for d in diag); digits = 4),
@@ -118,12 +139,21 @@ table_diagnostics([
     "Monotonicity violations, \$c\$ in assets" => fmt_num(100mono.c_violations; digits = 2) * "\\%",
     "Simulated assets below \$a_{\\min}\$"      => fmt_num(100sim.below_a; digits = 2) * "\\%",
     "Simulated assets above \$a_{\\max}\$"      => fmt_num(100sim.above_a; digits = 2) * "\\%",
+    "Simulated states non-finite"             => fmt_num(100max(sim.nonfinite_a, sim.nonfinite_k); digits = 2) * "\\%",
+    # The share alone reads as a domain failure; the magnitudes are what say it is not.
+    "Stored transitions off-grid, assets"     => fmt_num(100dom.assets; digits = 2) * "\\% (max " * @sprintf("%.1e", dom.worst_a) * ")",
+    "Stored transitions off-grid, HC"         => fmt_num(100dom.hc; digits = 2) * "\\% (max " * @sprintf("%.1e", dom.worst_k) * ")",
+    "\$k_{\\max}\$ ceiling binds"               => fmt_num(100dom.hc_ceiling_binds; digits = 2) * "\\%",
+    "Bellman optimality residual, max"        => @sprintf("%.2e", opt_res.max),
+    "States improved by re-optimization"      => fmt_num(100opt_res.share_improved; digits = 2) * "\\%",
+    "Linear vs.\\ cubic continuation, max \$|\\Delta c|\$" => @sprintf("%.2e", cont.max_dc),
+    "Linear vs.\\ cubic continuation, max \$|\\Delta h|\$" => @sprintf("%.2e", cont.max_dh),
     "Mean terminal parental assets"           => fmt_num(mcs.mean; digits = 4),
     "Bootstrap standard error"                => fmt_num(mcs.se; digits = 4),
   ], "numerical_diagnostics";
     caption = "Numerical Diagnostics",
     label   = "numerical_diagnostics",
-    note    = "Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples.",
+    note    = "Computed on the solved model and the simulated cohort. Bellman residuals are relative; standard errors are bootstrapped over 200 resamples. The optimality residual re-optimizes sampled states from four starts and compares the maximum against the stored value, so unlike the consistency residual it detects a suboptimal policy. The two off-grid rows report the share of stored transitions leaving the grid and the largest such excursion: these are bounded by the NLopt constraint tolerance and the labor lower bound respectively, so they are float-sized rather than genuine extrapolation. The last two rows re-solve the same states against an interpolating cubic continuation instead of the linear one the solver uses, and report how far the optimal policy moves.",
     seed = SEED, simN = SIMN)
 
 write_manifest(tabpath(); experiment = "full_run", seed = SEED, simN = SIMN,

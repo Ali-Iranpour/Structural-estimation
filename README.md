@@ -11,9 +11,11 @@ the child's birth to age 18; the child is then followed to age 68.
 | I want to… | Go to |
 |---|---|
 | Run the model | [`docs/GUIDE.md`](docs/GUIDE.md) |
+| Estimate the parameters | [`docs/SMM.md`](docs/SMM.md) — SMM by TikTak, and every open decision we settled |
 | Read the model as written in the paper | [`docs/model.txt`](docs/model.txt) |
 | Find which code implements which equation | [`docs/MODEL.md`](docs/MODEL.md) |
 | Know what's currently broken | [`docs/ERRORS.md`](docs/ERRORS.md) — every error, severity, file and line |
+| Understand why the spec says what it says | [`docs/SPEC_DECISIONS.md`](docs/SPEC_DECISIONS.md) |
 | Find an old version | [`archive/NOTES.md`](archive/NOTES.md) |
 
 ---
@@ -24,12 +26,14 @@ the child's birth to age 18; the child is then followed to age 68.
 .
 ├── code/
 │   ├── run_all.jl                  ONE reproducible end-to-end run (--quick to smoke test)
+│   ├── smm.jl                      parameter estimation — SMM by TikTak
 │   ├── transfer_CRRA_wage.ipynb    interactive driver: counterfactuals, figures
 │   └── src/
 │       ├── paths.jl                every path in the project — nothing else hard-codes one
 │       ├── manifest.jl             run provenance (git SHA, versions, parameters)
 │       ├── diagnostics.jl          accuracy checks: Bellman residuals, domains, gradients
 │       ├── tables.jl               LaTeX tables (threeparttable) + PDF build
+│       ├── tiktak.jl               TikTak global optimizer (AGK 2022), standalone
 │       ├── parent_family.jl        parent problem: struct, solver, simulators
 │       ├── child_lifecycle.jl      child lifecycle — CANONICAL, no retirement
 │       ├── child_lifecycle_ret.jl  superseded, reference only
@@ -63,10 +67,10 @@ the child's birth to age 18; the child is then followed to age 68.
 ## Model in one paragraph
 
 Two parents and one child interact over `t = 1..17` (child ages 0–17). Parents choose
-consumption, labor supply, education expenditure, and time with the child; from age 7
+consumption, labor supply, education expenditure, and time with the child; from age 6 (period 6)
 the child bargains over their own study time and leisure under an age-varying welfare
 weight. The child's cognitive skill follows a Cobb-Douglas production function in
-parental time, education spending, lagged skill, and (after age 7) the child's own
+parental time, education spending, lagged skill, and (from age 6) the child's own
 study time. At age 18 the family jointly chooses college vs. work and the parents
 transfer assets, which become the child's initial wealth. The child then solves a
 consumption-saving-labor problem to age 68. Parental wages follow an estimated profile
@@ -131,16 +135,31 @@ and re-run before committing a new Manifest.
 [`docs/ERRORS.md`](docs/ERRORS.md) carries the full list — every finding with its severity,
 file and line — followed by the improvement backlog and an ordered work plan.
 
-**20 findings are open: 7 high, 9 medium, 3 low, 1 deferred.** The three that matter most
-before trusting any output:
+**4 findings are open: 3 medium, 2 deferred by instruction** — no High remains.
 
-1. **X3** — `check_simulation` drops non-finite states *before* computing off-grid shares,
-   so a 96%-NaN simulation reports "0% outside". The diagnostics can return green on a
-   broken run.
-2. **C16** — the work solver constrains only `a' >= a_min`; **3.59%** of stored asset
-   transitions and **5.00%** of human-capital transitions leave the solved grid. Forward
-   simulation reports 0.00%, so this is invisible today.
-3. **M2** — the notebook runs every counterfactual on `a_max = 50`, the grid already
-   measured as too small; only `run_all.jl` uses the corrected 100.
+**P10** was the big one and is now fixed: the parent's utility had dropped the leisure term
+`model.txt` specifies, so time with the child was free and `corr(τ_p, h_p)` came out
+**+0.60** — parents who worked more also spent more time with the child. Leisure is restored
+as `φ₂ l_p^(1−η)/(1−η)` with `φ₂` recalibrated 20.0 → 0.8, and the correlation is now
+**−0.999**. What remains open under P10 is a calibration tension, not a bug: mean `τ_p`
+lands at 0.011, and no value of `φ₂` moves it.
 
-A green `run_all.jl` does **not** currently mean a sound solution.
+**P5** is fixed on the parent side — the continuation is now shape-preserving, which is what
+was making the policy functions ragged — and still open on the child side:
+
+**P5 — the continuation interpolation moves policies, and this is now measured.** The
+solver's `Gridded(Linear())` continuation is C0 but not C1. Re-solving the same states
+against an interpolating cubic spline instead moves optimal labor supply by up to **0.11 to
+0.17** of the unit time endowment, and **quadrupling the grid from 20×20 to 80×80 does not
+shrink it**. The Bellman residual is blind to this — it sits at 5.6e-13 on every grid,
+because it re-evaluates the stored policy rather than re-optimizing.
+
+This is not a bug to patch: it means the numerical solution is not pinned down at those
+states, and the fix is a decision about the interpolation scheme. ERRORS.md lays out the
+three options.
+
+The other two: **P7b**, the `BothCollege` share is hardcoded at `Bernoulli(0.3)` and still
+needs an empirical source; **C2** and **C8** are deferred out of scope by instruction.
+
+A green `run_all.jl` now means the solution is internally consistent, on-domain, and
+feasibility-masked correctly — it does not settle P5.

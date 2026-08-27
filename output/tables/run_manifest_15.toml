@@ -1,0 +1,28 @@
+# Run provenance — written automatically. Do not edit by hand.
+
+[run]
+timestamp   = "2026-08-07 18:30:06"
+git_commit  = "7ed4f2c-dirty"
+julia       = "1.11.3"
+hostname    = "MacBook-Air-2.local"
+output_dir  = "output/tables"
+
+[packages]
+Dierckx             = "0.5.4"
+Distributions       = "0.25.117"
+FastGaussQuadrature = "1.0.2"
+Interpolations      = "0.15.1"
+NLopt               = "1.1.2"
+QuantEcon           = "0.16.6"
+
+[parameters]
+experiment          = "full_run"
+seed                = 1234
+simN                = 5000
+child_Na            = 50
+child_Nk            = 50
+child_Nt            = 10
+parent_Na           = 30
+parent_Nk           = 2
+parent_Nhc          = 30
+quick               = false

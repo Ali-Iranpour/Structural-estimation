@@ -3,11 +3,11 @@
 name       = "numerical_diagnostics"
 caption    = "Numerical Diagnostics"
 label      = "tab:numerical_diagnostics"
-n_rows     = 9
-timestamp  = "2026-08-05 22:14:47"
-git_commit = "91b248f-dirty"
+n_rows     = 17
+timestamp  = "2026-08-26 23:37:22"
+git_commit = "b5f1348-dirty"
 julia      = "1.11.3"
 
 [parameters]
 seed                = 1234
-simN                = 5000
+simN                = 500
