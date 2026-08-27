@@ -34,7 +34,12 @@ const QUICK = "--quick" in ARGS
 const SEED  = 1234
 
 # grid sizes
-const C_NA, C_NK, C_NT = QUICK ? (20, 20,  6) : (50, 50, 10)
+# Child grids capped at 30 (assets, HC) and 5 (shock nodes) by instruction. NOTE the
+# cost, measured: Na/Nk 50 -> 30 moves the COLLEGE SHARE 57.7% -> 50.8%. Every other
+# moment is unchanged (hc18 2.79 -> 2.80, assets 19.7 -> 19.1, e_p17 7.49 -> 7.56), so
+# the college margin is the one object that wants the finer child grid -- it is a
+# threshold choice and its location moves with asset/HC resolution.
+const C_NA, C_NK, C_NT = QUICK ? (20, 20,  5) : (30, 30, 5)
 const P_NA, P_NK, P_NHC = QUICK ? (10,  2, 10) : (30,  2, 30)
 const SIMN = QUICK ? 500 : 5000
 

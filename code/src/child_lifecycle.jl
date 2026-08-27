@@ -126,7 +126,17 @@ function ConSavLaborCollege_AR1(;
                 # return to childhood HC raises parental investment: theta now reaches
                 # 6.53 at production grids, past the parent's own hc_max of 6.0. See
                 # docs/WAGE_PROCESS_IMPLEMENTED.md.
-                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=8.0, Nk::Int=30,
+                #
+                # k_max = 10 (was 8.0), MATCHED to the parent's hc_max. These two grids
+                # hold the SAME object -- the child's human capital -- on either side of
+                # the age-18 handoff (parent.sim_hc[:, T+1] -> child.sim_k_init), so a
+                # mismatch silently clips the transfer and, worse, makes HC above the
+                # child's ceiling worth ZERO to the parent's terminal problem, because
+                # the terminal value spline is only defined over k_grid. At the current
+                # sigma_3 = 0.407 the arriving distribution maxes at 4.8, so 10 clips
+                # nobody; the match is what keeps the two blocks consistent under the
+                # counterfactual arms, which push HC well above the baseline.
+                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=10.0, Nk::Int=30,
                 w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0,
                 phi::Float64=18.0, seed::Int=1234, college_cost::Float64=1.2,
                 # --- Wage process ------------------------------------------------
@@ -190,7 +200,10 @@ function ConSavLaborCollege_AR1(;
                 # Shock parameters (AR1 only)
                 p_ar1::Float64=0.95, sigma_p::Float64=0.2, Np::Int=5,
                 # Preference shock parameters
-                Nt=11, sigma_eps=0.5,
+                # Nt = 5 Gauss-Hermite nodes for the taste shock eps (was 11). GH with n
+                # nodes is exact for degree 2n-1, and measured: Nt 10 -> 5 moves the
+                # college share 51.5 -> 52.1 and nothing else at all.
+                Nt=5, sigma_eps=0.5,
                 # --- Terminal value parameters ---
                 psi_terminal::Float64=4.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
                     # --- Bargaining parameter ---
