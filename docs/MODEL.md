@@ -17,8 +17,8 @@ Line numbers are as of 2026-08-02.
 | Parent utility | `U_p = φ₁c^(1-ρ)/(1-ρ) − φ₂h^(1+η)/(1+η) + φ₃ln HC` | `util_parent` — P:704 |
 | Family utility | `U_f = φ₁c^(1-ρ)/(1-ρ) − φ₂h^(1+η)/(1+η) + α̃₁ln l_c + α̃₂ln HC` | `util_total` — P:688 |
 | `α̃₁ = (1−μ̃)λ₁`, `α̃₂ = μ̃φ₃ + (1−μ̃)λ₂` | | inline in `util_total` |
-| Welfare weight | `μ̃_t = 1` (t≤7); `1 − μ₁(t−7)` (t>7) | `mu_vector` in constructor — P:180 |
-| | | ⚠️ code uses `μ_0 + μ_1(t−7)` with `μ_1 = −0.04`, i.e. the opposite sign convention |
+| Welfare weight | `μ̃_t = 1` (t<`T_CHILD_VOICE`); `1 − μ₁(t−(`T_CHILD_VOICE`−1))` otherwise | `mu_vector` in constructor, keyed off `T_CHILD_VOICE = 7` |
+| | | ⚠️ code uses `μ_0 + μ_1(t−5)` with `μ_1 = −0.04`, i.e. the opposite sign convention |
 | Budget constraint | `a' = (1+r)a + y − T(wh) + b − c_p − e_p`, `a' ≥ 0` | `asset_constraint_full` — P:759 (5 controls)<br>`asset_constraint_parentonly` — P:796 (4 controls) |
 | Progressive tax | `T(·)` via HSV/Benabou | `λ(wh)^(1−τ)` inline in the objectives; marginal `λ(1−τ)(wh)^(−τ)w` |
 | Parent time | `h_p + τ_p + l_p = 1` | `constraint_min_leisure_full` — P:835<br>`constraint_min_leisure_parentonly` — P:846 |
@@ -28,15 +28,15 @@ Line numbers are as of 2026-08-02.
 | | `σ_jt` entered as logs: `σ_jt = exp(σ_j0 + σ_j1(t−1))` | `sigma_*_vector` in constructor — P:180 |
 | Wage equation | `ln w = β₀ + β₁BC + β₂Age + β₃Age² + β₄(BC×Age) + β₅(BC×Age²) + z` | `wage_func` — P:747 |
 | | | ⚠️ `Age` ← model period `t`; `2×` multiplier not in the model |
-| AR(1) shock | `z_t = ρz_{t−1} + ε` | `tauchen(Np, p_ar1, sigma_p, 0, 3)` in constructor |
+| AR(1) shock | `z_t = ρz_{t−1} + ε` | `rouwenhorst(Np, p_ar1, sigma_p)` in constructor — exact on sd and persistence at any `Np` |
 | | | ⚠️ `model.txt` says random walk (ρ=1); code uses ρ=0.9, `Np=3` |
 
 ### Value functions
 
 | Stage | Model | Code |
 |---|---|---|
-| Childhood `t ≤ 7` | max over `c_p, e_p, h_p, τ_p` | `solve_model!` loop `7:-1:1` → `obj_work_period_parentonly` — P:642 |
-| Adolescence `7 < t < 17` | max over `c_p, e_p, h_p, τ_p, τ_c` | `solve_model!` loop `(T-1):-1:8` → `obj_work_period_full` — P:594 |
+| Childhood `t ≤ 5` | max over `c_p, e_p, h_p, τ_p` | `solve_model!` loop `(T_CHILD_VOICE-1):-1:1` → `obj_work_period_parentonly` |
+| Adolescence `5 < t < 17` | max over `c_p, e_p, h_p, τ_p, τ_c` | `solve_model!` loop `(T-1):-1:T_CHILD_VOICE` → `obj_work_period_full` |
 | Terminal `t = 17` | `U_f + βE[V^CD_{T_L−1}]` | `solve_model!` terminal block → `obj_last_period_full` — P:537 |
 | | `V^CD` enters as | `model.V_child_interp` (a `Dierckx.Spline2D` built in the notebook) |
 
@@ -85,8 +85,8 @@ correct rule agent-by-agent, so solve and simulate currently disagree.
 | Psychic cost | `κ_X = κ/(HC+1)²` | ⚠️ **C:485 uses `(k+1)^4`** |
 | Budget | `a' = (1+r)a − c − c_college + b` | `obj_college_period_general` — C:389; `asset_constraint_college` — C:436 |
 | HC (homogeneous) | `HC' = HC + h^E` | `k_next = capital + college_boost` |
-| HC (perceived, belief `b_m`) | `H̃C' = H̃C + b_m` | `k_next = k + belief_values[m]` — P:1160 |
-| Graduation correction | `HC' = H̃C + b* + (T_E−1)(b* − b_m)` | `k + college_boost_true + 3*(…)` — P:1160 ✓ `3 = T_E − 1` |
+| Belief about the college return | perceived `β_E^m` in the wage | `child_models[m].beta_E` — P:1620 |
+| Graduation correction | **removed** — no perceived stock to reconcile | the truth arrives as a one-time surprise at entry |
 | Taste shock at entry | `+ ε₀` only at `t = 18` | `(t==1 ? ε : 0.0)` in `obj_college_period_general` ✓ |
 | Bellman | `V^E`, continuation → `V^W` after `t_college` | `solve_model_college!` — C:257 |
 

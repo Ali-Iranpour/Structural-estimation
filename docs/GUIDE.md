@@ -65,10 +65,13 @@ m.V_child_interp = V_child_interp1   # built from the child solve
 solve_model!(m); simulate_model!(m)
 ```
 
-> ⚠️ **Before trusting a run.** The accuracy diagnostics currently understate the
-> problem: `check_simulation` filters out non-finite states before computing off-grid
-> shares (X3), and nothing measures whether the *solver* leaves the grid (C16 — 3.59% of
-> stored asset transitions do). See [`ERRORS.md`](ERRORS.md).
+> ⚠️ **Before trusting a run.** The diagnostics no longer understate the problem —
+> `check_simulation` counts non-finite states, `check_solver_domain` measures the
+> *solution* leaving the grid (which forward simulation cannot see), and
+> `check_feasibility_mask` checks the NaN pattern against both theoretical masks. One
+> caveat remains: **P5**, the continuation interpolation moves optimal labor supply by up
+> to 0.11–0.17 at some states, and refining the grid does not shrink it. See
+> [`ERRORS.md`](ERRORS.md).
 
 ### One reproducible run
 
@@ -134,10 +137,11 @@ write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
   capital; it does not accumulate (`k_next = capital`). It enters only through the wage
   equation. The grid is `Nk = 2`.
 - `HC` — child's cognitive skill
-- `z` — AR(1) wage shock (Tauchen, `Np = 3`). See ERRORS.md Phase 4: Rouwenhorst matches
-  the target moments exactly where Tauchen overstates the sd by 31% — an open decision.
+- `z` — AR(1) wage shock (**Rouwenhorst**, `Np = 7`). Rouwenhorst matches the unconditional
+  sd and the first-order autocorrelation exactly at any `Np`; Tauchen overstated the sd by
+  21% at the parent's parameters and 31% at the child's.
 
-Three regimes: `t = 1..7` parents decide alone (4 controls); `t = 8..16` the child bargains
+Three regimes: `t = 1..5` parents decide alone (4 controls); `t = 6..16` the child bargains
 and study time is added (5 controls); `t = 17` terminal, continuation is the college/transfer
 value `V_child_interp`.
 
@@ -162,17 +166,17 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 |---|---|---|
 | `T` | 17 | periods (child ages 0–17) |
 | `rho`, `eta` | 1.5, 2.0 | CRRA; inverse Frisch |
-| `phi_1_0, phi_2_0, phi_3_0` | 1.0, 20.0, 0.03 | consumption / labor disutility / child HC weights |
+| `phi_1_0, phi_2_0, phi_3_0` | 1.0, **0.8**, 0.03 | consumption / **parental leisure** / child HC weights. `phi_2` weights `l_p^(1-eta)/(1-eta)` with `l_p = 1 - h_p - tau_p`; it was 20.0 when it scaled a Frisch labor disutility (P10) |
 | `lambda_1_0, lambda_2_0` | 0.7, 0.3 | child's leisure / HC weights |
-| `mu_0, mu_1` | 1.0, −0.04 | welfare weight `μ̃_t = 1` for `t ≤ 7`, then `μ_0 + μ_1(t−7)` |
+| `mu_0, mu_1` | 1.0, −0.04 | welfare weight `μ̃_t = 1` for `t ≤ 5`, then `μ_0 + μ_1(t−5)`. The boundary is `T_CHILD_VOICE` in `parent_family.jl` — one constant, six call sites |
 | `tau`, `tax_lambda` | 0.18, 0.82 | progressive tax `λ(wh)^(1−τ)` |
 | `r`, `beta_0` | 0.03, 0.96 | interest rate; discount factor |
 | `R_0, R_1` | 2.0, 0.06 | HC technology TFP, `R_t = R_0 + R_1(t−1)` |
 | `sigma_{1..4}_0/1` | see constructor | elasticities, entered as **logs**: `σ_jt = exp(σ_j0 + σ_j1·(t−1))` |
-| `a_max`, `Na` | 50.0, 30 | asset grid |
+| `a_max`, `Na` | **100.0**, 30 | parent's asset grid. Was 50: simulated assets reached 281.5, with 0.43% of states off-grid; at 100 that is 0.10% |
 | `Nk` | 2 | BothCollege ∈ {0,1} |
 | `hc_max`, `Nhc` | 6.0, 30 | child HC grid |
-| `Np`, `p_ar1`, `sigma_p` | 3, 0.9, 0.1 | AR(1) wage shock |
+| `Np`, `p_ar1`, `sigma_p` | **7**, 0.9, 0.1 | AR(1) wage shock, Rouwenhorst. Was 3 — the binding approximation in the whole model: 3 → 7 moved the college share 17.85% → 22.40% while doubling any *state* grid moved it by ≤ 0.15pp |
 | β wage coefficients | see constructor | from the Stata wage regression |
 
 **Child** — `ConSavLaborCollege_AR1` (in `code/src/child_lifecycle.jl`)
@@ -181,31 +185,46 @@ The child uses `w = w₀(1 + α·HC)·z`. Both are taxed as `λ(w·h)^(1−τ)` 
 |---|---|---|
 | `T`, `t_college` | 51, 4 | horizon (ages 18–68); college years |
 | `c_floor`, `delta_P` | 0.01, 0.01 | consumption floor (= optimizer bound); min retained parental asset |
+| `a_max`, `Na` | 100.0, 30 | **child's** asset grid. 100, not 50: it must cover the parent's terminal assets plus 51 periods of the child's own accumulation |
+| `ap_min`, `ap_max`, `Nap` | `delta_P`, `a_max`, `Na` | **parental** asset grid, separate since N13. Indexes the transfer arrays and the terminal-value spline. Starts at `delta_P` so the parent can always retain its floor; carries an exact node at the college threshold `a_req[1] + delta_P`, so there is no dead band |
 | `rho`, `eta`, `phi` | 1.5, 2.0, 18.0 | CRRA; inverse Frisch; labor disutility scale |
 | `kappa` | 5.0 | psychic cost of college |
 | `college_cost`, `college_boost` | 1.2, 2.0 | annual cost; annual HC increment `b*` |
 | `psi_terminal`, `kappa_terminal`, `omega` | 1.0, 10.0, 0.5 | parent's terminal weights on child HC / own assets / altruism |
 | `mu` | 0.5 | **θ**, parent's weight in the college decision |
-| `Np`, `p_ar1`, `sigma_p` | 5, 0.95, 0.2 | AR(1) wage shock |
+| `Np`, `p_ar1`, `sigma_p` | 5, 0.95, 0.2 | AR(1) wage shock, Rouwenhorst |
 | `Nt`, `sigma_eps` | 11 (10 passed), 0.5 | Gauss-Hermite nodes for the taste shock ε₀ |
 
-Note the notebook overrides several of these at construction (`Na=50, Nk=50, Nt=10, rho=1.5`).
+Note the notebook overrides several of these at construction
+(`Na=50, Nk=50, Nt=10, rho=1.5, a_max=100.0`).
 
 ---
 
 ## Known issues
 
-The full audit is in [`ERRORS.md`](ERRORS.md): **20 open** (7 high, 9 medium, 3 low,
-1 deferred), plus a Resolved log of what has been fixed.
+The full audit is in [`ERRORS.md`](ERRORS.md): **4 open** (1 high, 1 medium, 2 deferred
+by instruction), plus a Resolved log of what has been fixed.
 
-The three that most affect results:
+1. 🟠 **P5** — the continuation interpolation moves policies. Re-solving the same states
+   against an interpolating cubic spline instead of `Gridded(Linear())` moves optimal
+   labor supply by up to 0.11–0.17 of the time endowment, and quadrupling the grid does
+   not shrink it. The Bellman residual is blind to this: it sits at 5.6e-13 on every grid
+   because it re-evaluates the stored policy rather than re-optimizing. This is a decision
+   about the interpolation scheme, not a bug to patch — ERRORS.md lays out the options.
+2. 🟡 **P7b** — the `BothCollege` share is hardcoded at `Bernoulli(0.3)` and still needs
+   an empirical source from the estimation sample.
+3. ⏸️ **C2**, **C8** — deferred out of scope by instruction.
 
-1. 🟠 **X3** — `check_simulation` drops non-finite states before computing off-grid shares,
-   so a 96%-NaN simulation reports "0% outside".
-2. 🟠 **C16** — the work solver has no upper domain constraint; 3.59% of stored asset and
-   5.00% of human-capital transitions leave the solved grid, invisible to the simulation.
-3. 🟠 **M2** — the notebook's 17 child-model constructions all use `a_max = 50`, the grid
-   already measured as inadequate; only `run_all.jl` uses 100.
+Two numerical guards are worth knowing about when reading the parent solver, both added
+after the solve died on NaN iterates:
+
+- `LEISURE_FLOOR = 1e-4`. The child's leisure `1 − τ_p − i_c` is a *nonlinear* constraint,
+  so SLSQP evaluates points that violate it. Below the floor `log` is **linearized**, not
+  flattened: value and slope both match at the floor, so the derivative is bounded by
+  `1/L` instead of cliffing by it. Verified inactive at the optimum — the minimum child
+  leisure over 54,000 solved states is 0.465.
+- Both backward-induction loops floor `t_p` and `h_p` at `1e-4` (the parent-only loop used
+  `1e-6`) and clamp the warm start from `t+1` into the current box.
 
 ---
 
