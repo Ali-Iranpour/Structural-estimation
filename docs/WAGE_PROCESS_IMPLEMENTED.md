@@ -279,3 +279,30 @@ it was already dead: `ERRORS.md` N5 records that `psi_terminal` is deliberately 
 common across belief types, and every model was built with `psi_terminal = 4.0`
 regardless. It also shadowed `m` immediately before `for m in 1:num_bins`. Removed from
 cells 40, 78, 79 and 80; N5 updated to record it.
+
+
+## Two constants that carry no behaviour, and one that carries all the level
+
+Moved here from `child_lifecycle.jl` so the constructor reads; the code keeps a pointer.
+
+**`m_theta = 0.724` is a centring constant only.** The wage carries
+`alpha_theta·(log θ − m_theta)`, so `m_theta` shifts the level and nothing else. It is set
+near `E[log θ]` from the parent block, so `lnw0` reads as the log wage of a child of average
+childhood human capital. Changing it is exactly offset by `lnw0` and has no behavioural
+content.
+
+**`lnw0 = log(w) − 0.4144` is a pure normalisation, not a paper value.** It fixes the units
+of the wage, set so the mean simulated wage matches the previous `w0·(1 + α·HC)`
+specification at the same grids — which keeps assets, consumption and the tax base on their
+existing scale, so the rest of the calibration still applies. If the profile parameters move,
+re-derive it: shift `lnw0` by `log(target mean wage / simulated mean wage)`.
+
+**The psychic-cost levels do NOT transport from Colas; the ratio does.** Colas Table 2 gives
+`kappa_0 + kappa_theta·log θ + kappa_fem·female + kappa_ParEd·ParEdu` with (starred entries
+10,000× the parameter) `kappa_0 = 0.44`, `kappa_theta = −8.3e-4`, `kappa_ParEd = −1.7e-4`.
+The signs and the ratio transport; the levels cannot — their utility is `c^(1−γ)/(1−γ)` at
+`γ = 1.9` with consumption in dollars, ours is `ρ = 1.5` with `c` of order 0.1–5, so a
+`kappa` of 4e-4 is meaningless here. The level is instead set to reproduce the total
+discounted psychic cost of the old `kappa/(HC+1)^4` form over the four college years, across
+the range of `θ` the model actually visits. The ratio `kappa_ParEd / kappa_theta = 0.205` is
+Colas's.
