@@ -92,7 +92,6 @@ mutable struct Parent_child_interaction_age_specific_AR1
     tau::Float64                  # Labor income tax
     r::Float64                    # Interest rate
     y::Float64                    # Unearned income
-    w::Float64                   # Wage rate
     a_max::Float64                # Max asset level
     a_min::Float64                # Min asset level
     Na::Int                       # Asset grid size
@@ -112,7 +111,6 @@ mutable struct Parent_child_interaction_age_specific_AR1
     hc_max::Float64               # Max CHILD human capital
     hc_min::Float64               # Min CHILD human capital
     Nhc::Int                      # Human capital grid size
-    alpha::Float64                # Parameter in wage function
 
     # --- Stochastic Shock Parameters (AR1 only) ---
     Np::Int; p_grid::Vector{Float64}; p_transition::Matrix{Float64}
@@ -150,7 +148,6 @@ mutable struct Parent_child_interaction_age_specific_AR1
     sim_wage::Array{Float64,2}     # Simulated wage         [simN, simT]
     sim_income::Array{Float64,2}   # Simulated income       [simN, simT]
     sim_tr::Array{Float64,2}       # Simulated transfers     [simN, simT]
-    sim_t_asset::Array{Float64, 2}
     sim_p::Array{Int,2}       # Simulated AR1 shocks    [simN, simT]
 
 
@@ -162,9 +159,7 @@ mutable struct Parent_child_interaction_age_specific_AR1
     draws_uniform_p::Matrix{Float64}  # Pre-drawn uniforms for the AR(1) path [simN, simT]
     seed::Int                         # Seed actually used (the kwarg was previously ignored)
 
-    # --- Wage vector (for each period) ---
-    w_vec::Vector{Float64}        # Wage per period         [T]
-    V_child_interp::Any  # Added field for V_child_interp
+    V_child_interp::Any           # child terminal value, set after construction
 
     # --- Regression coefficients (from Stata output) ---
     β0::Float64                # _cons
@@ -224,8 +219,8 @@ const PARENT_DEFAULTS = (
 function Parent_child_interaction_age_specific_AR1(;
         # --- Scalar Defaults for Non-varying Parameters ---
         T::Int=17, rho::Float64=1.5, eta::Float64=2.0,
-        tau::Float64=0.18, r::Float64=0.03, w::Float64=12.5,
-        y::Float64=0.6, alpha::Float64=0.08, tax_lambda::Float64=0.82,
+        tau::Float64=0.18, r::Float64=0.03,
+        y::Float64=0.6, tax_lambda::Float64=0.82,
         # --- grid info ---
         # a_max = 100, not 50. Simulated parental assets reached 281.5 against a grid
         # ending at 50, with 0.43% of states off-grid; at 100 that falls to 0.10% and the
@@ -388,7 +383,6 @@ function Parent_child_interaction_age_specific_AR1(;
     sim_wage = fill(NaN, sim_shape)
     sim_income = fill(NaN, sim_shape)
     sim_tr = fill(NaN, sim_shape)
-    sim_t_asset = fill(NaN, sim_shape)
     sim_p = zeros(Int, sim_shape)
 
     # STATE variables: need simT+1 columns!
@@ -416,8 +410,6 @@ function Parent_child_interaction_age_specific_AR1(;
 
 
 
-    # Wage vector
-    w_vec = fill(w, T)
     
 
     return Parent_child_interaction_age_specific_AR1(
@@ -425,17 +417,16 @@ function Parent_child_interaction_age_specific_AR1(;
     beta_vector, phi_1_vector, phi_2_vector, phi_3_vector, R_vector,
     sigma_1_vector, sigma_2_vector, sigma_3_vector, sigma_4_vector,
     lambda_1_vector, lambda_2_vector, mu_vector,
-    rho, eta, tax_lambda, tau, r, y, w, a_max, a_min, Na,
+    rho, eta, tax_lambda, tau, r, y, a_max, a_min, Na,
     k_max, k_min, Nk,
     hc_max, hc_min, Nhc,
-    alpha,
     Np, p_grid, p_transition, p_ar1, sigma_p,
     a_grid, k_grid, hc_grid,
     sol_c, sol_i, sol_h, sol_t, sol_e, sol_v, sol_tr, sol_t_asset,
     simN, simT,
-    sim_c, sim_h, sim_t, sim_e, sim_a, sim_i, sim_k, sim_hc, sim_wage, sim_income, sim_tr, sim_t_asset, sim_p,
+    sim_c, sim_h, sim_t, sim_e, sim_a, sim_i, sim_k, sim_hc, sim_wage, sim_income, sim_tr, sim_p,
     sim_a_init, sim_k_init, sim_hc_init, sim_p_init, draws_uniform_p, seed,
-    w_vec, nothing, β0, β_bothcollege, β_age, β_age2, β_age2_capital, β_age_capital)
+    nothing, β0, β_bothcollege, β_age, β_age2, β_age2_capital, β_age_capital)
 end
 
 
