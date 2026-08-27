@@ -140,8 +140,10 @@ mutable struct ConSavLaborCollege_AR1
     # replacing w0*(1 + alpha*HC). See docs/WAGE_PROCESS.md.
     lnw0::Float64             # log base wage
     beta_E::Float64           # college intercept shift
-    alpha_theta::Float64      # return to 1 SD of childhood HC, high school
-    alpha_thetaE::Float64     # additional return for graduates
+    # ELASTICITY, not a per-SD return: the wage carries alpha_theta*(log theta - m_theta).
+    # Standardising by sd(log theta) was tried and made parental investment diverge.
+    alpha_theta::Float64      # elasticity of the wage in childhood HC, high school
+    alpha_thetaE::Float64     # additional elasticity for graduates
     gamma1::Float64           # age slope, high school
     gamma1E::Float64          # additional age slope for graduates
     gamma2::Float64           # age curvature, high school

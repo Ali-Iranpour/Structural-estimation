@@ -202,21 +202,26 @@ mutable struct Parent_child_interaction_age_specific_AR1
     # --- Model Parameters ---
     T::Int                        # Number of periods
     beta_vector::Vector{Float64}                 # Discount factor
-    phi_1_vector::Vector{Float64}                # Parent's disutility of labor
-    phi_2_vector::Vector{Float64}                # Parent's utility from human capital
-    phi_3_vector::Vector{Float64}                # Parent's utility from consumption
+    # The three phi labels were ROTATED. Read them off util_total:
+    #   u = phi_1*c^(1-rho)/(1-rho) + phi_2*crra_leisure(1-h_p-t_p, eta)
+    #       + mu*phi_3*log(HC) + (1-mu)*(lambda_1*log(leisure_c) + lambda_2*log(HC))
+    phi_1_vector::Vector{Float64}                # Parent's weight on CONSUMPTION
+    phi_2_vector::Vector{Float64}                # Parent's weight on OWN LEISURE (CRRA, curvature eta)
+    phi_3_vector::Vector{Float64}                # Parent's weight on the CHILD'S HUMAN CAPITAL
     R_vector::Vector{Float64}                    # Human capital technology parameter
     sigma_1_vector::Vector{Float64}              # Elasticity: HC w.r.t. child care time
     sigma_2_vector::Vector{Float64}              # Elasticity: HC w.r.t. investment
     sigma_3_vector::Vector{Float64}              # Elasticity: HC w.r.t. current human capital
     sigma_4_vector::Vector{Float64}              # Elasticity: HC w.r.t. child's own study time
-    lambda_1_vector::Vector{Float64}             # Child's utility of labor
-    lambda_2_vector::Vector{Float64}             # Child's utility from human capital
-    mu_vector::Vector{Float64}                   # Parameter for bargining inside the family
+    lambda_1_vector::Vector{Float64}             # Child's weight on OWN LEISURE, 1 - t_p - i_c
+    lambda_2_vector::Vector{Float64}             # Child's weight on own human capital
+    mu_vector::Vector{Float64}                   # Welfare weight on the parent in the family problem
     rho::Float64                  # risk aversion
     eta::Float64                  # curvature of the parent's leisure CRRA (was: Frisch)
-    tax_lambda::Float64           # Tax progressivity
-    tau::Float64                  # Labor income tax
+    # HSV/Benabou after-tax income is  tax_lambda * (w*h)^(1 - tau).
+    # These two labels were SWAPPED: tau is the progressivity, tax_lambda the level.
+    tax_lambda::Float64           # Tax LEVEL (HSV lambda)
+    tau::Float64                  # Tax PROGRESSIVITY (HSV tau); tau = 0 is a flat tax
     r::Float64                    # Interest rate
     y::Float64                    # Unearned income
     a_max::Float64                # Max asset level
@@ -243,13 +248,13 @@ mutable struct Parent_child_interaction_age_specific_AR1
                                   # technology produces and hands to the child module)
 
     # --- Solution Arrays (for value function iteration) ---
-    sol_c::Array{Float64, 5}       # Parental consumption    [T, Na, Nk, Nhc]
-    sol_i::Array{Float64, 5}       # Child own study time    [T, Na, Nk, Nhc]
-    sol_h::Array{Float64, 5}       # Parental labor supply   [T, Na, Nk, Nhc]
-    sol_t::Array{Float64, 5}       # Child care time         [T, Na, Nk, Nhc]
-    sol_e::Array{Float64, 5}       # Education expenditure   [T, Na, Nk, Nhc]
-    sol_v::Array{Float64, 5}       # Value function          [T, Na, Nk, Nhc]
-    sol_tr::Array{Float64, 5}      # Transfers               [T, Na, Nk, Nhc]
+    sol_c::Array{Float64, 5}       # Parental consumption    [T, Na, Nk, Nhc, Np]
+    sol_i::Array{Float64, 5}       # Child own study time    [T, Na, Nk, Nhc, Np]
+    sol_h::Array{Float64, 5}       # Parental labor supply   [T, Na, Nk, Nhc, Np]
+    sol_t::Array{Float64, 5}       # Child care time         [T, Na, Nk, Nhc, Np]
+    sol_e::Array{Float64, 5}       # Education expenditure   [T, Na, Nk, Nhc, Np]
+    sol_v::Array{Float64, 5}       # Value function          [T, Na, Nk, Nhc, Np]
+    sol_tr::Array{Float64, 5}      # Transfers               [T, Na, Nk, Nhc, Np]
     sol_t_asset::Array{Float64, 5} 
 
     # --- Simulation Storage ---
@@ -259,10 +264,10 @@ mutable struct Parent_child_interaction_age_specific_AR1
     sim_h::Array{Float64,2}       # Simulated labor         [simN, simT]
     sim_t::Array{Float64,2}       # Simulated child care    [simN, simT]
     sim_e::Array{Float64,2}       # Simulated education exp [simN, simT]
-    sim_a::Array{Float64,2}       # Simulated assets        [simN, simT]
+    sim_a::Array{Float64,2}       # Simulated assets        [simN, simT+1]
     sim_i::Array{Float64,2}       # Simulated child study   [simN, simT]
-    sim_k::Array{Float64,2}       # Simulated BothCollege   [simN, simT] (constant in t)
-    sim_hc::Array{Float64,2}      # Simulated human capital [simN, simT]
+    sim_k::Array{Float64,2}       # Simulated BothCollege   [simN, simT+1] (constant in t)
+    sim_hc::Array{Float64,2}      # Simulated human capital [simN, simT+1]
     sim_wage::Array{Float64,2}     # Simulated wage         [simN, simT]
     sim_income::Array{Float64,2}   # Simulated income       [simN, simT]
     sim_tr::Array{Float64,2}       # Simulated transfers     [simN, simT]
