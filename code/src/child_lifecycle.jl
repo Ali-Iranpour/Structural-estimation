@@ -1,6 +1,10 @@
 # -------------------------------
 # Utility: Nonlinear Grid Creator
 # -------------------------------
+
+# ===========================================================================
+# Grid helpers
+# ===========================================================================
 function nonlinspace(start::Float64, stop::Float64, num::Int, curv::Float64)
     lin_vals = range(0, stop=1, length=num)
     curved_vals = lin_vals .^ curv
@@ -14,6 +18,25 @@ function create_focused_grid(a_min::Float64, a_focus::Float64, a_max::Float64, N
     grid_rest = nonlinspace(a_focus, a_max, Na_rest + 1, curv)[2:end]
     return vcat(grid_focus, grid_rest)
 end
+
+# ===========================================================================
+# Constants
+# ===========================================================================
+
+
+const WAGE_SCALING_FACTOR = 0.584
+
+# ================================
+# Progressive tax helpers
+# ================================
+# Model period t = 1 is biological age 18, so age = 17 + t. The age profile is
+# calibrated in biological age (Daruich & Fernandez Table B3), not in model time.
+const AGE_AT_T1 = 18
+@inline model_age(t::Int) = AGE_AT_T1 + t - 1
+
+# ===========================================================================
+# Model: struct and constructor
+# ===========================================================================
 
 # =============================================================================
 # Child lifecycle: college decision, work, AR(1) wage shock, progressive tax.
@@ -332,8 +355,94 @@ function ConSavLaborCollege_AR1(;
     )
 end
 
+# ===========================================================================
+# Primitives: wage, tax, utility
+# ===========================================================================
 
-const WAGE_SCALING_FACTOR = 0.584
+# Pre-tax hourly wage (no taxes here).
+#
+#   ln w = lnw0 + beta_E*E + (alpha_theta + alpha_thetaE*E)*(log theta - m_theta)
+#               + (gamma1 + gamma1E*E)*age + (gamma2 + gamma2E*E)*age^2 + ln z
+#
+# alpha_theta is an ELASTICITY with respect to childhood human capital.
+#
+# `theta` is childhood human capital at 18, FIXED for life -- it no longer
+# accumulates -- and `E` is the college indicator. Replaces w0*(1 + alpha*HC),
+# which welded childhood skill, college and experience into one stock and priced
+# all three with a single alpha. See docs/WAGE_PROCESS.md.
+@inline function wage_func(model::ConSavLaborCollege_AR1, theta::Float64, t::Int,
+                           E::Float64, p_shock::Float64)
+    th  = log(max(theta, 1e-8)) - model.m_theta
+    age = model_age(t)
+    lw  = model.lnw0 +
+          model.beta_E * E +
+          (model.alpha_theta + model.alpha_thetaE * E) * th +
+          (model.gamma1 + model.gamma1E * E) * age +
+          (model.gamma2 + model.gamma2E * E) * age * age
+    return exp(lw) * p_shock * WAGE_SCALING_FACTOR
+end
+
+# After-tax labor income: λ * (w*h)^(1 - τ)
+@inline function after_tax_income(model::ConSavLaborCollege_AR1, w_pre::Float64, h::Float64)
+    return model.tax_lambda * (w_pre * h)^(1.0 - model.tau)
+end
+
+# d/dh of after-tax labor income
+# = λ (1-τ) * w * (w*h)^(-τ)
+@inline function d_after_tax_dh(model::ConSavLaborCollege_AR1, w_pre::Float64, h::Float64)
+    return model.tax_lambda * (1.0 - model.tau) * w_pre * (w_pre * h)^(-model.tau)
+end
+
+# ================================
+# Utilities
+# ================================
+@inline function util_work(model::ConSavLaborCollege_AR1, c, h)
+    if model.rho == 1.0
+        cons_utility = log(c)
+    else
+        cons_utility = (c^(1.0 - model.rho)) / (1.0 - model.rho)
+    end
+    labor_disutility = model.phi * (h^(1.0 + model.eta)) / (1.0 + model.eta)
+    return cons_utility - labor_disutility
+end
+
+@inline function util_college(model::ConSavLaborCollege_AR1, c::Float64, k::Float64)
+    if model.rho == 1.0
+        cons_utility = log(c)
+    else
+        cons_utility = (c^(1.0 - model.rho)) / (1.0 - model.rho)
+    end
+    # kappa_X = kappa_0 + kappa_theta*log(theta), with kappa_theta < 0 so that
+    # ability lowers the cost (Colas 2021, Daruich & Fernandez 2023 both use a log
+    # form and both find a negative gradient). The parental-education term is
+    # additive and constant over the college years, so it is applied once, as a
+    # value offset at the college-vs-work comparison, rather than carried here.
+    psychic_cost = model.kappa_0 + model.kappa_theta * log(max(k, 1e-8))
+    return cons_utility - psychic_cost
+end
+
+"""
+    pared_value_offset(model, bc)
+
+Value offset from the `kappa_ParEd * BothCollege` term in the psychic cost.
+
+The term is additive in utility and constant across the college years -- theta is
+fixed, so nothing about it varies with t -- and it does not interact with
+consumption. It therefore shifts the college value by a closed-form annuity and
+leaves every college policy unchanged, so it can be applied once at the
+college-vs-work comparison instead of being carried as an extra state. This is
+exact, not an approximation.
+"""
+@inline function pared_value_offset(model::ConSavLaborCollege_AR1, bc::Float64)
+    disc = sum(model.beta^s for s in 0:(model.t_college - 1))
+    return -model.kappa_ParEd * bc * disc      # kappa_ParEd < 0 -> raises V_college
+end
+
+# ========== Terminal Value ==========
+@inline function terminal_value(model::ConSavLaborCollege_AR1, k::Float64, a_terminal::Float64)
+    @unpack psi_terminal, kappa_terminal = model
+    return psi_terminal * log(k) + kappa_terminal * log(a_terminal)
+end
 
 # ---------------------------------------------------------------------------
 # Extrapolation convention (C11). One rule, applied everywhere:
@@ -394,47 +503,292 @@ beta_E_from_rce(model::ConSavLaborCollege_AR1, rce::Real) =
 beta_E_from_rce(model::ConSavLaborCollege_AR1, rce::AbstractVector) =
     [beta_E_from_rce(model, r) for r in rce]
 
+# --------------------------
+# Simulation domain guard
+# --------------------------
+"""
+    snap(x, lo, hi; tol = 1e-10)
+
+Clamp ONLY floating-point-sized violations. A state that genuinely leaves `[lo, hi]` is
+returned unchanged so that `check_simulation` can see and report it -- silently clipping an
+economically meaningful out-of-grid state would rewrite the transition law.
+"""
+@inline function snap(x::Float64, lo::Float64, hi::Float64; tol::Float64 = 1e-10)
+    x < lo && x > lo - tol && return lo
+    x > hi && x < hi + tol && return hi
+    return x
+end
+
+# --------------------------
+# Helper for Simulation
+# --------------------------
+# C7: `findfirst` returns `nothing` when the cumulative weights fall a floating-point
+# hair short of the draw. Fall back to the last state rather than propagating `nothing`
+# into an array index.
+function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
+    cdf = cumsum(probs)
+    return something(findfirst(x -> x >= draw, cdf), length(cdf))
+end
+# ==
+
+
+# ========== Stationary Distribution Helper ==========
+function stationary_dist(P)
+    vals, vecs = eigen(P')
+    π = vec(real(vecs[:, argmax(real(vals))]))
+    π .*= sign(π[1])
+    π ./= sum(π)
+    return π
+end
+
+# ===========================================================================
+# Constraints
+# ===========================================================================
+
 # ================================
-# Progressive tax helpers
+# Constraints
 # ================================
-# Model period t = 1 is biological age 18, so age = 17 + t. The age profile is
-# calibrated in biological age (Daruich & Fernandez Table B3), not in model time.
-const AGE_AT_T1 = 18
-@inline model_age(t::Int) = AGE_AT_T1 + t - 1
-
-# Pre-tax hourly wage (no taxes here).
-#
-#   ln w = lnw0 + beta_E*E + (alpha_theta + alpha_thetaE*E)*(log theta - m_theta)
-#               + (gamma1 + gamma1E*E)*age + (gamma2 + gamma2E*E)*age^2 + ln z
-#
-# alpha_theta is an ELASTICITY with respect to childhood human capital.
-#
-# `theta` is childhood human capital at 18, FIXED for life -- it no longer
-# accumulates -- and `E` is the college indicator. Replaces w0*(1 + alpha*HC),
-# which welded childhood skill, college and experience into one stock and priced
-# all three with a single alpha. See docs/WAGE_PROCESS.md.
-@inline function wage_func(model::ConSavLaborCollege_AR1, theta::Float64, t::Int,
-                           E::Float64, p_shock::Float64)
-    th  = log(max(theta, 1e-8)) - model.m_theta
-    age = model_age(t)
-    lw  = model.lnw0 +
-          model.beta_E * E +
-          (model.alpha_theta + model.alpha_thetaE * E) * th +
-          (model.gamma1 + model.gamma1E * E) * age +
-          (model.gamma2 + model.gamma2E * E) * age * age
-    return exp(lw) * p_shock * WAGE_SCALING_FACTOR
+# C16: a' must also stay BELOW a_max, and k' below k_max. Constraining only a' >= a_min
+# let the solver pick transitions off the top of the grid -- measured at 3.59% of stored
+# asset transitions and 5.00% of HC transitions -- where the continuation value is a
+# `Line()` extrapolation. Forward simulation reported 0%, so nothing caught it.
+@inline function asset_constraint_work_upper(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
+    assets::Float64, capital::Float64, t::Int, E::Float64, p_shock::Float64)
+    c, h = x[1], x[2]
+    w_pre = wage_func(model, capital, t, E, p_shock)
+    a_next = (1.0 + model.r) * assets + after_tax_income(model, w_pre, h) - c + model.y
+    g = a_next - model.a_max
+    if length(grad) > 0
+        grad[1] = -1.0
+        grad[2] = d_after_tax_dh(model, w_pre, h)
+    end
+    return g
 end
 
-# After-tax labor income: λ * (w*h)^(1 - τ)
-@inline function after_tax_income(model::ConSavLaborCollege_AR1, w_pre::Float64, h::Float64)
-    return model.tax_lambda * (w_pre * h)^(1.0 - model.tau)
+# There is no k' constraint any more: human capital is fixed at theta, so k' = k
+# can never leave the grid and k_max cannot bind through hours.
+
+@inline function asset_constraint_work(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
+    assets::Float64, capital::Float64, t::Int, E::Float64, p_shock::Float64)
+    c, h = x[1], x[2]
+    w_pre = wage_func(model, capital, t, E, p_shock)
+    y_lab = after_tax_income(model, w_pre, h)
+    a_next = (1.0 + model.r) * assets + y_lab - c + model.y
+    g = model.a_min - a_next
+    if length(grad) > 0
+        grad[1] = 1.0                                   # ∂g/∂c = 1
+        grad[2] = -d_after_tax_dh(model, w_pre, h)      # ∂g/∂h = -∂a_next/∂h
+    end
+    return g
 end
 
-# d/dh of after-tax labor income
-# = λ (1-τ) * w * (w*h)^(-τ)
-@inline function d_after_tax_dh(model::ConSavLaborCollege_AR1, w_pre::Float64, h::Float64)
-    return model.tax_lambda * (1.0 - model.tau) * w_pre * (w_pre * h)^(-model.tau)
+# a_next must be enough to FINISH college, not merely to stay above a_min. `a_req_next`
+# is a_req[t+1] from compute_min_assets. Using a_min here (the old behaviour) let the
+# optimizer choose states from which the remaining college years were infeasible, which
+# is what made the -Inf region reachable.
+@inline function asset_constraint_college(c_vec::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
+    assets::Float64, t::Int, a_req_next::Float64)
+    c = c_vec[1]
+    a_next = (1.0 + model.r) * assets - c - model.college_cost + model.y
+    g = a_req_next - a_next
+    if length(grad) > 0
+        grad[1] = 1.0
+    end
+    return g
 end
+
+# ===========================================================================
+# College feasibility
+# ===========================================================================
+
+# ================================
+# College feasibility
+# ================================
+# Required assets to enter college year t and still be able to FINISH. Recursion,
+# with the same consumption floor the optimizer enforces:
+#
+#     a_req[t_college+1] = a_min          (the work-path minimum on graduation)
+#     a_req[t]           = (a_req[t+1] + c_floor + college_cost - y) / (1 + r)
+#
+# Returned with length t_college+1 so index t+1 is always defined.
+function compute_min_assets(model::ConSavLaborCollege_AR1)
+    @unpack t_college, r, y, college_cost, a_min, c_floor = model
+    a_req = zeros(t_college + 1)
+    a_req[t_college + 1] = a_min
+    for t in t_college:-1:1
+        a_req[t] = (a_req[t + 1] + c_floor + college_cost - y) / (1 + r)
+    end
+    return a_req
+end
+
+"""
+    first_feasible_a(model, a_req, t)
+
+Index of the first asset-grid point from which college year `t` is feasible, or
+`nothing` if none is. College interpolants are built over `first_feasible_a(...):Na`
+only, so infeasible cells never enter an interpolation.
+"""
+function first_feasible_a(model::ConSavLaborCollege_AR1, a_req::Vector{Float64}, t::Int)
+    thr = t <= length(a_req) ? a_req[t] : model.a_min
+    return findfirst(a -> a >= thr, model.a_grid)
+end
+
+"""
+    min_parent_assets_for_college(model)
+
+Smallest parental asset level at which the college branch is feasible: the child must
+receive at least `a_req[1]` while the parent retains `delta_P`. Below this the college
+optimizer is never called and the branch is declared infeasible.
+"""
+min_parent_assets_for_college(model::ConSavLaborCollege_AR1) =
+    compute_min_assets(model)[1] + model.delta_P
+
+"""
+    first_feasible_parent_a(model)
+
+First asset-grid index at which the college transfer branch is feasible. College transfer
+interpolants are built from this index up, so infeasible cells (held as NaN) never enter
+an interpolation.
+"""
+function first_feasible_parent_a(model::ConSavLaborCollege_AR1)
+    thr = min_parent_assets_for_college(model)
+    return findfirst(a -> a >= thr, model.ap_grid)   # N13: parental grid
+end
+
+# ===========================================================================
+# Interpolation
+# ===========================================================================
+
+# ================================
+# Interpolators
+# ================================
+function create_interpolator(model::ConSavLaborCollege_AR1, sol_v::Array, t::Int)
+    return [
+        extrapolate(
+            interpolate((model.a_grid, model.k_grid), sol_v[t, :, :, i_p, 1], Gridded(Linear())),
+            Line()
+        )
+        for i_p in 1:model.Np
+    ]
+end
+
+# Continuation-value interpolator for the college path, restricted to the feasible
+# slice of the asset grid at period `t`. Infeasible cells hold NaN and are excluded.
+function create_interpolator_college(model::ConSavLaborCollege_AR1, sol_v::Array,
+                                     t::Int, a_req::Vector{Float64})
+    i0 = first_feasible_a(model, a_req, t)
+    i0 === nothing && return nothing
+    ag = model.a_grid[i0:end]
+    return [
+        extrapolate(interpolate((ag, model.k_grid), sol_v[t, i0:end, :, i_p, 1],
+                                Gridded(Linear())), Line())
+        for i_p in 1:model.Np
+    ]
+end
+
+# ===========================================================================
+# Objectives
+# ===========================================================================
+
+# ================================
+# Objectives & constraints
+# ================================
+
+# --- Final period objective: work, consume everything (progressive tax) ---
+@inline function obj_last_period(model::ConSavLaborCollege_AR1, h_vec::Vector, assets::Float64,
+    capital::Float64, t::Int, E::Float64, p_shock::Float64, grad::Vector)
+    h     = h_vec[1]
+    w_pre = wage_func(model, capital, t, E, p_shock)
+    c     = assets + after_tax_income(model, w_pre, h) + model.y
+
+    u = util_work(model, c, h)
+    if length(grad) > 0
+        # du/dh = u'(c) * d(after-tax income)/dh  -  phi * h^eta
+        grad[1] = c^(-model.rho) * d_after_tax_dh(model, w_pre, h) - model.phi * h^model.eta
+    end
+    return u
+end
+
+# --- Work period objective (progressive-tax income) ---
+@inline function obj_work_period(model::ConSavLaborCollege_AR1, x::Vector, assets::Float64, capital::Float64,
+    t::Int, E::Float64, p_shock::Float64, i_p::Int, interp, grad::Vector)
+    c, h = x[1], x[2]
+    w_pre  = wage_func(model, capital, t, E, p_shock)
+    y_lab  = after_tax_income(model, w_pre, h)               # λ (w h)^(1-τ)
+    dy_dh  = d_after_tax_dh(model, w_pre, h)                 # λ (1-τ) w (w h)^(-τ)
+
+    a_next = (1.0 + model.r) * assets + y_lab - c + model.y
+    # Human capital no longer accumulates: k' = k = theta, fixed for life. The
+    # dV/dk term that used to enter grad[2] is therefore gone -- it encoded
+    # learning by doing, which this specification removes.
+    k_next = capital
+
+    # Expectation over future persistent shocks
+    V_next = 0.0
+    gradV_c = 0.0
+    gradV_h = 0.0
+    for j_p in 1:model.Np
+        p_trans_prob = model.p_transition[i_p, j_p]
+        if p_trans_prob > 1e-12
+            interp_jp = interp[j_p]
+            Vj = interp_jp(a_next, k_next)
+            gradV = Interpolations.gradient(interp_jp, a_next, k_next)
+            dV_da = gradV[1]
+
+            V_next  += p_trans_prob * Vj
+            gradV_c += p_trans_prob * (-dV_da)                      # ∂a_next/∂c = -1
+            gradV_h += p_trans_prob * (dy_dh * dV_da)               # ∂a_next/∂h = dy_dh, ∂k_next/∂h = 0
+        end
+    end
+
+    util_now = util_work(model, c, h)
+    dutil_dc = c^(-model.rho)
+    dutil_dh = -model.phi * h^model.eta
+
+    V = util_now + model.beta * V_next
+
+    if length(grad) > 0
+        grad[1] = dutil_dc + model.beta * gradV_c
+        grad[2] = dutil_dh + model.beta * gradV_h
+    end
+    return V
+end
+
+# --- College period (unchanged functional form) ---
+@inline function obj_college_period_general(
+    model::ConSavLaborCollege_AR1, c_vec::Vector, assets::Float64, capital::Float64,
+    t::Int, i_p::Int, interp, ε::Float64, grad::Vector
+)
+    c = c_vec[1]
+    a_next = (1 + model.r) * assets - c - model.college_cost + model.y
+    # College no longer adds to the stock; it buys beta_E in the wage instead.
+    k_next = capital
+
+    V_next = 0.0
+    gradV_c = 0.0
+    for j_p in 1:model.Np
+        p_prob = model.p_transition[i_p, j_p]
+        if p_prob > 1e-12
+            interp_jp = interp[j_p]
+            Vj = interp_jp(a_next, k_next)
+            gradV = Interpolations.gradient(interp_jp, a_next, k_next)
+            dV_da = gradV[1]
+            V_next  += p_prob * Vj
+            gradV_c += p_prob * (-dV_da)
+        end
+    end
+
+    V = util_college(model, c, capital) + (t==1 ? ε : 0.0) + model.beta * V_next
+
+    if length(grad) > 0
+        grad[1] = c^(-model.rho) + model.beta * gradV_c
+    end
+    return V
+end
+
+# ===========================================================================
+# Solver: backward induction
+# ===========================================================================
 
 # ================================
 # Solver result validation
@@ -677,284 +1031,280 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
     return a_req
 end
 
-# ================================
-# Objectives & constraints
-# ================================
+# ===========================================================================
+# Transfer stage
+# ===========================================================================
 
-# --- Final period objective: work, consume everything (progressive tax) ---
-@inline function obj_last_period(model::ConSavLaborCollege_AR1, h_vec::Vector, assets::Float64,
-    capital::Float64, t::Int, E::Float64, p_shock::Float64, grad::Vector)
-    h     = h_vec[1]
-    w_pre = wage_func(model, capital, t, E, p_shock)
-    c     = assets + after_tax_income(model, w_pre, h) + model.y
+# ========== Transfer-stage helpers ==========
 
-    u = util_work(model, c, h)
-    if length(grad) > 0
-        # du/dh = u'(c) * d(after-tax income)/dh  -  phi * h^eta
-        grad[1] = c^(-model.rho) * d_after_tax_dh(model, w_pre, h) - model.phi * h^model.eta
-    end
-    return u
-end
+"""
+    maximize_1d(f, lo, hi; n_grid=48, n_refine=3)
 
-# --- Work period objective (progressive-tax income) ---
-@inline function obj_work_period(model::ConSavLaborCollege_AR1, x::Vector, assets::Float64, capital::Float64,
-    t::Int, E::Float64, p_shock::Float64, i_p::Int, interp, grad::Vector)
-    c, h = x[1], x[2]
-    w_pre  = wage_func(model, capital, t, E, p_shock)
-    y_lab  = after_tax_income(model, w_pre, h)               # λ (w h)^(1-τ)
-    dy_dh  = d_after_tax_dh(model, w_pre, h)                 # λ (1-τ) w (w h)^(-τ)
+Bounded, derivative-free maximization of a scalar `f` on `[lo, hi]`: coarse grid sweep,
+then two local refinements around the incumbent.
 
-    a_next = (1.0 + model.r) * assets + y_lab - c + model.y
-    # Human capital no longer accumulates: k' = k = theta, fixed for life. The
-    # dV/dk term that used to enter grad[2] is therefore gone -- it encoded
-    # learning by doing, which this specification removes.
-    k_next = capital
+The transfer problem is one-dimensional and its objective is built from piecewise-linear
+interpolants and a feasibility boundary, so it is C0 but not C1. SLSQP assumes a smooth
+objective and was previously started from different points and tolerances in the two
+branches, which meant the college/work comparison was between two differently-conditioned
+local optima. This is slower per state but branch-symmetric and robust at the boundary.
 
-    # Expectation over future persistent shocks
-    V_next = 0.0
-    gradV_c = 0.0
-    gradV_h = 0.0
-    for j_p in 1:model.Np
-        p_trans_prob = model.p_transition[i_p, j_p]
-        if p_trans_prob > 1e-12
-            interp_jp = interp[j_p]
-            Vj = interp_jp(a_next, k_next)
-            gradV = Interpolations.gradient(interp_jp, a_next, k_next)
-            dV_da = gradV[1]
-
-            V_next  += p_trans_prob * Vj
-            gradV_c += p_trans_prob * (-dV_da)                      # ∂a_next/∂c = -1
-            gradV_h += p_trans_prob * (dy_dh * dV_da)               # ∂a_next/∂h = dy_dh, ∂k_next/∂h = 0
+Non-finite objective values are skipped rather than stored.
+"""
+function maximize_1d(f, lo::Float64, hi::Float64; n_grid::Int=48, n_refine::Int=3)
+    hi <= lo && return (lo, f(lo))
+    best_x, best_f = lo, -Inf
+    a, b = lo, hi
+    for _ in 1:n_refine
+        xs = range(a, b, length=n_grid)
+        for x in xs
+            v = f(x)
+            if isfinite(v) && v > best_f
+                best_f = v; best_x = x
+            end
         end
+        step = (b - a) / (n_grid - 1)
+        a = max(lo, best_x - step)
+        b = min(hi, best_x + step)
+        b <= a && break
     end
-
-    util_now = util_work(model, c, h)
-    dutil_dc = c^(-model.rho)
-    dutil_dh = -model.phi * h^model.eta
-
-    V = util_now + model.beta * V_next
-
-    if length(grad) > 0
-        grad[1] = dutil_dc + model.beta * gradV_c
-        grad[2] = dutil_dh + model.beta * gradV_h
-    end
-    return V
+    return best_x, best_f
 end
 
-# --- College period (unchanged functional form) ---
-@inline function obj_college_period_general(
-    model::ConSavLaborCollege_AR1, c_vec::Vector, assets::Float64, capital::Float64,
-    t::Int, i_p::Int, interp, ε::Float64, grad::Vector
+# ======== Objective: Work Path ==========
+function obj_transfer_work(
+    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
+    grad::Vector, V1_work::Vector, Np::Int, π_p::Vector
 )
-    c = c_vec[1]
-    a_next = (1 + model.r) * assets - c - model.college_cost + model.y
-    # College no longer adds to the stock; it buys beta_E in the wage instead.
-    k_next = capital
+    a_terminal = assets - tr
 
-    V_next = 0.0
-    gradV_c = 0.0
-    for j_p in 1:model.Np
-        p_prob = model.p_transition[i_p, j_p]
-        if p_prob > 1e-12
-            interp_jp = interp[j_p]
-            Vj = interp_jp(a_next, k_next)
-            gradV = Interpolations.gradient(interp_jp, a_next, k_next)
-            dV_da = gradV[1]
-            V_next  += p_prob * Vj
-            gradV_c += p_prob * (-dV_da)
+    if a_terminal <= 0.0
+        if length(grad) > 0
+            grad[1] = 0.0
+        end
+        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
+        # finite sentinel that survived every finiteness check and leaked into the
+        # parent's terminal value as a real number.
+        return NaN
+    end
+
+    V_parent = terminal_value(model, HC, a_terminal)
+    # Expectation over AR1 shock
+    V_child = 0.0
+    dV_child_dtr = 0.0
+    for ip in 1:Np
+        interp = V1_work[ip]
+        Vj = interp(tr, HC)
+        gradV = Interpolations.gradient(interp, tr, HC)
+        dV_child_dtr += π_p[ip] * gradV[1]
+        V_child      += π_p[ip] * Vj
+    end
+
+    coef = (1-model.mu) + model.mu*model.omega
+    f = coef * V_child + model.mu * V_parent
+
+    if length(grad) > 0
+        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
+        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
+    end
+    return f
+end
+
+# ========== Objective: College Path ==========
+function obj_transfer_college(
+    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
+    grad::Vector, V1_college::Vector, it::Int, Np::Int, π_p::Vector
+)
+    a_terminal = assets - tr
+
+    if a_terminal <= 0.0
+        if length(grad) > 0
+            grad[1] = 0.0
+        end
+        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
+        # finite sentinel that survived every finiteness check and leaked into the
+        # parent's terminal value as a real number.
+        return NaN
+    end
+
+    V_parent = terminal_value(model, HC, a_terminal)
+    # Expectation over AR1 shock
+    V_child = 0.0
+    dV_child_dtr = 0.0
+    for ip in 1:Np
+        interp = V1_college[ip][it]
+        Vj = interp(tr, HC)
+        gradV = Interpolations.gradient(interp, tr, HC)
+        dV_child_dtr += π_p[ip] * gradV[1]
+        V_child      += π_p[ip] * Vj
+    end
+
+    coef = (1-model.mu) + model.mu*model.omega
+    f = coef * V_child + model.mu * V_parent
+
+    if length(grad) > 0
+        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
+        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
+    end
+    return f
+end
+
+# ========== Main Solvers ==========
+
+function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
+    # N13: `assets` here is the PARENT's, so the outer loop runs over ap_grid. The child's
+    # a_grid still indexes V1_work, which is evaluated at the transfer tr.
+    @unpack Nap, Nk, a_grid, ap_grid, k_grid, p_transition, Np, delta_P = model
+    π_p = stationary_dist(p_transition)
+
+    V1_work = [extrapolate(interpolate((a_grid, k_grid), model.sol_v_work[1, :, :, ip, 1],
+                                       Gridded(Linear())), Line()) for ip in 1:Np]
+
+    for ia in 1:Nap, ik in 1:Nk
+        assets = ap_grid[ia]
+        HC     = k_grid[ik]
+
+        # Work path admits a zero transfer, so the domain is [0, a - delta_P]. It is
+        # never infeasible: if the parent holds less than delta_P the domain collapses
+        # to {0} and the parent simply transfers nothing.
+        tr_lo, tr_hi = 0.0, max(0.0, assets - delta_P)
+
+        f(tr) = obj_transfer_work(model, tr, assets, HC, Float64[], V1_work, Np, π_p)
+        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)
+
+        model.sol_tr_work[ia, ik, :, :]   .= tr_opt
+        model.sol_tr_v_work[ia, ik, :, :] .= v_opt
+    end
+    return nothing
+end
+
+function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
+    # N13: `assets` is parental, so the loop runs over ap_grid; a_grid indexes V1_college.
+    @unpack Nap, Nk, Nt, a_grid, ap_grid, k_grid, p_transition, Np, delta_P = model
+    π_p   = stationary_dist(p_transition)
+    a_req = compute_min_assets(model)
+
+    # sol_v_college holds NaN where college is infeasible, so build over the feasible
+    # slice only. The transfer lower bound is a_req[1], so the interpolant is never
+    # evaluated below it.
+    i1 = first_feasible_a(model, a_req, 1)
+    i1 === nothing && error("College infeasible at every asset grid point")
+    ag1 = a_grid[i1:end]
+    V1_college = [[extrapolate(interpolate((ag1, k_grid), model.sol_v_college[1, i1:end, :, ip, it],
+                                           Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
+
+    for ia in 1:Nap, ik in 1:Nk, it in 1:Nt
+        assets = ap_grid[ia]
+        HC     = k_grid[ik]
+
+        # College requires the child to start with at least a_req[1] -- enough to finish
+        # all t_college years -- while the parent retains delta_P.
+        tr_lo, tr_hi = a_req[1], assets - delta_P
+        if tr_hi < tr_lo
+            # Economically infeasible. Do NOT call the optimizer, and do NOT write -Inf
+            # into an array that gets interpolated: NaN marks "not computed", and the
+            # discrete choice applies -Inf at the point of comparison instead.
+            model.sol_tr_college[ia, ik, :, it]   .= NaN
+            model.sol_tr_v_college[ia, ik, :, it] .= NaN
+            continue
+        end
+
+        f(tr) = obj_transfer_college(model, tr, assets, HC, Float64[], V1_college, it, Np, π_p)
+        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)   # same grid/tolerances as work
+
+        model.sol_tr_college[ia, ik, :, it]   .= tr_opt
+        model.sol_tr_v_college[ia, ik, :, it] .= v_opt
+    end
+    return nothing
+end
+
+# ===========================================================================
+# Terminal value handed to the parent
+# ===========================================================================
+
+# ========== Parent's terminal value ==========
+
+"""
+    terminal_value_surface(m) -> Matrix (Na x Nk)
+
+The parent's period-`T` continuation value, assembled with the timing frozen in Phase 0.5:
+
+    E_{eps_0} [ max_{d,tr} E_{z_0} [ W_d(tr; eps_0, z_0) ] ]
+
+`eps_0` is observed at the half period and `z_0` is not, so enrolment and the transfer
+condition on `eps_0` but not on realized `z_0`. The nesting is the substance -- this is
+NOT `max_{d,tr} E_{eps_0,z_0}[W_d]`, which would select the transfer before the preference
+shock is seen.
+
+Building blocks already exist:
+  * `sol_tr_v_college[:, :, ip, it]` = max_tr E_{z_0}[W_E | eps_it]   (eps-specific)
+  * `sol_tr_v_work[:, :, ip, 1]`     = max_tr E_{z_0}[W_W]            (no eps)
+`max.` is the max over `d`; the `t_weight` sum is `E_{eps_0}`.
+
+`-Inf` is applied only here, at the discrete comparison, for states where college is
+infeasible -- never stored in an interpolated array.
+"""
+function terminal_value_surface(m::ConSavLaborCollege_AR1; ip::Int = 1)
+    a_col_min = min_parent_assets_for_college(m)
+    out = zeros(m.Nap, m.Nk)          # N13: parental asset dimension
+    for it in 1:m.Nt
+        w = m.t_weight[it]
+        for ik in 1:m.Nk, ia in 1:m.Nap
+            vw = m.sol_tr_v_work[ia, ik, ip, 1]
+            vc = m.ap_grid[ia] >= a_col_min ? m.sol_tr_v_college[ia, ik, ip, it] : -Inf
+            isnan(vc) && (vc = -Inf)          # NaN marks infeasible; -Inf only at the max
+            if !isfinite(vw) && !isfinite(vc)
+                # Neither branch is defined here. At a <= delta_P the parent cannot retain
+                # its floor, a_term -> 0, and kappa_term*log(a_term) diverges: a genuine
+                # singularity of the model, not a numerical artefact. Marked NaN so
+                # terminal_value_spline can drop the row rather than fit through it.
+                out[ia, ik] = NaN
+            else
+                out[ia, ik] += w * max(vc, vw)
+            end
         end
     end
-
-    V = util_college(model, c, capital) + (t==1 ? ε : 0.0) + model.beta * V_next
-
-    if length(grad) > 0
-        grad[1] = c^(-model.rho) + model.beta * gradV_c
-    end
-    return V
-end
-
-# ================================
-# Constraints
-# ================================
-# C16: a' must also stay BELOW a_max, and k' below k_max. Constraining only a' >= a_min
-# let the solver pick transitions off the top of the grid -- measured at 3.59% of stored
-# asset transitions and 5.00% of HC transitions -- where the continuation value is a
-# `Line()` extrapolation. Forward simulation reported 0%, so nothing caught it.
-@inline function asset_constraint_work_upper(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
-    assets::Float64, capital::Float64, t::Int, E::Float64, p_shock::Float64)
-    c, h = x[1], x[2]
-    w_pre = wage_func(model, capital, t, E, p_shock)
-    a_next = (1.0 + model.r) * assets + after_tax_income(model, w_pre, h) - c + model.y
-    g = a_next - model.a_max
-    if length(grad) > 0
-        grad[1] = -1.0
-        grad[2] = d_after_tax_dh(model, w_pre, h)
-    end
-    return g
-end
-
-# There is no k' constraint any more: human capital is fixed at theta, so k' = k
-# can never leave the grid and k_max cannot bind through hours.
-
-@inline function asset_constraint_work(x::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
-    assets::Float64, capital::Float64, t::Int, E::Float64, p_shock::Float64)
-    c, h = x[1], x[2]
-    w_pre = wage_func(model, capital, t, E, p_shock)
-    y_lab = after_tax_income(model, w_pre, h)
-    a_next = (1.0 + model.r) * assets + y_lab - c + model.y
-    g = model.a_min - a_next
-    if length(grad) > 0
-        grad[1] = 1.0                                   # ∂g/∂c = 1
-        grad[2] = -d_after_tax_dh(model, w_pre, h)      # ∂g/∂h = -∂a_next/∂h
-    end
-    return g
-end
-
-# a_next must be enough to FINISH college, not merely to stay above a_min. `a_req_next`
-# is a_req[t+1] from compute_min_assets. Using a_min here (the old behaviour) let the
-# optimizer choose states from which the remaining college years were infeasible, which
-# is what made the -Inf region reachable.
-@inline function asset_constraint_college(c_vec::Vector, grad::Vector, model::ConSavLaborCollege_AR1,
-    assets::Float64, t::Int, a_req_next::Float64)
-    c = c_vec[1]
-    a_next = (1.0 + model.r) * assets - c - model.college_cost + model.y
-    g = a_req_next - a_next
-    if length(grad) > 0
-        grad[1] = 1.0
-    end
-    return g
-end
-
-# ================================
-# Utilities
-# ================================
-@inline function util_work(model::ConSavLaborCollege_AR1, c, h)
-    if model.rho == 1.0
-        cons_utility = log(c)
-    else
-        cons_utility = (c^(1.0 - model.rho)) / (1.0 - model.rho)
-    end
-    labor_disutility = model.phi * (h^(1.0 + model.eta)) / (1.0 + model.eta)
-    return cons_utility - labor_disutility
+    return out
 end
 
 """
-    pared_value_offset(model, bc)
+    terminal_value_spline(m; s = 10.0, ip = 1)
 
-Value offset from the `kappa_ParEd * BothCollege` term in the psychic cost.
+The parent's terminal continuation value as a `Spline2D` over `(a, HC)`, built with the
+Phase-0.5 timing (see `terminal_value_surface`).
 
-The term is additive in utility and constant across the college years -- theta is
-fixed, so nothing about it varies with t -- and it does not interact with
-consumption. It therefore shifts the college value by a closed-form annuity and
-leaves every college policy unchanged, so it can be applied once at the
-college-vs-work comparison instead of being carried as an extra state. This is
-exact, not an approximation.
+The spline is fitted over the **valid** rows of the asset grid only. At parental assets
+at or below `delta_P` the parent cannot retain its floor, `a_term -> 0`, and
+`kappa_term * log(a_term)` diverges: that is a genuine singularity of the model, not a
+numerical artefact, and the grid should not carry it. Those rows are excluded rather than
+filled with a sentinel.
+
+Returns the spline; `valid_rows(m)` gives the indices used.
 """
-@inline function pared_value_offset(model::ConSavLaborCollege_AR1, bc::Float64)
-    disc = sum(model.beta^s for s in 0:(model.t_college - 1))
-    return -model.kappa_ParEd * bc * disc      # kappa_ParEd < 0 -> raises V_college
-end
-
-@inline function util_college(model::ConSavLaborCollege_AR1, c::Float64, k::Float64)
-    if model.rho == 1.0
-        cons_utility = log(c)
-    else
-        cons_utility = (c^(1.0 - model.rho)) / (1.0 - model.rho)
-    end
-    # kappa_X = kappa_0 + kappa_theta*log(theta), with kappa_theta < 0 so that
-    # ability lowers the cost (Colas 2021, Daruich & Fernandez 2023 both use a log
-    # form and both find a negative gradient). The parental-education term is
-    # additive and constant over the college years, so it is applied once, as a
-    # value offset at the college-vs-work comparison, rather than carried here.
-    psychic_cost = model.kappa_0 + model.kappa_theta * log(max(k, 1e-8))
-    return cons_utility - psychic_cost
-end
-
-# ================================
-# Interpolators
-# ================================
-function create_interpolator(model::ConSavLaborCollege_AR1, sol_v::Array, t::Int)
-    return [
-        extrapolate(
-            interpolate((model.a_grid, model.k_grid), sol_v[t, :, :, i_p, 1], Gridded(Linear())),
-            Line()
-        )
-        for i_p in 1:model.Np
-    ]
-end
-
-# ================================
-# College feasibility
-# ================================
-# Required assets to enter college year t and still be able to FINISH. Recursion,
-# with the same consumption floor the optimizer enforces:
-#
-#     a_req[t_college+1] = a_min          (the work-path minimum on graduation)
-#     a_req[t]           = (a_req[t+1] + c_floor + college_cost - y) / (1 + r)
-#
-# Returned with length t_college+1 so index t+1 is always defined.
-function compute_min_assets(model::ConSavLaborCollege_AR1)
-    @unpack t_college, r, y, college_cost, a_min, c_floor = model
-    a_req = zeros(t_college + 1)
-    a_req[t_college + 1] = a_min
-    for t in t_college:-1:1
-        a_req[t] = (a_req[t + 1] + c_floor + college_cost - y) / (1 + r)
-    end
-    return a_req
+function terminal_value_spline(m::ConSavLaborCollege_AR1; s::Float64 = 10.0, ip::Int = 1)
+    V  = terminal_value_surface(m; ip = ip)
+    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
+    ia0 = findfirst(ok)
+    ia0 === nothing && error("Terminal value is non-finite at every parental asset grid point")
+    all(ok[ia0:end]) || error("Terminal value has interior non-finite rows: $(findall(.!ok))")
+    return Spline2D(m.ap_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s)
 end
 
 """
-    first_feasible_a(model, a_req, t)
+    valid_rows(m) -> UnitRange
 
-Index of the first asset-grid point from which college year `t` is feasible, or
-`nothing` if none is. College interpolants are built over `first_feasible_a(...):Na`
-only, so infeasible cells never enter an interpolation.
+Asset-grid rows over which the parent's terminal value is finite (assets above `delta_P`).
 """
-function first_feasible_a(model::ConSavLaborCollege_AR1, a_req::Vector{Float64}, t::Int)
-    thr = t <= length(a_req) ? a_req[t] : model.a_min
-    return findfirst(a -> a >= thr, model.a_grid)
+function valid_rows(m::ConSavLaborCollege_AR1)
+    V  = terminal_value_surface(m)
+    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
+    ia0 = findfirst(ok)
+    return ia0 === nothing ? (1:0) : (ia0:m.Nap)
 end
 
-# Continuation-value interpolator for the college path, restricted to the feasible
-# slice of the asset grid at period `t`. Infeasible cells hold NaN and are excluded.
-function create_interpolator_college(model::ConSavLaborCollege_AR1, sol_v::Array,
-                                     t::Int, a_req::Vector{Float64})
-    i0 = first_feasible_a(model, a_req, t)
-    i0 === nothing && return nothing
-    ag = model.a_grid[i0:end]
-    return [
-        extrapolate(interpolate((ag, model.k_grid), sol_v[t, i0:end, :, i_p, 1],
-                                Gridded(Linear())), Line())
-        for i_p in 1:model.Np
-    ]
-end
-
-# --------------------------
-# Simulation domain guard
-# --------------------------
-"""
-    snap(x, lo, hi; tol = 1e-10)
-
-Clamp ONLY floating-point-sized violations. A state that genuinely leaves `[lo, hi]` is
-returned unchanged so that `check_simulation` can see and report it -- silently clipping an
-economically meaningful out-of-grid state would rewrite the transition law.
-"""
-@inline function snap(x::Float64, lo::Float64, hi::Float64; tol::Float64 = 1e-10)
-    x < lo && x > lo - tol && return lo
-    x > hi && x < hi + tol && return hi
-    return x
-end
-
-# --------------------------
-# Helper for Simulation
-# --------------------------
-# C7: `findfirst` returns `nothing` when the cumulative weights fall a floating-point
-# hair short of the draw. Fall back to the last state rather than propagating `nothing`
-# into an array index.
-function discrete_draw(probs::AbstractVector{Float64}, draw::Float64)
-    cdf = cumsum(probs)
-    return something(findfirst(x -> x >= draw, cdf), length(cdf))
-end
+# ===========================================================================
+# Simulation
+# ===========================================================================
 
 # --------------------------
 # Simulation (AR1 Shock Only + Shock-free Retirement)
@@ -1122,308 +1472,6 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
     println("Number choosing work:    $(simN - num_college)")
 
     return model, path_choice, eps_indices
-end
-
-# ========== Parent's terminal value ==========
-
-"""
-    terminal_value_surface(m) -> Matrix (Na x Nk)
-
-The parent's period-`T` continuation value, assembled with the timing frozen in Phase 0.5:
-
-    E_{eps_0} [ max_{d,tr} E_{z_0} [ W_d(tr; eps_0, z_0) ] ]
-
-`eps_0` is observed at the half period and `z_0` is not, so enrolment and the transfer
-condition on `eps_0` but not on realized `z_0`. The nesting is the substance -- this is
-NOT `max_{d,tr} E_{eps_0,z_0}[W_d]`, which would select the transfer before the preference
-shock is seen.
-
-Building blocks already exist:
-  * `sol_tr_v_college[:, :, ip, it]` = max_tr E_{z_0}[W_E | eps_it]   (eps-specific)
-  * `sol_tr_v_work[:, :, ip, 1]`     = max_tr E_{z_0}[W_W]            (no eps)
-`max.` is the max over `d`; the `t_weight` sum is `E_{eps_0}`.
-
-`-Inf` is applied only here, at the discrete comparison, for states where college is
-infeasible -- never stored in an interpolated array.
-"""
-function terminal_value_surface(m::ConSavLaborCollege_AR1; ip::Int = 1)
-    a_col_min = min_parent_assets_for_college(m)
-    out = zeros(m.Nap, m.Nk)          # N13: parental asset dimension
-    for it in 1:m.Nt
-        w = m.t_weight[it]
-        for ik in 1:m.Nk, ia in 1:m.Nap
-            vw = m.sol_tr_v_work[ia, ik, ip, 1]
-            vc = m.ap_grid[ia] >= a_col_min ? m.sol_tr_v_college[ia, ik, ip, it] : -Inf
-            isnan(vc) && (vc = -Inf)          # NaN marks infeasible; -Inf only at the max
-            if !isfinite(vw) && !isfinite(vc)
-                # Neither branch is defined here. At a <= delta_P the parent cannot retain
-                # its floor, a_term -> 0, and kappa_term*log(a_term) diverges: a genuine
-                # singularity of the model, not a numerical artefact. Marked NaN so
-                # terminal_value_spline can drop the row rather than fit through it.
-                out[ia, ik] = NaN
-            else
-                out[ia, ik] += w * max(vc, vw)
-            end
-        end
-    end
-    return out
-end
-
-"""
-    terminal_value_spline(m; s = 10.0, ip = 1)
-
-The parent's terminal continuation value as a `Spline2D` over `(a, HC)`, built with the
-Phase-0.5 timing (see `terminal_value_surface`).
-
-The spline is fitted over the **valid** rows of the asset grid only. At parental assets
-at or below `delta_P` the parent cannot retain its floor, `a_term -> 0`, and
-`kappa_term * log(a_term)` diverges: that is a genuine singularity of the model, not a
-numerical artefact, and the grid should not carry it. Those rows are excluded rather than
-filled with a sentinel.
-
-Returns the spline; `valid_rows(m)` gives the indices used.
-"""
-function terminal_value_spline(m::ConSavLaborCollege_AR1; s::Float64 = 10.0, ip::Int = 1)
-    V  = terminal_value_surface(m; ip = ip)
-    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
-    ia0 = findfirst(ok)
-    ia0 === nothing && error("Terminal value is non-finite at every parental asset grid point")
-    all(ok[ia0:end]) || error("Terminal value has interior non-finite rows: $(findall(.!ok))")
-    return Spline2D(m.ap_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s)
-end
-
-"""
-    valid_rows(m) -> UnitRange
-
-Asset-grid rows over which the parent's terminal value is finite (assets above `delta_P`).
-"""
-function valid_rows(m::ConSavLaborCollege_AR1)
-    V  = terminal_value_surface(m)
-    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
-    ia0 = findfirst(ok)
-    return ia0 === nothing ? (1:0) : (ia0:m.Nap)
-end
-
-# ========== Transfer-stage helpers ==========
-
-"""
-    maximize_1d(f, lo, hi; n_grid=48, n_refine=3)
-
-Bounded, derivative-free maximization of a scalar `f` on `[lo, hi]`: coarse grid sweep,
-then two local refinements around the incumbent.
-
-The transfer problem is one-dimensional and its objective is built from piecewise-linear
-interpolants and a feasibility boundary, so it is C0 but not C1. SLSQP assumes a smooth
-objective and was previously started from different points and tolerances in the two
-branches, which meant the college/work comparison was between two differently-conditioned
-local optima. This is slower per state but branch-symmetric and robust at the boundary.
-
-Non-finite objective values are skipped rather than stored.
-"""
-function maximize_1d(f, lo::Float64, hi::Float64; n_grid::Int=48, n_refine::Int=3)
-    hi <= lo && return (lo, f(lo))
-    best_x, best_f = lo, -Inf
-    a, b = lo, hi
-    for _ in 1:n_refine
-        xs = range(a, b, length=n_grid)
-        for x in xs
-            v = f(x)
-            if isfinite(v) && v > best_f
-                best_f = v; best_x = x
-            end
-        end
-        step = (b - a) / (n_grid - 1)
-        a = max(lo, best_x - step)
-        b = min(hi, best_x + step)
-        b <= a && break
-    end
-    return best_x, best_f
-end
-
-"""
-    min_parent_assets_for_college(model)
-
-Smallest parental asset level at which the college branch is feasible: the child must
-receive at least `a_req[1]` while the parent retains `delta_P`. Below this the college
-optimizer is never called and the branch is declared infeasible.
-"""
-min_parent_assets_for_college(model::ConSavLaborCollege_AR1) =
-    compute_min_assets(model)[1] + model.delta_P
-
-"""
-    first_feasible_parent_a(model)
-
-First asset-grid index at which the college transfer branch is feasible. College transfer
-interpolants are built from this index up, so infeasible cells (held as NaN) never enter
-an interpolation.
-"""
-function first_feasible_parent_a(model::ConSavLaborCollege_AR1)
-    thr = min_parent_assets_for_college(model)
-    return findfirst(a -> a >= thr, model.ap_grid)   # N13: parental grid
-end
-
-# ========== Main Solvers ==========
-
-function optimal_transfer_work!(model::ConSavLaborCollege_AR1)
-    # N13: `assets` here is the PARENT's, so the outer loop runs over ap_grid. The child's
-    # a_grid still indexes V1_work, which is evaluated at the transfer tr.
-    @unpack Nap, Nk, a_grid, ap_grid, k_grid, p_transition, Np, delta_P = model
-    π_p = stationary_dist(p_transition)
-
-    V1_work = [extrapolate(interpolate((a_grid, k_grid), model.sol_v_work[1, :, :, ip, 1],
-                                       Gridded(Linear())), Line()) for ip in 1:Np]
-
-    for ia in 1:Nap, ik in 1:Nk
-        assets = ap_grid[ia]
-        HC     = k_grid[ik]
-
-        # Work path admits a zero transfer, so the domain is [0, a - delta_P]. It is
-        # never infeasible: if the parent holds less than delta_P the domain collapses
-        # to {0} and the parent simply transfers nothing.
-        tr_lo, tr_hi = 0.0, max(0.0, assets - delta_P)
-
-        f(tr) = obj_transfer_work(model, tr, assets, HC, Float64[], V1_work, Np, π_p)
-        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)
-
-        model.sol_tr_work[ia, ik, :, :]   .= tr_opt
-        model.sol_tr_v_work[ia, ik, :, :] .= v_opt
-    end
-    return nothing
-end
-
-function optimal_transfer_college!(model::ConSavLaborCollege_AR1)
-    # N13: `assets` is parental, so the loop runs over ap_grid; a_grid indexes V1_college.
-    @unpack Nap, Nk, Nt, a_grid, ap_grid, k_grid, p_transition, Np, delta_P = model
-    π_p   = stationary_dist(p_transition)
-    a_req = compute_min_assets(model)
-
-    # sol_v_college holds NaN where college is infeasible, so build over the feasible
-    # slice only. The transfer lower bound is a_req[1], so the interpolant is never
-    # evaluated below it.
-    i1 = first_feasible_a(model, a_req, 1)
-    i1 === nothing && error("College infeasible at every asset grid point")
-    ag1 = a_grid[i1:end]
-    V1_college = [[extrapolate(interpolate((ag1, k_grid), model.sol_v_college[1, i1:end, :, ip, it],
-                                           Gridded(Linear())), Line()) for it in 1:Nt] for ip in 1:Np]
-
-    for ia in 1:Nap, ik in 1:Nk, it in 1:Nt
-        assets = ap_grid[ia]
-        HC     = k_grid[ik]
-
-        # College requires the child to start with at least a_req[1] -- enough to finish
-        # all t_college years -- while the parent retains delta_P.
-        tr_lo, tr_hi = a_req[1], assets - delta_P
-        if tr_hi < tr_lo
-            # Economically infeasible. Do NOT call the optimizer, and do NOT write -Inf
-            # into an array that gets interpolated: NaN marks "not computed", and the
-            # discrete choice applies -Inf at the point of comparison instead.
-            model.sol_tr_college[ia, ik, :, it]   .= NaN
-            model.sol_tr_v_college[ia, ik, :, it] .= NaN
-            continue
-        end
-
-        f(tr) = obj_transfer_college(model, tr, assets, HC, Float64[], V1_college, it, Np, π_p)
-        (tr_opt, v_opt) = maximize_1d(f, tr_lo, tr_hi)   # same grid/tolerances as work
-
-        model.sol_tr_college[ia, ik, :, it]   .= tr_opt
-        model.sol_tr_v_college[ia, ik, :, it] .= v_opt
-    end
-    return nothing
-end
-
-# ======== Objective: Work Path ==========
-function obj_transfer_work(
-    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
-    grad::Vector, V1_work::Vector, Np::Int, π_p::Vector
-)
-    a_terminal = assets - tr
-
-    if a_terminal <= 0.0
-        if length(grad) > 0
-            grad[1] = 0.0
-        end
-        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
-        # finite sentinel that survived every finiteness check and leaked into the
-        # parent's terminal value as a real number.
-        return NaN
-    end
-
-    V_parent = terminal_value(model, HC, a_terminal)
-    # Expectation over AR1 shock
-    V_child = 0.0
-    dV_child_dtr = 0.0
-    for ip in 1:Np
-        interp = V1_work[ip]
-        Vj = interp(tr, HC)
-        gradV = Interpolations.gradient(interp, tr, HC)
-        dV_child_dtr += π_p[ip] * gradV[1]
-        V_child      += π_p[ip] * Vj
-    end
-
-    coef = (1-model.mu) + model.mu*model.omega
-    f = coef * V_child + model.mu * V_parent
-
-    if length(grad) > 0
-        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
-        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
-    end
-    return f
-end
-
-# ========== Objective: College Path ==========
-function obj_transfer_college(
-    model::ConSavLaborCollege_AR1, tr::Float64, assets::Float64, HC::Float64,
-    grad::Vector, V1_college::Vector, it::Int, Np::Int, π_p::Vector
-)
-    a_terminal = assets - tr
-
-    if a_terminal <= 0.0
-        if length(grad) > 0
-            grad[1] = 0.0
-        end
-        # NaN marks infeasible, consistently with the rest of the module. -1e12 was a
-        # finite sentinel that survived every finiteness check and leaked into the
-        # parent's terminal value as a real number.
-        return NaN
-    end
-
-    V_parent = terminal_value(model, HC, a_terminal)
-    # Expectation over AR1 shock
-    V_child = 0.0
-    dV_child_dtr = 0.0
-    for ip in 1:Np
-        interp = V1_college[ip][it]
-        Vj = interp(tr, HC)
-        gradV = Interpolations.gradient(interp, tr, HC)
-        dV_child_dtr += π_p[ip] * gradV[1]
-        V_child      += π_p[ip] * Vj
-    end
-
-    coef = (1-model.mu) + model.mu*model.omega
-    f = coef * V_child + model.mu * V_parent
-
-    if length(grad) > 0
-        dV_parent_dtr = -model.kappa_terminal / (a_terminal)
-        grad[1] = coef * dV_child_dtr + model.mu * dV_parent_dtr
-    end
-    return f
-end
-
-# ========== Terminal Value ==========
-@inline function terminal_value(model::ConSavLaborCollege_AR1, k::Float64, a_terminal::Float64)
-    @unpack psi_terminal, kappa_terminal = model
-    return psi_terminal * log(k) + kappa_terminal * log(a_terminal)
-end
-# ==
-
-
-# ========== Stationary Distribution Helper ==========
-function stationary_dist(P)
-    vals, vecs = eigen(P')
-    π = vec(real(vecs[:, argmax(real(vals))]))
-    π .*= sign(π[1])
-    π ./= sum(π)
-    return π
 end
 
 

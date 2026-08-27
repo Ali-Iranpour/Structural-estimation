@@ -24,6 +24,10 @@
 #   (was notebook cell 12)
 # -----------------------------------------------------------------------------
 
+
+# ===========================================================================
+# Macro and grid helpers
+# ===========================================================================
 macro suppress_output(ex)
     quote
         open("/dev/null", "w") do devnull
@@ -65,6 +69,181 @@ function create_focused_grid(a_min::Float64, a_focus::Float64, a_max::Float64, N
     grid_rest = nonlinspace(a_focus, a_max, Na_rest + 1, curv)[2:end]
     return vcat(grid_focus, grid_rest)
 end
+
+# ===========================================================================
+# Constants
+# ===========================================================================
+
+"""
+    PARENT_DEFAULTS
+
+The calibration, in ONE place. The constructor's keyword defaults read from here, and so
+should anything that needs to know the baseline -- notably the notebook's counterfactual
+arms, which are defined as perturbations AROUND the baseline.
+
+This exists because they drifted. The notebook hardcoded `sigma_3_1_baseline = 0.06` and
+`sigma_3_0_baseline = -2.4`; when the HC block was recalibrated to 0.0 and -0.36 those
+numbers went stale, and the "high" arm ended up setting sigma_3_1 = 0.09 on top of
+sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity above one, so
+HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
+a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
+"""
+const PARENT_DEFAULTS = (
+    phi_1_0 = 1.0,     phi_1_1 = 0.0,
+    phi_2_0 = 0.5,     phi_2_1 = 0.0,
+    phi_3_0 = 1.0,     phi_3_1 = 0.0,
+    R_0     = 1.6,     R_1     = 0.0,
+    # sigma_1_1 = -0.08 (was -0.02). Lowering sigma_3 to 0.407 flipped tau_p from flat
+    # to RISING (0.287 -> 0.457): with less carryover, investment close to 18 matters
+    # relatively more, so parents shift time later. A steeper decline in sigma_1 offsets
+    # it. Measured tau_p at t = 1 / 9 / 17:
+    #     -0.02  0.287  0.208  0.457     rising
+    #     -0.05  0.295  0.173  0.330     rising
+    #     -0.08  0.300  0.143  0.226     DECLINING
+    #     -0.11  0.303  0.117  0.150     declining, but tau_p_17 down at 0.15
+    # The profile is U-shaped either way -- that is structural, late investment sits
+    # closest to the age-18 payoff -- so this targets "declining overall", not monotone.
+    sigma_1_0 = -0.90, sigma_1_1 = -0.08,
+    sigma_2_0 = -1.80, sigma_2_1 =  0.02,
+    # sigma_3_0 = -0.90 gives sigma_3 = exp(-0.90) = 0.407, the ~0.4 self-productivity
+    # asked for; sigma_3_1 = 0 holds it flat in t. Was -0.36 (sigma_3 = 0.698), which
+    # overshot that target AND left no room above: the +-0.4 counterfactual arm reached
+    # exp(-0.36+0.4) = 1.041 >= 1, i.e. explosive, so the arm could not be solved at all.
+    # At -0.90 the same +-0.4 arm spans exp(-0.5) = 0.607 and exp(-1.3) = 0.272, both
+    # comfortably stable, so the persistence counterfactual runs symmetrically.
+    sigma_3_0 = -0.90, sigma_3_1 =  0.0,
+    sigma_4_0 = -4.50, sigma_4_1 =  0.02,
+    lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
+    lambda_2_0 = 1.0,  lambda_2_1 = 0.0,
+    mu_0 = 1.0,        mu_1 = -0.04,
+    tau = 0.18,        y = 0.6,
+)
+
+
+# -----------------------------------------------------------------------------
+# Solver: backward induction, objectives, utilities, constraints
+#   (was notebook cell 15)
+# -----------------------------------------------------------------------------
+
+# === Put near the top of your file ===
+const TOL_CONSTR = 1e-8
+"""
+    T_CHILD_VOICE
+
+First period in which the child is a decision maker. Periods `1 .. T_CHILD_VOICE-1` are
+childhood: the parents choose alone over `(c_p, e_p, h_p, tau_p)` and the child's study
+time is absent from HC production. From `T_CHILD_VOICE` the child bargains, `tau_c` enters
+the choice set, and the welfare weight starts falling from 1.
+
+`T_CHILD_VOICE = 6` means the parent-only periods are `t = 1..5` and the child's own study
+time enters from `t = 6`, which is child age 6 under the model's `t <-> age` indexing
+(`t = 17` is age 17, the last period before separation at 18).
+
+Six things key off this boundary: the two backward-induction loops, `mu_vector`,
+`sigma_4_vector`, and the two simulators' HC-technology branch. They are derived from this
+constant rather than written out, because they were six scattered literals and changing the
+boundary meant finding all of them.
+"""
+#     The human-capital block, recalibrated 2026-08-07
+#
+# `sigma_3_1` was **+0.06**, so self-productivity ROSE with age: 0.09 at t=1 to 0.24 at t=17.
+# The persistence chain from an early investment to T is the product of ~16 such terms --
+# about `0.15^16 = 1e-14` -- so early human capital had no memory at all and there was no
+# reason to front-load. Parental time came out RISING, 0.004 to 0.058, when it should fall.
+#
+# Fixing the sign alone was not enough: the LEVEL had to come up too, and raising it exposed
+# that everything else in the block was scaled to a technology that destroyed skill (HC fell
+# from 0.491 to 0.434 between t=1 and t=2, because every input is far below 1 and Cobb-Douglas
+# maps `R = 2.54` down to 0.855). So the block moved together:
+#
+#     sigma_3_0  -2.40 -> -0.36    self-productivity 0.09 -> 0.70, now FLAT (sigma_3_1 = 0)
+#     sigma_1_0  -1.80 -> -0.90    parental-time elasticity 0.165 -> 0.41
+#     sigma_4_0  -3.50 -> -4.50    child-study elasticity 0.030 -> 0.011
+#     R_0         2.00 ->  1.60    TFP, retuned to keep HC inside hc_grid; R_1 0.06 -> 0
+#     phi_3_0     0.03 ->  1.00    parent's weight on log HC
+#     lambda_2_0  0.30 ->  1.00    child's weight on log HC
+#     phi_2_0     0.80 ->  0.50    leisure weight, to hold labor supply at its target
+#     psi_terminal 1.0 ->  4.00    in the CHILD module -- see below
+#
+# `psi_terminal` had to move with `phi_3`/`lambda_2`. Left at 1.0 while the flow weight went
+# to 1.0, the last period valued skill far less than every earlier one and tau_p collapsed at
+# t = 17 (0.059 against 0.155 once psi rose).
+#
+# Resulting profile, against the 0.40 -> 0.20 target:
+#
+#     t          1      5      9     13     17
+#     tau_p  0.392  0.352  0.310  0.268  0.191
+#     i_c    ~0.14           h_p 0.290 (was 0.285)      HC 1.76 -> 1.95
+#
+# CAVEAT, and it is the honest cost of hitting 0.40: sigma_1 = 0.41 makes the input
+# elasticities sum to 1.29 with sigma_3 = 0.70, i.e. increasing returns. Cunha-Heckman-
+# Schennach-style technologies put self-productivity at 0.85-0.95 and investment elasticities
+# at 0.05-0.20, summing to about 1. At the optimum `sigma_1 * (value share of HC) = tau_p *
+# (price of time)`, so asking the parent to spend 40% of their time on the child REQUIRES
+# either a large sigma_1 or a large skill valuation -- it is a property of the model, not of
+# the solver. If tau_p nearer 0.15 -> 0.08 is acceptable, sigma_1 can sit at ~0.15, squarely
+# in the literature range.
+#
+const T_CHILD_VOICE = 6
+
+"""
+    TIME_FLOOR
+
+Lower bound on the time shares `tau_p`, `tau_c` and `h_p` in every parent optimization.
+
+The Cobb-Douglas production logs give `d(HC_next)/dx = HC_next * sigma_j / x`, unbounded as
+`x -> 0`. At a floor of 1e-4 that reached |grad| = 2e4 while SLSQP was exploring the corner,
+which is enough to wreck the BFGS model and return a NaN iterate -- the same failure mode as
+the leisure cliff, from the production logs rather than the utility ones.
+
+1e-3 is **strictly slack at every solved state**, so it cannot change a solution: over 61,200
+states the stored minima are `tau_p` 0.0152, `i_c` 0.0055, `h_p` 0.1711, and none sits at or
+below 1e-3. It just caps the 1/x factor 10x lower. A floor of 1e-2 would NOT be slack --
+`i_c` is below it at 1.08% of states.
+
+This is a bound on exploration, not economics: `sigma_j * log(x)` makes `x` a good, so
+`df/dx -> +inf` as `x -> 0` and the true optimum is always interior.
+"""
+const TIME_FLOOR = 1e-3
+
+const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
+
+# P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
+# and h_p are all held positive by box bounds, whereas leisure_c = 1 - t_p - i_c is a
+# NONLINEAR constraint, which SLSQP is free to violate at trial points.
+#
+# The old code returned a flat -1e8 there while still computing the gradient from the
+# smooth formula, so objective and gradient described different functions and the line
+# search accepted steps that worsened the objective. Instead the objective is floored and
+# the gradient was floored to match: below LEISURE_FLOOR the objective was constant in
+# leisure, so its derivative was exactly zero.
+#
+# That was consistent but not enough. `d/dl [lambda*log(max(l, L))]` is `lambda/l` above L
+# and 0 below, so the derivative CLIFFS by lambda/L at the floor. At L = 1e-8 that cliff is
+# about 1.3e7, and SLSQP builds a BFGS quadratic model out of it: one step across the cliff
+# and the iterate comes back NaN. Measured directly -- the parent solve died with
+# |grad| = 1.28e7 at leisure_c = 0 (t_p = 0.3135, i_c = 0.6865, which sum to exactly 1).
+#
+# So the log is LINEARIZED below the floor instead of flattened:
+#
+#     l >= L :  log(l)                    d/dl = 1/l
+#     l <  L :  log(L) + (l - L)/L        d/dl = 1/L
+#
+# Value and slope both match at l = L, so the pair is C1 rather than merely continuous, and
+# the derivative is bounded by 1/L everywhere. L is raised to 1e-4, capping the leisure term
+# of the gradient at lambda*1e4. The floor is a numerical guard, not economics: it only
+# applies at trial points that violate the nonlinear leisure constraint, and the optimum
+# keeps leisure far above 1e-4 because lambda*log(l) -> -Inf as l -> 0.
+#
+# P10: the floor is 1e-2, not 1e-4, because the PARENT's leisure now enters as CRRA with
+# curvature `eta`. The bounded derivative below the floor is L^(-eta); at eta = 2 that is
+# 1e8 with L = 1e-4 but 1e4 with L = 1e-2. Verified slack -- see the check in the docstring
+# of `util_total`.
+const LEISURE_FLOOR = 1e-2
+
+# ===========================================================================
+# Model: struct and constructor
+# ===========================================================================
 
 # -------------------------------
 # Dynamic Family Model Definition
@@ -170,51 +349,6 @@ mutable struct Parent_child_interaction_age_specific_AR1
     β_age_capital::Float64     # Age_Edu     (interaction of Age with Both_College)
     
 end
-
-"""
-    PARENT_DEFAULTS
-
-The calibration, in ONE place. The constructor's keyword defaults read from here, and so
-should anything that needs to know the baseline -- notably the notebook's counterfactual
-arms, which are defined as perturbations AROUND the baseline.
-
-This exists because they drifted. The notebook hardcoded `sigma_3_1_baseline = 0.06` and
-`sigma_3_0_baseline = -2.4`; when the HC block was recalibrated to 0.0 and -0.36 those
-numbers went stale, and the "high" arm ended up setting sigma_3_1 = 0.09 on top of
-sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity above one, so
-HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
-a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
-"""
-const PARENT_DEFAULTS = (
-    phi_1_0 = 1.0,     phi_1_1 = 0.0,
-    phi_2_0 = 0.5,     phi_2_1 = 0.0,
-    phi_3_0 = 1.0,     phi_3_1 = 0.0,
-    R_0     = 1.6,     R_1     = 0.0,
-    # sigma_1_1 = -0.08 (was -0.02). Lowering sigma_3 to 0.407 flipped tau_p from flat
-    # to RISING (0.287 -> 0.457): with less carryover, investment close to 18 matters
-    # relatively more, so parents shift time later. A steeper decline in sigma_1 offsets
-    # it. Measured tau_p at t = 1 / 9 / 17:
-    #     -0.02  0.287  0.208  0.457     rising
-    #     -0.05  0.295  0.173  0.330     rising
-    #     -0.08  0.300  0.143  0.226     DECLINING
-    #     -0.11  0.303  0.117  0.150     declining, but tau_p_17 down at 0.15
-    # The profile is U-shaped either way -- that is structural, late investment sits
-    # closest to the age-18 payoff -- so this targets "declining overall", not monotone.
-    sigma_1_0 = -0.90, sigma_1_1 = -0.08,
-    sigma_2_0 = -1.80, sigma_2_1 =  0.02,
-    # sigma_3_0 = -0.90 gives sigma_3 = exp(-0.90) = 0.407, the ~0.4 self-productivity
-    # asked for; sigma_3_1 = 0 holds it flat in t. Was -0.36 (sigma_3 = 0.698), which
-    # overshot that target AND left no room above: the +-0.4 counterfactual arm reached
-    # exp(-0.36+0.4) = 1.041 >= 1, i.e. explosive, so the arm could not be solved at all.
-    # At -0.90 the same +-0.4 arm spans exp(-0.5) = 0.607 and exp(-1.3) = 0.272, both
-    # comfortably stable, so the persistence counterfactual runs symmetrically.
-    sigma_3_0 = -0.90, sigma_3_1 =  0.0,
-    sigma_4_0 = -4.50, sigma_4_1 =  0.02,
-    lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
-    lambda_2_0 = 1.0,  lambda_2_1 = 0.0,
-    mu_0 = 1.0,        mu_1 = -0.04,
-    tau = 0.18,        y = 0.6,
-)
 
 function Parent_child_interaction_age_specific_AR1(;
         # --- Scalar Defaults for Non-varying Parameters ---
@@ -429,127 +563,9 @@ function Parent_child_interaction_age_specific_AR1(;
     nothing, β0, β_bothcollege, β_age, β_age2, β_age2_capital, β_age_capital)
 end
 
-
-# -----------------------------------------------------------------------------
-# Solver: backward induction, objectives, utilities, constraints
-#   (was notebook cell 15)
-# -----------------------------------------------------------------------------
-
-# === Put near the top of your file ===
-const TOL_CONSTR = 1e-8
-"""
-    T_CHILD_VOICE
-
-First period in which the child is a decision maker. Periods `1 .. T_CHILD_VOICE-1` are
-childhood: the parents choose alone over `(c_p, e_p, h_p, tau_p)` and the child's study
-time is absent from HC production. From `T_CHILD_VOICE` the child bargains, `tau_c` enters
-the choice set, and the welfare weight starts falling from 1.
-
-`T_CHILD_VOICE = 6` means the parent-only periods are `t = 1..5` and the child's own study
-time enters from `t = 6`, which is child age 6 under the model's `t <-> age` indexing
-(`t = 17` is age 17, the last period before separation at 18).
-
-Six things key off this boundary: the two backward-induction loops, `mu_vector`,
-`sigma_4_vector`, and the two simulators' HC-technology branch. They are derived from this
-constant rather than written out, because they were six scattered literals and changing the
-boundary meant finding all of them.
-"""
-#     The human-capital block, recalibrated 2026-08-07
-#
-# `sigma_3_1` was **+0.06**, so self-productivity ROSE with age: 0.09 at t=1 to 0.24 at t=17.
-# The persistence chain from an early investment to T is the product of ~16 such terms --
-# about `0.15^16 = 1e-14` -- so early human capital had no memory at all and there was no
-# reason to front-load. Parental time came out RISING, 0.004 to 0.058, when it should fall.
-#
-# Fixing the sign alone was not enough: the LEVEL had to come up too, and raising it exposed
-# that everything else in the block was scaled to a technology that destroyed skill (HC fell
-# from 0.491 to 0.434 between t=1 and t=2, because every input is far below 1 and Cobb-Douglas
-# maps `R = 2.54` down to 0.855). So the block moved together:
-#
-#     sigma_3_0  -2.40 -> -0.36    self-productivity 0.09 -> 0.70, now FLAT (sigma_3_1 = 0)
-#     sigma_1_0  -1.80 -> -0.90    parental-time elasticity 0.165 -> 0.41
-#     sigma_4_0  -3.50 -> -4.50    child-study elasticity 0.030 -> 0.011
-#     R_0         2.00 ->  1.60    TFP, retuned to keep HC inside hc_grid; R_1 0.06 -> 0
-#     phi_3_0     0.03 ->  1.00    parent's weight on log HC
-#     lambda_2_0  0.30 ->  1.00    child's weight on log HC
-#     phi_2_0     0.80 ->  0.50    leisure weight, to hold labor supply at its target
-#     psi_terminal 1.0 ->  4.00    in the CHILD module -- see below
-#
-# `psi_terminal` had to move with `phi_3`/`lambda_2`. Left at 1.0 while the flow weight went
-# to 1.0, the last period valued skill far less than every earlier one and tau_p collapsed at
-# t = 17 (0.059 against 0.155 once psi rose).
-#
-# Resulting profile, against the 0.40 -> 0.20 target:
-#
-#     t          1      5      9     13     17
-#     tau_p  0.392  0.352  0.310  0.268  0.191
-#     i_c    ~0.14           h_p 0.290 (was 0.285)      HC 1.76 -> 1.95
-#
-# CAVEAT, and it is the honest cost of hitting 0.40: sigma_1 = 0.41 makes the input
-# elasticities sum to 1.29 with sigma_3 = 0.70, i.e. increasing returns. Cunha-Heckman-
-# Schennach-style technologies put self-productivity at 0.85-0.95 and investment elasticities
-# at 0.05-0.20, summing to about 1. At the optimum `sigma_1 * (value share of HC) = tau_p *
-# (price of time)`, so asking the parent to spend 40% of their time on the child REQUIRES
-# either a large sigma_1 or a large skill valuation -- it is a property of the model, not of
-# the solver. If tau_p nearer 0.15 -> 0.08 is acceptable, sigma_1 can sit at ~0.15, squarely
-# in the literature range.
-#
-const T_CHILD_VOICE = 6
-
-"""
-    TIME_FLOOR
-
-Lower bound on the time shares `tau_p`, `tau_c` and `h_p` in every parent optimization.
-
-The Cobb-Douglas production logs give `d(HC_next)/dx = HC_next * sigma_j / x`, unbounded as
-`x -> 0`. At a floor of 1e-4 that reached |grad| = 2e4 while SLSQP was exploring the corner,
-which is enough to wreck the BFGS model and return a NaN iterate -- the same failure mode as
-the leisure cliff, from the production logs rather than the utility ones.
-
-1e-3 is **strictly slack at every solved state**, so it cannot change a solution: over 61,200
-states the stored minima are `tau_p` 0.0152, `i_c` 0.0055, `h_p` 0.1711, and none sits at or
-below 1e-3. It just caps the 1/x factor 10x lower. A floor of 1e-2 would NOT be slack --
-`i_c` is below it at 1.08% of states.
-
-This is a bound on exploration, not economics: `sigma_j * log(x)` makes `x` a good, so
-`df/dx -> +inf` as `x -> 0` and the true optimum is always interior.
-"""
-const TIME_FLOOR = 1e-3
-
-const WAGE_SCALING_FACTOR = 0.584 # e.g., Adjustment for hours worked per year
-
-# P4: child leisure is the ONLY quantity SLSQP can drive non-positive -- c, i_c, e_p, t_p
-# and h_p are all held positive by box bounds, whereas leisure_c = 1 - t_p - i_c is a
-# NONLINEAR constraint, which SLSQP is free to violate at trial points.
-#
-# The old code returned a flat -1e8 there while still computing the gradient from the
-# smooth formula, so objective and gradient described different functions and the line
-# search accepted steps that worsened the objective. Instead the objective is floored and
-# the gradient was floored to match: below LEISURE_FLOOR the objective was constant in
-# leisure, so its derivative was exactly zero.
-#
-# That was consistent but not enough. `d/dl [lambda*log(max(l, L))]` is `lambda/l` above L
-# and 0 below, so the derivative CLIFFS by lambda/L at the floor. At L = 1e-8 that cliff is
-# about 1.3e7, and SLSQP builds a BFGS quadratic model out of it: one step across the cliff
-# and the iterate comes back NaN. Measured directly -- the parent solve died with
-# |grad| = 1.28e7 at leisure_c = 0 (t_p = 0.3135, i_c = 0.6865, which sum to exactly 1).
-#
-# So the log is LINEARIZED below the floor instead of flattened:
-#
-#     l >= L :  log(l)                    d/dl = 1/l
-#     l <  L :  log(L) + (l - L)/L        d/dl = 1/L
-#
-# Value and slope both match at l = L, so the pair is C1 rather than merely continuous, and
-# the derivative is bounded by 1/L everywhere. L is raised to 1e-4, capping the leisure term
-# of the gradient at lambda*1e4. The floor is a numerical guard, not economics: it only
-# applies at trial points that violate the nonlinear leisure constraint, and the optimum
-# keeps leisure far above 1e-4 because lambda*log(l) -> -Inf as l -> 0.
-#
-# P10: the floor is 1e-2, not 1e-4, because the PARENT's leisure now enters as CRRA with
-# curvature `eta`. The bounded derivative below the floor is L^(-eta); at eta = 2 that is
-# 1e8 with L = 1e-4 but 1e4 with L = 1e-2. Verified slack -- see the check in the docstring
-# of `util_total`.
-const LEISURE_FLOOR = 1e-2
+# ===========================================================================
+# Primitives: utility, wage, human capital
+# ===========================================================================
 
 """
     crra_leisure(l, nu)   /   d_crra_leisure(l, nu)
@@ -575,6 +591,93 @@ end
 @inline log_leisure(l::Float64)   = crra_leisure(l, 1.0)
 @inline d_log_leisure(l::Float64) = d_crra_leisure(l, 1.0)
 
+# ------------------------------------------------
+# Utility Functions
+# ------------------------------------------------
+
+@inline function util_total(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64,
+                            t_p::Float64, i_c::Float64, HC::Float64, t::Int)
+    leisure_c = 1.0 - t_p - i_c
+    # c and i_c are held positive by box bounds; leisure_c is not (see LEISURE_FLOOR).
+    @assert c > 0.0 && i_c > 0.0 "util_total: box bounds violated (c=$c, i_c=$i_c)"
+    rho = model.rho
+    eta = model.eta
+    u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
+    # P10: the parent's own leisure, restored. It was replaced by a Frisch labor disutility
+    # -phi_2*h^(1+eta)/(1+eta), which has no tau_p in it at all -- so parental time with the
+    # child was free, and util_parent returned the identical value at tau_p = 0.05 and 0.90.
+    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)
+    u_parent = u_cons + u_leisure
+    u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) +
+            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log_leisure(leisure_c) +
+                                        model.lambda_2_vector[t] * log(HC))
+    return u_parent + u_child
+end
+
+@inline function util_parent(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64, t_p::Float64, HC::Float64, t::Int)
+    @assert c > 0.0 "util_parent: box bound violated (c=$c)"
+    rho = model.rho
+    eta = model.eta
+    u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
+    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)   # P10
+    return u_cons + u_leisure + model.phi_3_vector[t] * log(HC)
+end
+
+# ------------------------------------------------
+# Budget constraints
+# ------------------------------------------------
+
+
+@inline function wage_func(model::Parent_child_interaction_age_specific_AR1, capital::Float64, t::Int, p_shock::Float64)
+    log_wage =
+        model.β0 +
+        model.β_bothcollege * capital +
+        model.β_age * t +
+        model.β_age2 * (t^2) +
+        model.β_age2_capital * ((t^2) * capital) +
+        model.β_age_capital * (t * capital)
+
+    return 2 * exp(log_wage) * p_shock * WAGE_SCALING_FACTOR   # <-- use the const
+end
+
+
+
+# ------------------------------------------------
+# Human Capital Functions
+# ------------------------------------------------
+
+@inline function HC_technology_full(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, i_c::Float64, t::Int)
+    # P4: returning -1e8 as a human-capital LEVEL was doubly wrong -- it is not a value,
+    # and it was then multiplied by sigma/t_p inside the gradient. Bounds keep t_p, e_p > 0.
+    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_full: box bounds violated (t_p=$t_p, e_p=$e_p)"
+    return exp(log(model.R_vector[t]) +
+        model.sigma_1_vector[t] * log(t_p) +
+        model.sigma_2_vector[t] * log(e_p) +
+        model.sigma_3_vector[t] * log(HC)  +
+        model.sigma_4_vector[t] * log(i_c))
+end
+
+@inline function HC_technology_parentonly(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, t::Int)
+    # P4: see HC_technology_full.
+    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_parentonly: box bounds violated (t_p=$t_p, e_p=$e_p)"
+    return exp(log(model.R_vector[t]) +
+            model.sigma_1_vector[t] * log(t_p) +
+            model.sigma_2_vector[t] * log(e_p) + 
+            model.sigma_3_vector[t] * log(HC))
+end
+
+"""
+    snap_parent(x, lo, hi; tol = 1e-10)
+
+Clamp only floating-point-sized violations of `[lo, hi]`; leave genuine excursions visible
+so the diagnostics can report them. See `snap` in child_lifecycle.jl.
+"""
+@inline function snap_parent(x::Float64, lo::Float64, hi::Float64; tol::Float64 = 1e-10)
+    x < lo && x > lo - tol && return lo
+    x > hi && x < hi + tol && return hi
+    return x
+end
+
 
 """
     budget_ceiling(model, assets, capital, t, p_shock)
@@ -597,16 +700,546 @@ Same fix, and the same reasoning, as `c_hi` in the child's `solve_model_work!`.
     return max((1.0 + model.r) * assets + model.tax_lambda * w ^ (1 - model.tau) + model.y, 0.02)
 end
 
-"""
-    snap_parent(x, lo, hi; tol = 1e-10)
+# ===========================================================================
+# Constraints
+# ===========================================================================
 
-Clamp only floating-point-sized violations of `[lo, hi]`; leave genuine excursions visible
-so the diagnostics can report them. See `snap` in child_lifecycle.jl.
+@inline function asset_constraint_full(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
+                                    capital::Float64, t::Int, assets::Float64, p_shock::Float64)
+    c_p, i_c, e_p, h_p, t_p = x
+    w = wage_func(model, capital, t, p_shock)
+    labor_pre = w * h_p
+    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
+    if length(grad) > 0
+        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
+        grad[1] = 1.0
+        grad[2] = 0.0
+        grad[3] = 1.0
+        grad[4] = -marginal
+        grad[5] = 0.0
+    end
+    return 1e-6 - a_next
+end
+
+
+@inline function asset_constraint_max(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
+                                    capital::Float64, t::Int, assets::Float64, p_shock::Float64)
+    c_p, i_c, e_p, h_p, t_p = x
+    w = wage_func(model, capital, t, p_shock)
+    labor_pre = w * h_p
+    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
+    if length(grad) > 0
+        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
+        grad[1] = -1.0
+        grad[2] = 0.0
+        grad[3] = -1.0
+        grad[4] = marginal
+        grad[5] = 0.0
+    end
+    return a_next - model.a_max
+end
+
+@inline function asset_constraint_parentonly(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
+                                             capital::Float64, t::Int, assets::Float64, p_shock::Float64)
+    c_p, e_p, h_p, t_p = x
+    w = wage_func(model, capital, t, p_shock)
+    labor_pre = w * h_p
+    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
+    if length(grad) > 0
+        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
+        grad[1] = 1.0
+        grad[2] = 1.0
+        grad[3] = -marginal
+        grad[4] = 0.0
+    end
+    return 1e-6 - a_next
+end
+
+
+@inline function asset_constraint_max_parentonly(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
+                                             capital::Float64, t::Int, assets::Float64, p_shock::Float64)
+    c_p, e_p, h_p, t_p = x
+    w = wage_func(model, capital, t, p_shock)
+    labor_pre = w * h_p
+    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
+    if length(grad) > 0
+        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
+        grad[1] = -1.0
+        grad[2] = -1.0
+        grad[3] = marginal
+        grad[4] = 0.0
+    end
+    return a_next - model.a_max
+end
+
+# ------------------------------------------------
+# Time constraints
+# ------------------------------------------------
+
+@inline function constraint_min_leisure_full(x::Vector, grad::Vector)
+    h_p = x[4]
+    t_p = x[5]
+    if length(grad) > 0
+        grad .= 0.0
+        grad[4] = 1.0
+        grad[5] = 1.0
+    end
+    return (h_p + t_p) - 1.0
+end
+
+@inline function constraint_min_leisure_parentonly(x::Vector, grad::Vector)
+    h_p = x[3]
+    t_p = x[4]
+    if length(grad) > 0
+        grad .= 0.0
+        grad[3] = 1.0
+        grad[4] = 1.0
+    end
+    return (h_p + t_p) - 1.0
+end
+
+@inline function constraint_child_time(x::Vector, grad::Vector = [])
+    i_c = x[2]
+    t_p = x[5]
+    if !isempty(grad)
+        grad .= 0.0
+        grad[2] = 1.0
+        grad[5] = 1.0
+    end
+    return i_c + t_p - 1.0
+end
+
+# ===========================================================================
+# Interpolation and the child value spline
+# ===========================================================================
+
+
+# ------------------------------------------------
+# Interpolation Functions
+# ------------------------------------------------
+
 """
-@inline function snap_parent(x::Float64, lo::Float64, hi::Float64; tol::Float64 = 1e-10)
-    x < lo && x > lo - tol && return lo
-    x > hi && x < hi + tol && return hi
-    return x
+    PchipContinuation
+
+The parent's continuation value: **C1 in `hc` without overshooting**, linear in `a`, and
+linearly blended across the two `k` nodes.
+
+Why `hc` specifically, and why shape-preserving.
+
+`Gridded(Linear())` makes `dV/dhc` a STEP function -- constant inside each cell, jumping at
+every node. `tau_p`'s first-order condition depends on `dV/dHC` directly, since that is the
+only thing paying for parental time, so the optimal `tau_p` inherits the steps and adjacent
+asset nodes whose `HC_next` lands in different cells get discretely different `tau_p`. That
+is the ragged policy plot. Total variation of `tau_p` over the asset grid, everything else
+fixed (TV/range is 1.0 for a monotone policy, so it measures pure wiggle):
+
+    t                 16       15       14       10
+    linear TV     0.0868   0.0490   0.0463   0.0432
+    PCHIP  TV     0.0415   0.0113   0.0024   0.0028
+    linear TV/rng   2.71     3.88     4.35     2.60
+    PCHIP  TV/rng   1.37     1.48     1.46     2.74
+
+Total variation falls by 2x to 19x. Count the direction reversals instead and the numbers
+look unchanged -- but that is the wrong metric here: once the spurious variation is gone the
+policy's whole range is ~1e-3, so what is left reverses at the solver's own `xtol_rel`
+resolution. The amplitude is what moved.
+
+Two other explanations were tested and ruled out first. Tightening the solver (`xtol_rel`
+1e-4 -> 1e-10, `ftol_rel` 1e-13, `maxeval` 40x) changed the counts by at most 1, so it is
+not solver noise. Refining `Nhc` 20 -> 40 -> 80 made it WORSE (5 -> 10 -> 15), which is what
+a cell-boundary artefact does: more cells, more steps.
+
+An interpolating **cubic** also fixes the raggedness, but it overshoots: it pushed `dV/dhc`
+to 13.1 at the low-`hc` edge, and combined with the `HC_next * sigma_1 / tau_p` factor that
+produced gradients around 2e4 and broke the `sigma_3_1 x 1.5` counterfactual with a NaN
+iterate. PCHIP (Fritsch-Carlson monotone cubic Hermite) is C1 like the cubic but its node
+slopes are bounded by the neighbouring secants, so it cannot amplify. It also interpolates
+exactly, so the Bellman consistency residual is preserved, and it is faster than both the
+cubic and the linear version because the solver wastes fewer iterations.
+
+`a` stays linear: consumption's FOC is dominated by `u'(c)`, which is smooth and steep, and
+the consumption policies were never the ragged ones.
+"""
+struct PchipContinuation
+    ag::Vector{Float64}; kg::Vector{Float64}; hg::Vector{Float64}
+    V::Array{Float64,3}          # (Na, Nk, Nhc)
+    D::Array{Float64,3}          # dV/dhc at the nodes, Fritsch-Carlson limited
+end
+
+"""
+    _pchip_slopes(x, y) -> d
+
+Monotone cubic Hermite node slopes (Fritsch-Carlson). Where the data turn, the slope is set
+to zero; elsewhere it is a weighted harmonic mean of the neighbouring secants, which is what
+bounds it by them and rules out overshoot.
+"""
+function _pchip_slopes(x::AbstractVector{Float64}, y::AbstractVector{Float64})
+    n = length(x); d = zeros(n)
+    n == 1 && return d
+    h = diff(x); del = diff(y) ./ h
+    if n == 2
+        d .= del[1]; return d
+    end
+    for i in 2:(n-1)
+        if del[i-1] * del[i] <= 0
+            d[i] = 0.0
+        else
+            w1 = 2h[i] + h[i-1]; w2 = h[i] + 2h[i-1]
+            d[i] = (w1 + w2) / (w1 / del[i-1] + w2 / del[i])
+        end
+    end
+    # one-sided ends, clipped so they cannot exceed the adjacent secant
+    d[1] = ((2h[1] + h[2]) * del[1] - h[1] * del[2]) / (h[1] + h[2])
+    (d[1] * del[1] <= 0) ? (d[1] = 0.0) :
+        ((del[1] * del[2] <= 0 && abs(d[1]) > abs(3del[1])) ? (d[1] = 3del[1]) : nothing)
+    d[n] = ((2h[n-1] + h[n-2]) * del[n-1] - h[n-1] * del[n-2]) / (h[n-1] + h[n-2])
+    (d[n] * del[n-1] <= 0) ? (d[n] = 0.0) :
+        ((del[n-1] * del[n-2] <= 0 && abs(d[n]) > abs(3del[n-1])) ? (d[n] = 3del[n-1]) : nothing)
+    return d
+end
+
+# Hermite value and slope on one hc cell; outside the grid, continue linearly from the
+# boundary node so value and gradient come from the same line.
+@inline function _herm(P::PchipContinuation, ia::Int, ik::Int, hc::Float64)
+    hg = P.hg; n = length(hg)
+    if hc <= hg[1]
+        return (P.V[ia,ik,1] + P.D[ia,ik,1] * (hc - hg[1]), P.D[ia,ik,1])
+    elseif hc >= hg[n]
+        return (P.V[ia,ik,n] + P.D[ia,ik,n] * (hc - hg[n]), P.D[ia,ik,n])
+    end
+    i = clamp(searchsortedlast(hg, hc), 1, n-1)
+    h = hg[i+1] - hg[i]; t = (hc - hg[i]) / h
+    y0, y1 = P.V[ia,ik,i], P.V[ia,ik,i+1]
+    d0, d1 = P.D[ia,ik,i], P.D[ia,ik,i+1]
+    t2 = t*t; t3 = t2*t
+    v  = (2t3 - 3t2 + 1)*y0 + (t3 - 2t2 + t)*h*d0 + (-2t3 + 3t2)*y1 + (t3 - t2)*h*d1
+    dv = ((6t2 - 6t)*y0 + (3t2 - 4t + 1)*h*d0 + (-6t2 + 6t)*y1 + (3t2 - 2t)*h*d1) / h
+    return (v, dv)
+end
+
+@inline function _cell(g::Vector{Float64}, x::Float64)
+    n = length(g)
+    n == 1 && return (1, 1, 0.0)
+    i = clamp(searchsortedlast(g, x), 1, n-1)
+    return (i, i+1, (x - g[i]) / (g[i+1] - g[i]))
+end
+
+function (P::PchipContinuation)(a::Float64, k::Float64, hc::Float64)
+    ia, ja, wa = _cell(P.ag, a); ik, jk, wk = _cell(P.kg, k)
+    v00, _ = _herm(P, ia, ik, hc); v10, _ = _herm(P, ja, ik, hc)
+    v01, _ = _herm(P, ia, jk, hc); v11, _ = _herm(P, ja, jk, hc)
+    return (1-wk)*((1-wa)*v00 + wa*v10) + wk*((1-wa)*v01 + wa*v11)
+end
+
+function Interpolations.gradient(P::PchipContinuation, a::Float64, k::Float64, hc::Float64)
+    ia, ja, wa = _cell(P.ag, a); ik, jk, wk = _cell(P.kg, k)
+    v00, d00 = _herm(P, ia, ik, hc); v10, d10 = _herm(P, ja, ik, hc)
+    v01, d01 = _herm(P, ia, jk, hc); v11, d11 = _herm(P, ja, jk, hc)
+    ha = P.ag[ja] - P.ag[ia]
+    da = ha == 0 ? 0.0 : ((1-wk)*(v10 - v00) + wk*(v11 - v01)) / ha
+    hk = P.kg[jk] - P.kg[ik]
+    dk = hk == 0 ? 0.0 : (((1-wa)*v01 + wa*v11) - ((1-wa)*v00 + wa*v10)) / hk
+    dh = (1-wk)*((1-wa)*d00 + wa*d10) + wk*((1-wa)*d01 + wa*d11)
+    return (da, dk, dh)
+end
+
+function create_interp(model::Parent_child_interaction_age_specific_AR1, sol_v, t)
+    ag, kg, hg = model.a_grid, collect(model.k_grid), model.hc_grid
+    return [begin
+        V = Array{Float64,3}(undef, model.Na, model.Nk, model.Nhc)
+        D = similar(V)
+        @inbounds for ik in 1:model.Nk, ia in 1:model.Na
+            @views V[ia, ik, :] .= sol_v[t, ia, ik, :, i_p]
+            @views D[ia, ik, :] .= _pchip_slopes(hg, V[ia, ik, :])
+        end
+        PchipContinuation(ag, kg, hg, V, D)
+    end for i_p in 1:model.Np]
+end
+# ------------------------------------------------
+# Supporting functions 
+# ------------------------------------------------
+# -----------------------------------------------------------------------------
+# Spline domain, and why the gradient has to be clamped with the value
+# -----------------------------------------------------------------------------
+# Dierckx clamps a Spline2D's VALUE flat outside its data range but keeps reporting the
+# boundary DERIVATIVE. Measured on the child terminal spline at a_next = 10, with the
+# child's k_max = 8:
+#
+#     HC      V         dV/dHC
+#      8.0   -7.164      1.080
+#     10.0   -7.164      1.080     <- value flat, slope still 1.08
+#     15.0   -7.164      1.080
+#
+# So above the ceiling SLSQP is told "another unit of HC is worth 1.08" while the
+# objective does not actually move. The line search can never realize its predicted
+# decrease, and the solve ends as ROUNDOFF_LIMITED. That is what the period-17
+# counterfactual failures were: not a coarse grid (Nhc 30 -> 40 -> 50 changed nothing,
+# 22/25 each time), but an inconsistent (value, gradient) pair at the boundary.
+#
+# Fix: evaluate at the clamped point and zero the derivative component whose clamp
+# binds, so value and gradient agree. Where the spline saturates its marginal value
+# genuinely IS zero.
+"""
+    spline_domain(spl) -> (a_lo, a_hi, k_lo, k_hi)
+
+Data range of a `Dierckx.Spline2D`, recovered from its knot vectors: a degree-`k` knot
+vector repeats its boundary knot `k+1` times, so the range is `t[k+1] .. t[end-k]`
+(verified to reproduce the input range exactly).
+"""
+@inline function spline_domain(spl::Dierckx.Spline2D)
+    (spl.tx[spl.kx + 1], spl.tx[end - spl.kx],
+     spl.ty[spl.ky + 1], spl.ty[end - spl.ky])
+end
+
+"""
+    eval_child_value(V_child_interp, a_next, HC_next, want_grad)
+
+Value and derivatives of the child terminal spline, clamped to its domain in BOTH the
+value and the gradient. Returns `(V, dV_da, dV_dHC)`; the derivatives are zero in any
+direction where the point lies outside the data range.
+"""
+@inline function eval_child_value(V_child_interp::Dierckx.Spline2D, a_next::Float64,
+                                  HC_next::Float64, want_grad::Bool)
+    a_lo, a_hi, k_lo, k_hi = spline_domain(V_child_interp)
+    ac = clamp(a_next, a_lo, a_hi)
+    kc = clamp(HC_next, k_lo, k_hi)
+    V = V_child_interp(ac, kc)
+    want_grad || return (V, 0.0, 0.0)
+    dV_da  = (ac == a_next) ? Dierckx.derivative(V_child_interp, ac, kc, 1, 0) : 0.0
+    dV_dHC = (kc == HC_next) ? Dierckx.derivative(V_child_interp, ac, kc, 0, 1) : 0.0
+    return (V, dV_da, dV_dHC)
+end
+
+# Fallback: the notebook and some diagnostics pass a plain callable rather than a
+# Spline2D. Behaviour there is unchanged.
+@inline function eval_child_value(V_child_interp, a_next::Float64, HC_next::Float64,
+                                  want_grad::Bool)
+    V = V_child_interp(a_next, HC_next)
+    want_grad || return (V, 0.0, 0.0)
+    (V, Dierckx.derivative(V_child_interp, a_next, HC_next, 1, 0),
+        Dierckx.derivative(V_child_interp, a_next, HC_next, 0, 1))
+end
+
+# ===========================================================================
+# Objectives
+# ===========================================================================
+
+function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, c_p, i_c, e_p, h_p, t_p,
+                             assets, HC, capital, t, p_shock::Float64, V_child_interp, grad)
+    # Calculate leisure
+    leisure_p = 1.0 - h_p - t_p
+    leisure_c = 1.0 - t_p - i_c
+
+    # Wage and next period states
+    w = wage_func(model, capital, t, p_shock)
+    labor_pre = w * h_p
+    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
+    HC_next = HC_technology_full(model, t_p, e_p, HC, i_c, t)
+
+    # Objective function
+    util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
+    # Value and gradient come from the SAME clamped point; see eval_child_value.
+    V_next, dV_da, dV_dHC = eval_child_value(V_child_interp, a_next, HC_next, length(grad) > 0)
+    f = util_now + model.beta_vector[t] * V_next
+
+    # Gradient calculations
+    if length(grad) > 0
+
+        # Partial derivatives of utility
+        dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
+        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
+        dutil_de_p = 0.0
+        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
+        dutil_dh_p = dutil_dl_p
+        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c) + dutil_dl_p
+
+        # Partial derivatives of HC_next
+        dHC_next_dt_p = HC_next * model.sigma_1_vector[t] / t_p
+        dHC_next_de_p = HC_next * model.sigma_2_vector[t] / e_p
+        dHC_next_di_c = HC_next * model.sigma_4_vector[t] / i_c
+
+        # Marginal wage for tax
+        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
+
+        # Gradients
+        grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da * (-1)  # ∂f/∂c_p
+        grad[2] = dutil_di_c + model.beta_vector[t] * dV_dHC * dHC_next_di_c  # ∂f/∂i_c
+        grad[3] = dutil_de_p + model.beta_vector[t] * (-dV_da + dV_dHC * dHC_next_de_p)  # ∂f/∂e_p
+        grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da * marginal)  # ∂f/∂h_p
+        grad[5] = dutil_dt_p + model.beta_vector[t] * dV_dHC * dHC_next_dt_p  # ∂f/∂t_p
+
+        # P4: no finite sentinel. Returning -1e12 with a -1e12 gradient produced a value
+        # every downstream finiteness check accepts, laundering a NaN gradient into a
+        # "valid" result. A NaN here means the objective was evaluated where it is not
+        # defined -- a bug to surface, not a state to price.
+        if any(isnan, grad)
+            error("obj_last_period_full non-finite gradient at c_p=$c_p, i_c=$i_c, " *
+                  "e_p=$e_p, h_p=$h_p, t_p=$t_p (grad=$grad)")
+        end
+    end
+
+    # Checked unconditionally: NLopt may request a value without a gradient.
+    if !isfinite(f)
+        error("obj_last_period_full non-finite value at c_p=$c_p, i_c=$i_c, e_p=$e_p, " *
+              "h_p=$h_p, t_p=$t_p (f=$f)")
+    end
+
+    return f
+end
+
+@inline function obj_work_period_full(
+    model::Parent_child_interaction_age_specific_AR1, c_p::Float64, i_c::Float64, e_p::Float64, h_p::Float64, t_p::Float64,
+    assets::Float64, HC::Float64, capital::Float64, t::Int, p_shock::Float64, i_p::Int, interp::Vector, grad::Vector
+)
+    w = wage_func(model, capital, t, p_shock)
+    labor_pre = w * h_p
+    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
+    k_next = capital
+    leisure_p = 1.0 - h_p - t_p
+    leisure_c = 1.0 - t_p - i_c
+    HC_next = HC_technology_full(model, t_p, e_p, HC, i_c, t)
+    util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
+    
+    # Compute expected value and gradients over next shock states
+    V_next = 0.0
+    dV_da_sum = 0.0
+    dV_dk_sum = 0.0
+    dV_dHC_sum = 0.0
+    for j_p in 1:model.Np
+        p_trans_prob = model.p_transition[i_p, j_p]
+        if p_trans_prob > 1e-12
+            interp_jp = interp[j_p]
+            Vj = interp_jp(a_next, k_next, HC_next)
+            ∇V_jp = Interpolations.gradient(interp_jp, a_next, k_next, HC_next)
+            dV_da_jp, dV_dk_jp, dV_dHC_jp = ∇V_jp
+            V_next += p_trans_prob * Vj
+            dV_da_sum += p_trans_prob * dV_da_jp
+            dV_dk_sum += p_trans_prob * dV_dk_jp
+            dV_dHC_sum += p_trans_prob * dV_dHC_jp
+        end
+    end
+    f = util_now + model.beta_vector[t] * V_next
+
+    if length(grad) > 0
+        dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
+        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
+        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
+        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
+        grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da_sum * (-1)
+        grad[2] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_4_vector[t] / i_c)
+        grad[3] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
+        # P1: no dV_dk_sum. `k` is the fixed BothCollege indicator (k_next = capital), so
+        # d k_next / d h_p = 0. The term was a leftover from when k was parental human
+        # capital accumulating by learning-by-doing; it told the optimizer that working
+        # more makes you college-educated.
+        grad[4] = dutil_dl_p + model.beta_vector[t] * (dV_da_sum * marginal)
+        grad[5] = term_leisure_c + dutil_dl_p +
+                  model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
+    end
+    return f
+end
+
+@inline function obj_work_period_parentonly(
+    model::Parent_child_interaction_age_specific_AR1, c_p::Float64, e_p::Float64, h_p::Float64, t_p::Float64,
+    assets::Float64, HC::Float64, capital::Float64, t::Int, p_shock::Float64, i_p::Int, interp::Vector, grad::Vector
+)
+    w = wage_func(model, capital, t, p_shock)
+    labor_pre = w * h_p
+    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
+    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
+    k_next = capital
+    HC_next = HC_technology_parentonly(model, t_p, e_p, HC, t)
+    leisure = 1.0 - h_p - t_p
+    util_now = util_parent(model, c_p, h_p, t_p, HC, t)
+    
+    # Compute expected value and gradients over next shock states
+    V_next = 0.0
+    dV_da_sum = 0.0
+    dV_dk_sum = 0.0
+    dV_dHC_sum = 0.0
+    for j_p in 1:model.Np
+        p_trans_prob = model.p_transition[i_p, j_p]
+        if p_trans_prob > 1e-12
+            interp_jp = interp[j_p]
+            Vj = interp_jp(a_next, k_next, HC_next)
+            ∇V_jp = Interpolations.gradient(interp_jp, a_next, k_next, HC_next)
+            dV_da_jp, dV_dk_jp, dV_dHC_jp = ∇V_jp
+            V_next += p_trans_prob * Vj
+            dV_da_sum += p_trans_prob * dV_da_jp
+            dV_dk_sum += p_trans_prob * dV_dk_jp
+            dV_dHC_sum += p_trans_prob * dV_dHC_jp
+        end
+    end
+
+    if length(grad) > 0
+        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
+        grad[1] = model.phi_1_vector[t] * (c_p ^ (-model.rho)) - model.beta_vector[t] * dV_da_sum
+        grad[2] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
+        # P1: no dV_dk_sum -- see obj_work_period_full.
+        dutil_dl_p = -model.phi_2_vector[t] * d_crra_leisure(leisure, model.eta)   # P10
+        grad[3] = dutil_dl_p + model.beta_vector[t] * (marginal * dV_da_sum)
+        grad[4] = dutil_dl_p + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
+    end
+    return util_now + model.beta_vector[t] * V_next
+end
+
+# ===========================================================================
+# Solver: backward induction
+# ===========================================================================
+
+# ------------------------------------------------
+# Debug Functions
+# ------------------------------------------------
+
+function result_type_name(ret)
+    if ret == :FTOL_REACHED || ret == :XTOL_REACHED
+        return "converged"
+    elseif ret == :MAXEVAL_REACHED
+        return "maxeval"
+    else
+        return "other"
+    end
+end
+
+"""
+    record_period!(...)
+
+Build the per-period diagnostic record, print it when `verbose`, and throw if the
+converged share is below `min_converged`.
+"""
+function record_period!(t, converge_count, maxeval_count, other_dict, itercounts, total,
+                        min_converged::Float64, verbose::Bool)
+    share = total == 0 ? 1.0 : converge_count / total
+    rec = (period = t, total = total, converged = converge_count,
+           converged_share = share, maxeval = maxeval_count,
+           other = sum(values(other_dict); init = 0),
+           other_codes = copy(other_dict),
+           mean_iters = isempty(itercounts) ? 0.0 : mean(itercounts))
+    verbose && print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+    if share < min_converged
+        error("Period $t: only $(round(100*share, digits=1))% of $(total) grid points " *
+              "converged (floor $(round(100*min_converged, digits=1))%). " *
+              "maxeval=$maxeval_count, other=$(rec.other) $(other_dict). " *
+              "Refusing to return a solution built on failed optimizations.")
+    end
+    return rec
+end
+
+function print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
+    avg_iter = round(mean(itercounts), digits=2)
+    println("Period $t: Converged: $(round(converge_count/total*100, digits=1))%, Maxeval: $(round(maxeval_count/total*100, digits=1))%, Other: $(round(sum(values(other_dict))/total*100, digits=1))%, Avg iters: $avg_iter")
+    if sum(values(other_dict)) > 0
+        println("    Other status codes:")
+        for (code, count) in other_dict
+            println("        $code : $count times ($(round(count/total*100, digits=1))%)")
+        end
+    end
 end
 
 # --------------------------
@@ -875,607 +1508,10 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
 
     return diagnostics
 end
-# ------------------------------------------------
-# Supporting functions 
-# ------------------------------------------------
-# -----------------------------------------------------------------------------
-# Spline domain, and why the gradient has to be clamped with the value
-# -----------------------------------------------------------------------------
-# Dierckx clamps a Spline2D's VALUE flat outside its data range but keeps reporting the
-# boundary DERIVATIVE. Measured on the child terminal spline at a_next = 10, with the
-# child's k_max = 8:
-#
-#     HC      V         dV/dHC
-#      8.0   -7.164      1.080
-#     10.0   -7.164      1.080     <- value flat, slope still 1.08
-#     15.0   -7.164      1.080
-#
-# So above the ceiling SLSQP is told "another unit of HC is worth 1.08" while the
-# objective does not actually move. The line search can never realize its predicted
-# decrease, and the solve ends as ROUNDOFF_LIMITED. That is what the period-17
-# counterfactual failures were: not a coarse grid (Nhc 30 -> 40 -> 50 changed nothing,
-# 22/25 each time), but an inconsistent (value, gradient) pair at the boundary.
-#
-# Fix: evaluate at the clamped point and zero the derivative component whose clamp
-# binds, so value and gradient agree. Where the spline saturates its marginal value
-# genuinely IS zero.
-"""
-    spline_domain(spl) -> (a_lo, a_hi, k_lo, k_hi)
 
-Data range of a `Dierckx.Spline2D`, recovered from its knot vectors: a degree-`k` knot
-vector repeats its boundary knot `k+1` times, so the range is `t[k+1] .. t[end-k]`
-(verified to reproduce the input range exactly).
-"""
-@inline function spline_domain(spl::Dierckx.Spline2D)
-    (spl.tx[spl.kx + 1], spl.tx[end - spl.kx],
-     spl.ty[spl.ky + 1], spl.ty[end - spl.ky])
-end
-
-"""
-    eval_child_value(V_child_interp, a_next, HC_next, want_grad)
-
-Value and derivatives of the child terminal spline, clamped to its domain in BOTH the
-value and the gradient. Returns `(V, dV_da, dV_dHC)`; the derivatives are zero in any
-direction where the point lies outside the data range.
-"""
-@inline function eval_child_value(V_child_interp::Dierckx.Spline2D, a_next::Float64,
-                                  HC_next::Float64, want_grad::Bool)
-    a_lo, a_hi, k_lo, k_hi = spline_domain(V_child_interp)
-    ac = clamp(a_next, a_lo, a_hi)
-    kc = clamp(HC_next, k_lo, k_hi)
-    V = V_child_interp(ac, kc)
-    want_grad || return (V, 0.0, 0.0)
-    dV_da  = (ac == a_next) ? Dierckx.derivative(V_child_interp, ac, kc, 1, 0) : 0.0
-    dV_dHC = (kc == HC_next) ? Dierckx.derivative(V_child_interp, ac, kc, 0, 1) : 0.0
-    return (V, dV_da, dV_dHC)
-end
-
-# Fallback: the notebook and some diagnostics pass a plain callable rather than a
-# Spline2D. Behaviour there is unchanged.
-@inline function eval_child_value(V_child_interp, a_next::Float64, HC_next::Float64,
-                                  want_grad::Bool)
-    V = V_child_interp(a_next, HC_next)
-    want_grad || return (V, 0.0, 0.0)
-    (V, Dierckx.derivative(V_child_interp, a_next, HC_next, 1, 0),
-        Dierckx.derivative(V_child_interp, a_next, HC_next, 0, 1))
-end
-
-function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, c_p, i_c, e_p, h_p, t_p,
-                             assets, HC, capital, t, p_shock::Float64, V_child_interp, grad)
-    # Calculate leisure
-    leisure_p = 1.0 - h_p - t_p
-    leisure_c = 1.0 - t_p - i_c
-
-    # Wage and next period states
-    w = wage_func(model, capital, t, p_shock)
-    labor_pre = w * h_p
-    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
-    HC_next = HC_technology_full(model, t_p, e_p, HC, i_c, t)
-
-    # Objective function
-    util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
-    # Value and gradient come from the SAME clamped point; see eval_child_value.
-    V_next, dV_da, dV_dHC = eval_child_value(V_child_interp, a_next, HC_next, length(grad) > 0)
-    f = util_now + model.beta_vector[t] * V_next
-
-    # Gradient calculations
-    if length(grad) > 0
-
-        # Partial derivatives of utility
-        dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
-        dutil_de_p = 0.0
-        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
-        dutil_dh_p = dutil_dl_p
-        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c) + dutil_dl_p
-
-        # Partial derivatives of HC_next
-        dHC_next_dt_p = HC_next * model.sigma_1_vector[t] / t_p
-        dHC_next_de_p = HC_next * model.sigma_2_vector[t] / e_p
-        dHC_next_di_c = HC_next * model.sigma_4_vector[t] / i_c
-
-        # Marginal wage for tax
-        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-
-        # Gradients
-        grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da * (-1)  # ∂f/∂c_p
-        grad[2] = dutil_di_c + model.beta_vector[t] * dV_dHC * dHC_next_di_c  # ∂f/∂i_c
-        grad[3] = dutil_de_p + model.beta_vector[t] * (-dV_da + dV_dHC * dHC_next_de_p)  # ∂f/∂e_p
-        grad[4] = dutil_dh_p + model.beta_vector[t] * (dV_da * marginal)  # ∂f/∂h_p
-        grad[5] = dutil_dt_p + model.beta_vector[t] * dV_dHC * dHC_next_dt_p  # ∂f/∂t_p
-
-        # P4: no finite sentinel. Returning -1e12 with a -1e12 gradient produced a value
-        # every downstream finiteness check accepts, laundering a NaN gradient into a
-        # "valid" result. A NaN here means the objective was evaluated where it is not
-        # defined -- a bug to surface, not a state to price.
-        if any(isnan, grad)
-            error("obj_last_period_full non-finite gradient at c_p=$c_p, i_c=$i_c, " *
-                  "e_p=$e_p, h_p=$h_p, t_p=$t_p (grad=$grad)")
-        end
-    end
-
-    # Checked unconditionally: NLopt may request a value without a gradient.
-    if !isfinite(f)
-        error("obj_last_period_full non-finite value at c_p=$c_p, i_c=$i_c, e_p=$e_p, " *
-              "h_p=$h_p, t_p=$t_p (f=$f)")
-    end
-
-    return f
-end
-
-@inline function obj_work_period_full(
-    model::Parent_child_interaction_age_specific_AR1, c_p::Float64, i_c::Float64, e_p::Float64, h_p::Float64, t_p::Float64,
-    assets::Float64, HC::Float64, capital::Float64, t::Int, p_shock::Float64, i_p::Int, interp::Vector, grad::Vector
-)
-    w = wage_func(model, capital, t, p_shock)
-    labor_pre = w * h_p
-    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
-    k_next = capital
-    leisure_p = 1.0 - h_p - t_p
-    leisure_c = 1.0 - t_p - i_c
-    HC_next = HC_technology_full(model, t_p, e_p, HC, i_c, t)
-    util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
-    
-    # Compute expected value and gradients over next shock states
-    V_next = 0.0
-    dV_da_sum = 0.0
-    dV_dk_sum = 0.0
-    dV_dHC_sum = 0.0
-    for j_p in 1:model.Np
-        p_trans_prob = model.p_transition[i_p, j_p]
-        if p_trans_prob > 1e-12
-            interp_jp = interp[j_p]
-            Vj = interp_jp(a_next, k_next, HC_next)
-            ∇V_jp = Interpolations.gradient(interp_jp, a_next, k_next, HC_next)
-            dV_da_jp, dV_dk_jp, dV_dHC_jp = ∇V_jp
-            V_next += p_trans_prob * Vj
-            dV_da_sum += p_trans_prob * dV_da_jp
-            dV_dk_sum += p_trans_prob * dV_dk_jp
-            dV_dHC_sum += p_trans_prob * dV_dHC_jp
-        end
-    end
-    f = util_now + model.beta_vector[t] * V_next
-
-    if length(grad) > 0
-        dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
-        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
-        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-        grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da_sum * (-1)
-        grad[2] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_4_vector[t] / i_c)
-        grad[3] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
-        # P1: no dV_dk_sum. `k` is the fixed BothCollege indicator (k_next = capital), so
-        # d k_next / d h_p = 0. The term was a leftover from when k was parental human
-        # capital accumulating by learning-by-doing; it told the optimizer that working
-        # more makes you college-educated.
-        grad[4] = dutil_dl_p + model.beta_vector[t] * (dV_da_sum * marginal)
-        grad[5] = term_leisure_c + dutil_dl_p +
-                  model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
-    end
-    return f
-end
-
-@inline function obj_work_period_parentonly(
-    model::Parent_child_interaction_age_specific_AR1, c_p::Float64, e_p::Float64, h_p::Float64, t_p::Float64,
-    assets::Float64, HC::Float64, capital::Float64, t::Int, p_shock::Float64, i_p::Int, interp::Vector, grad::Vector
-)
-    w = wage_func(model, capital, t, p_shock)
-    labor_pre = w * h_p
-    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
-    k_next = capital
-    HC_next = HC_technology_parentonly(model, t_p, e_p, HC, t)
-    leisure = 1.0 - h_p - t_p
-    util_now = util_parent(model, c_p, h_p, t_p, HC, t)
-    
-    # Compute expected value and gradients over next shock states
-    V_next = 0.0
-    dV_da_sum = 0.0
-    dV_dk_sum = 0.0
-    dV_dHC_sum = 0.0
-    for j_p in 1:model.Np
-        p_trans_prob = model.p_transition[i_p, j_p]
-        if p_trans_prob > 1e-12
-            interp_jp = interp[j_p]
-            Vj = interp_jp(a_next, k_next, HC_next)
-            ∇V_jp = Interpolations.gradient(interp_jp, a_next, k_next, HC_next)
-            dV_da_jp, dV_dk_jp, dV_dHC_jp = ∇V_jp
-            V_next += p_trans_prob * Vj
-            dV_da_sum += p_trans_prob * dV_da_jp
-            dV_dk_sum += p_trans_prob * dV_dk_jp
-            dV_dHC_sum += p_trans_prob * dV_dHC_jp
-        end
-    end
-
-    if length(grad) > 0
-        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-        grad[1] = model.phi_1_vector[t] * (c_p ^ (-model.rho)) - model.beta_vector[t] * dV_da_sum
-        grad[2] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
-        # P1: no dV_dk_sum -- see obj_work_period_full.
-        dutil_dl_p = -model.phi_2_vector[t] * d_crra_leisure(leisure, model.eta)   # P10
-        grad[3] = dutil_dl_p + model.beta_vector[t] * (marginal * dV_da_sum)
-        grad[4] = dutil_dl_p + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
-    end
-    return util_now + model.beta_vector[t] * V_next
-end
-
-# ------------------------------------------------
-# Utility Functions
-# ------------------------------------------------
-
-@inline function util_total(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64,
-                            t_p::Float64, i_c::Float64, HC::Float64, t::Int)
-    leisure_c = 1.0 - t_p - i_c
-    # c and i_c are held positive by box bounds; leisure_c is not (see LEISURE_FLOOR).
-    @assert c > 0.0 && i_c > 0.0 "util_total: box bounds violated (c=$c, i_c=$i_c)"
-    rho = model.rho
-    eta = model.eta
-    u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
-    # P10: the parent's own leisure, restored. It was replaced by a Frisch labor disutility
-    # -phi_2*h^(1+eta)/(1+eta), which has no tau_p in it at all -- so parental time with the
-    # child was free, and util_parent returned the identical value at tau_p = 0.05 and 0.90.
-    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)
-    u_parent = u_cons + u_leisure
-    u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) +
-            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log_leisure(leisure_c) +
-                                        model.lambda_2_vector[t] * log(HC))
-    return u_parent + u_child
-end
-
-@inline function util_parent(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64, t_p::Float64, HC::Float64, t::Int)
-    @assert c > 0.0 "util_parent: box bound violated (c=$c)"
-    rho = model.rho
-    eta = model.eta
-    u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
-    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)   # P10
-    return u_cons + u_leisure + model.phi_3_vector[t] * log(HC)
-end
-
-
-
-# ------------------------------------------------
-# Human Capital Functions
-# ------------------------------------------------
-
-@inline function HC_technology_full(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, i_c::Float64, t::Int)
-    # P4: returning -1e8 as a human-capital LEVEL was doubly wrong -- it is not a value,
-    # and it was then multiplied by sigma/t_p inside the gradient. Bounds keep t_p, e_p > 0.
-    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_full: box bounds violated (t_p=$t_p, e_p=$e_p)"
-    return exp(log(model.R_vector[t]) +
-        model.sigma_1_vector[t] * log(t_p) +
-        model.sigma_2_vector[t] * log(e_p) +
-        model.sigma_3_vector[t] * log(HC)  +
-        model.sigma_4_vector[t] * log(i_c))
-end
-
-@inline function HC_technology_parentonly(model::Parent_child_interaction_age_specific_AR1, t_p::Float64, e_p::Float64, HC::Float64, t::Int)
-    # P4: see HC_technology_full.
-    @assert t_p > 0.0 && e_p > 0.0 "HC_technology_parentonly: box bounds violated (t_p=$t_p, e_p=$e_p)"
-    return exp(log(model.R_vector[t]) +
-            model.sigma_1_vector[t] * log(t_p) +
-            model.sigma_2_vector[t] * log(e_p) + 
-            model.sigma_3_vector[t] * log(HC))
-end
-
-# ------------------------------------------------
-# Budget constraints
-# ------------------------------------------------
-
-
-@inline function wage_func(model::Parent_child_interaction_age_specific_AR1, capital::Float64, t::Int, p_shock::Float64)
-    log_wage =
-        model.β0 +
-        model.β_bothcollege * capital +
-        model.β_age * t +
-        model.β_age2 * (t^2) +
-        model.β_age2_capital * ((t^2) * capital) +
-        model.β_age_capital * (t * capital)
-
-    return 2 * exp(log_wage) * p_shock * WAGE_SCALING_FACTOR   # <-- use the const
-end
-
-@inline function asset_constraint_full(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
-                                    capital::Float64, t::Int, assets::Float64, p_shock::Float64)
-    c_p, i_c, e_p, h_p, t_p = x
-    w = wage_func(model, capital, t, p_shock)
-    labor_pre = w * h_p
-    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
-    if length(grad) > 0
-        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-        grad[1] = 1.0
-        grad[2] = 0.0
-        grad[3] = 1.0
-        grad[4] = -marginal
-        grad[5] = 0.0
-    end
-    return 1e-6 - a_next
-end
-
-
-@inline function asset_constraint_max(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
-                                    capital::Float64, t::Int, assets::Float64, p_shock::Float64)
-    c_p, i_c, e_p, h_p, t_p = x
-    w = wage_func(model, capital, t, p_shock)
-    labor_pre = w * h_p
-    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
-    if length(grad) > 0
-        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-        grad[1] = -1.0
-        grad[2] = 0.0
-        grad[3] = -1.0
-        grad[4] = marginal
-        grad[5] = 0.0
-    end
-    return a_next - model.a_max
-end
-
-@inline function asset_constraint_parentonly(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
-                                             capital::Float64, t::Int, assets::Float64, p_shock::Float64)
-    c_p, e_p, h_p, t_p = x
-    w = wage_func(model, capital, t, p_shock)
-    labor_pre = w * h_p
-    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
-    if length(grad) > 0
-        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-        grad[1] = 1.0
-        grad[2] = 1.0
-        grad[3] = -marginal
-        grad[4] = 0.0
-    end
-    return 1e-6 - a_next
-end
-
-
-@inline function asset_constraint_max_parentonly(x::Vector, grad::Vector, model::Parent_child_interaction_age_specific_AR1,
-                                             capital::Float64, t::Int, assets::Float64, p_shock::Float64)
-    c_p, e_p, h_p, t_p = x
-    w = wage_func(model, capital, t, p_shock)
-    labor_pre = w * h_p
-    after_tax = model.tax_lambda * labor_pre ^ (1 - model.tau)
-    a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
-    if length(grad) > 0
-        marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-        grad[1] = -1.0
-        grad[2] = -1.0
-        grad[3] = marginal
-        grad[4] = 0.0
-    end
-    return a_next - model.a_max
-end
-
-# ------------------------------------------------
-# Time constraints
-# ------------------------------------------------
-
-@inline function constraint_min_leisure_full(x::Vector, grad::Vector)
-    h_p = x[4]
-    t_p = x[5]
-    if length(grad) > 0
-        grad .= 0.0
-        grad[4] = 1.0
-        grad[5] = 1.0
-    end
-    return (h_p + t_p) - 1.0
-end
-
-@inline function constraint_min_leisure_parentonly(x::Vector, grad::Vector)
-    h_p = x[3]
-    t_p = x[4]
-    if length(grad) > 0
-        grad .= 0.0
-        grad[3] = 1.0
-        grad[4] = 1.0
-    end
-    return (h_p + t_p) - 1.0
-end
-
-@inline function constraint_child_time(x::Vector, grad::Vector = [])
-    i_c = x[2]
-    t_p = x[5]
-    if !isempty(grad)
-        grad .= 0.0
-        grad[2] = 1.0
-        grad[5] = 1.0
-    end
-    return i_c + t_p - 1.0
-end
-
-
-# ------------------------------------------------
-# Interpolation Functions
-# ------------------------------------------------
-
-"""
-    PchipContinuation
-
-The parent's continuation value: **C1 in `hc` without overshooting**, linear in `a`, and
-linearly blended across the two `k` nodes.
-
-Why `hc` specifically, and why shape-preserving.
-
-`Gridded(Linear())` makes `dV/dhc` a STEP function -- constant inside each cell, jumping at
-every node. `tau_p`'s first-order condition depends on `dV/dHC` directly, since that is the
-only thing paying for parental time, so the optimal `tau_p` inherits the steps and adjacent
-asset nodes whose `HC_next` lands in different cells get discretely different `tau_p`. That
-is the ragged policy plot. Total variation of `tau_p` over the asset grid, everything else
-fixed (TV/range is 1.0 for a monotone policy, so it measures pure wiggle):
-
-    t                 16       15       14       10
-    linear TV     0.0868   0.0490   0.0463   0.0432
-    PCHIP  TV     0.0415   0.0113   0.0024   0.0028
-    linear TV/rng   2.71     3.88     4.35     2.60
-    PCHIP  TV/rng   1.37     1.48     1.46     2.74
-
-Total variation falls by 2x to 19x. Count the direction reversals instead and the numbers
-look unchanged -- but that is the wrong metric here: once the spurious variation is gone the
-policy's whole range is ~1e-3, so what is left reverses at the solver's own `xtol_rel`
-resolution. The amplitude is what moved.
-
-Two other explanations were tested and ruled out first. Tightening the solver (`xtol_rel`
-1e-4 -> 1e-10, `ftol_rel` 1e-13, `maxeval` 40x) changed the counts by at most 1, so it is
-not solver noise. Refining `Nhc` 20 -> 40 -> 80 made it WORSE (5 -> 10 -> 15), which is what
-a cell-boundary artefact does: more cells, more steps.
-
-An interpolating **cubic** also fixes the raggedness, but it overshoots: it pushed `dV/dhc`
-to 13.1 at the low-`hc` edge, and combined with the `HC_next * sigma_1 / tau_p` factor that
-produced gradients around 2e4 and broke the `sigma_3_1 x 1.5` counterfactual with a NaN
-iterate. PCHIP (Fritsch-Carlson monotone cubic Hermite) is C1 like the cubic but its node
-slopes are bounded by the neighbouring secants, so it cannot amplify. It also interpolates
-exactly, so the Bellman consistency residual is preserved, and it is faster than both the
-cubic and the linear version because the solver wastes fewer iterations.
-
-`a` stays linear: consumption's FOC is dominated by `u'(c)`, which is smooth and steep, and
-the consumption policies were never the ragged ones.
-"""
-struct PchipContinuation
-    ag::Vector{Float64}; kg::Vector{Float64}; hg::Vector{Float64}
-    V::Array{Float64,3}          # (Na, Nk, Nhc)
-    D::Array{Float64,3}          # dV/dhc at the nodes, Fritsch-Carlson limited
-end
-
-"""
-    _pchip_slopes(x, y) -> d
-
-Monotone cubic Hermite node slopes (Fritsch-Carlson). Where the data turn, the slope is set
-to zero; elsewhere it is a weighted harmonic mean of the neighbouring secants, which is what
-bounds it by them and rules out overshoot.
-"""
-function _pchip_slopes(x::AbstractVector{Float64}, y::AbstractVector{Float64})
-    n = length(x); d = zeros(n)
-    n == 1 && return d
-    h = diff(x); del = diff(y) ./ h
-    if n == 2
-        d .= del[1]; return d
-    end
-    for i in 2:(n-1)
-        if del[i-1] * del[i] <= 0
-            d[i] = 0.0
-        else
-            w1 = 2h[i] + h[i-1]; w2 = h[i] + 2h[i-1]
-            d[i] = (w1 + w2) / (w1 / del[i-1] + w2 / del[i])
-        end
-    end
-    # one-sided ends, clipped so they cannot exceed the adjacent secant
-    d[1] = ((2h[1] + h[2]) * del[1] - h[1] * del[2]) / (h[1] + h[2])
-    (d[1] * del[1] <= 0) ? (d[1] = 0.0) :
-        ((del[1] * del[2] <= 0 && abs(d[1]) > abs(3del[1])) ? (d[1] = 3del[1]) : nothing)
-    d[n] = ((2h[n-1] + h[n-2]) * del[n-1] - h[n-1] * del[n-2]) / (h[n-1] + h[n-2])
-    (d[n] * del[n-1] <= 0) ? (d[n] = 0.0) :
-        ((del[n-1] * del[n-2] <= 0 && abs(d[n]) > abs(3del[n-1])) ? (d[n] = 3del[n-1]) : nothing)
-    return d
-end
-
-# Hermite value and slope on one hc cell; outside the grid, continue linearly from the
-# boundary node so value and gradient come from the same line.
-@inline function _herm(P::PchipContinuation, ia::Int, ik::Int, hc::Float64)
-    hg = P.hg; n = length(hg)
-    if hc <= hg[1]
-        return (P.V[ia,ik,1] + P.D[ia,ik,1] * (hc - hg[1]), P.D[ia,ik,1])
-    elseif hc >= hg[n]
-        return (P.V[ia,ik,n] + P.D[ia,ik,n] * (hc - hg[n]), P.D[ia,ik,n])
-    end
-    i = clamp(searchsortedlast(hg, hc), 1, n-1)
-    h = hg[i+1] - hg[i]; t = (hc - hg[i]) / h
-    y0, y1 = P.V[ia,ik,i], P.V[ia,ik,i+1]
-    d0, d1 = P.D[ia,ik,i], P.D[ia,ik,i+1]
-    t2 = t*t; t3 = t2*t
-    v  = (2t3 - 3t2 + 1)*y0 + (t3 - 2t2 + t)*h*d0 + (-2t3 + 3t2)*y1 + (t3 - t2)*h*d1
-    dv = ((6t2 - 6t)*y0 + (3t2 - 4t + 1)*h*d0 + (-6t2 + 6t)*y1 + (3t2 - 2t)*h*d1) / h
-    return (v, dv)
-end
-
-@inline function _cell(g::Vector{Float64}, x::Float64)
-    n = length(g)
-    n == 1 && return (1, 1, 0.0)
-    i = clamp(searchsortedlast(g, x), 1, n-1)
-    return (i, i+1, (x - g[i]) / (g[i+1] - g[i]))
-end
-
-function (P::PchipContinuation)(a::Float64, k::Float64, hc::Float64)
-    ia, ja, wa = _cell(P.ag, a); ik, jk, wk = _cell(P.kg, k)
-    v00, _ = _herm(P, ia, ik, hc); v10, _ = _herm(P, ja, ik, hc)
-    v01, _ = _herm(P, ia, jk, hc); v11, _ = _herm(P, ja, jk, hc)
-    return (1-wk)*((1-wa)*v00 + wa*v10) + wk*((1-wa)*v01 + wa*v11)
-end
-
-function Interpolations.gradient(P::PchipContinuation, a::Float64, k::Float64, hc::Float64)
-    ia, ja, wa = _cell(P.ag, a); ik, jk, wk = _cell(P.kg, k)
-    v00, d00 = _herm(P, ia, ik, hc); v10, d10 = _herm(P, ja, ik, hc)
-    v01, d01 = _herm(P, ia, jk, hc); v11, d11 = _herm(P, ja, jk, hc)
-    ha = P.ag[ja] - P.ag[ia]
-    da = ha == 0 ? 0.0 : ((1-wk)*(v10 - v00) + wk*(v11 - v01)) / ha
-    hk = P.kg[jk] - P.kg[ik]
-    dk = hk == 0 ? 0.0 : (((1-wa)*v01 + wa*v11) - ((1-wa)*v00 + wa*v10)) / hk
-    dh = (1-wk)*((1-wa)*d00 + wa*d10) + wk*((1-wa)*d01 + wa*d11)
-    return (da, dk, dh)
-end
-
-function create_interp(model::Parent_child_interaction_age_specific_AR1, sol_v, t)
-    ag, kg, hg = model.a_grid, collect(model.k_grid), model.hc_grid
-    return [begin
-        V = Array{Float64,3}(undef, model.Na, model.Nk, model.Nhc)
-        D = similar(V)
-        @inbounds for ik in 1:model.Nk, ia in 1:model.Na
-            @views V[ia, ik, :] .= sol_v[t, ia, ik, :, i_p]
-            @views D[ia, ik, :] .= _pchip_slopes(hg, V[ia, ik, :])
-        end
-        PchipContinuation(ag, kg, hg, V, D)
-    end for i_p in 1:model.Np]
-end
-
-# ------------------------------------------------
-# Debug Functions
-# ------------------------------------------------
-
-function result_type_name(ret)
-    if ret == :FTOL_REACHED || ret == :XTOL_REACHED
-        return "converged"
-    elseif ret == :MAXEVAL_REACHED
-        return "maxeval"
-    else
-        return "other"
-    end
-end
-
-"""
-    record_period!(...)
-
-Build the per-period diagnostic record, print it when `verbose`, and throw if the
-converged share is below `min_converged`.
-"""
-function record_period!(t, converge_count, maxeval_count, other_dict, itercounts, total,
-                        min_converged::Float64, verbose::Bool)
-    share = total == 0 ? 1.0 : converge_count / total
-    rec = (period = t, total = total, converged = converge_count,
-           converged_share = share, maxeval = maxeval_count,
-           other = sum(values(other_dict); init = 0),
-           other_codes = copy(other_dict),
-           mean_iters = isempty(itercounts) ? 0.0 : mean(itercounts))
-    verbose && print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
-    if share < min_converged
-        error("Period $t: only $(round(100*share, digits=1))% of $(total) grid points " *
-              "converged (floor $(round(100*min_converged, digits=1))%). " *
-              "maxeval=$maxeval_count, other=$(rec.other) $(other_dict). " *
-              "Refusing to return a solution built on failed optimizations.")
-    end
-    return rec
-end
-
-function print_period_stats(t, converge_count, maxeval_count, other_dict, itercounts, total)
-    avg_iter = round(mean(itercounts), digits=2)
-    println("Period $t: Converged: $(round(converge_count/total*100, digits=1))%, Maxeval: $(round(maxeval_count/total*100, digits=1))%, Other: $(round(sum(values(other_dict))/total*100, digits=1))%, Avg iters: $avg_iter")
-    if sum(values(other_dict)) > 0
-        println("    Other status codes:")
-        for (code, count) in other_dict
-            println("        $code : $count times ($(round(count/total*100, digits=1))%)")
-        end
-    end
-end
+# ===========================================================================
+# Simulation
+# ===========================================================================
 
 
 # -----------------------------------------------------------------------------
