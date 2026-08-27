@@ -1,7 +1,44 @@
-# -------------------------------
-# Utility: Nonlinear Grid Creator
-# -------------------------------
-
+# =============================================================================
+# child_lifecycle.jl -- the child's own lifecycle, T = 51 (ages 18..68)
+#
+# From age 18 the child chooses college or work, then consumes, saves and supplies
+# labour to age 68. Solved by backward induction with NLopt/SLSQP. The value at
+# age 18 is what the parent block maximises against: terminal_value_spline builds
+# it and parent_family.jl consumes it.
+#
+# LAYOUT
+#   Grid helpers                nonlinspace, create_focused_grid
+#   Constants                   wage scaling, the t <-> age map
+#   Model                       struct + constructor (all calibration lives here)
+#   Primitives                  wage, progressive tax, utility, psychic cost
+#   Constraints                 asset bounds, work and college
+#   College feasibility         the minimum assets a college year requires
+#   Interpolation               continuation interpolants
+#   Objectives                  the SLSQP objectives
+#   Solver                      backward induction, work and college paths
+#   Transfer stage              the parent's transfer and the enrolment decision
+#   Terminal value              the surface and spline handed to the parent
+#   Simulation                  standalone child, and the family handoff
+#
+# THINGS THAT BREAK SILENTLY IF YOU GET THEM WRONG
+#   * `k` here is the child's HUMAN CAPITAL theta, handed over at age 18. In
+#     parent_family.jl `k` is a binary college indicator -- same name, unrelated
+#     object. The parent's counterpart to this grid is its `hc_grid`.
+#   * Keep `k_max` equal to the parent's `hc_max`. They are the same quantity on
+#     either side of the handoff (parent.sim_hc[:, T+1] -> child.sim_k_init); a
+#     mismatch clips the transfer AND makes HC above this ceiling worth ZERO to the
+#     parent, because the terminal spline is only defined over `k_grid`.
+#   * `sim_bc_init` defaults to ZEROS. Set it from parent.sim_k[:, 1] at every
+#     handoff or the kappa_ParEd term in the psychic cost is silently switched off.
+#   * `a_min = 0`, not 0.01: the work branch admits tr = 0, so 0 must be IN the
+#     asset grid or the first child period is evaluated by extrapolation.
+#   * Grid caps by instruction: assets and HC <= 30 nodes, shocks <= 5.
+#   * A graduate's working life is solved with E = 1 into the COLLEGE arrays, so
+#     read post-graduation policies from sol_*_grad, not sol_*_work.
+#
+# Wage and psychic-cost provenance (Daruich & Fernandez 2023; Colas) is in
+# docs/WAGE_PROCESS_IMPLEMENTED.md. Numerical findings are in docs/ERRORS.md.
+# =============================================================================
 # ===========================================================================
 # Grid helpers
 # ===========================================================================
@@ -26,9 +63,6 @@ end
 
 const WAGE_SCALING_FACTOR = 0.584
 
-# ================================
-# Progressive tax helpers
-# ================================
 # Model period t = 1 is biological age 18, so age = 17 + t. The age profile is
 # calibrated in biological age (Daruich & Fernandez Table B3), not in model time.
 const AGE_AT_T1 = 18
@@ -38,20 +72,6 @@ const AGE_AT_T1 = 18
 # Model: struct and constructor
 # ===========================================================================
 
-# =============================================================================
-# Child lifecycle: college decision, work, AR(1) wage shock, progressive tax.
-#
-# Derived from child_lifecycle_ret.jl by removing the retirement stage, which
-# model.txt does not contain ("The model has no retirement stage and ends as
-# the child becomes 68 years old"). Everything else — the HSV/Benabou
-# progressive tax, the transfer problem, the belief machinery — is unchanged.
-#
-# See docs/ERRORS.md for the open findings that still apply to this file.
-# =============================================================================
-
-# =============================================================================
-# Dynamic Labor Model with College Decision and AR1 Shock
-# =============================================================================
 mutable struct ConSavLaborCollege_AR1
     T::Int; t_college::Int; rho::Float64; beta::Float64; phi::Float64
     eta::Float64; y::Float64; w::Float64; tau::Float64
@@ -132,64 +152,24 @@ mutable struct ConSavLaborCollege_AR1
     delta_P::Float64             # Minimum retained parental asset (a_bar^P) at the transfer stage
 end
 
-# =============================================================================
-# Constructor for ConSavLaborCollege_AR1 with AR1 Shock
-# =============================================================================
 function ConSavLaborCollege_AR1(;
                 # T = 51: ages 18..68 inclusive, per model.txt. Was 52 in
                 # child_lifecycle_ret.jl, which implied a terminal age of 69.
                 T::Int=51, t_college::Int=4, beta::Float64=0.97, rho::Float64=1.0,
                 r::Float64=0.03, a_max::Float64=100.0, Na::Int=30, y::Float64=0.6,
-                # a_min = 0: the work branch admits tr = 0, so 0 must be IN the child's asset
-                # grid or the first child period is evaluated by extrapolation. Was 0.01.
-                # k_max = 8: HC no longer accumulates, so k only ever holds theta,
-                # which comes from the parent block. Was 30, which wasted most of the
-                # grid on states no agent visits. 8 rather than 6 because the higher
-                # return to childhood HC raises parental investment: theta now reaches
-                # 6.53 at production grids, past the parent's own hc_max of 6.0. See
-                # docs/WAGE_PROCESS_IMPLEMENTED.md.
-                #
-                # k_max = 10 (was 8.0), MATCHED to the parent's hc_max. These two grids
-                # hold the SAME object -- the child's human capital -- on either side of
-                # the age-18 handoff (parent.sim_hc[:, T+1] -> child.sim_k_init), so a
-                # mismatch silently clips the transfer and, worse, makes HC above the
-                # child's ceiling worth ZERO to the parent's terminal problem, because
-                # the terminal value spline is only defined over k_grid. At the current
-                # sigma_3 = 0.407 the arriving distribution maxes at 4.8, so 10 clips
-                # nobody; the match is what keeps the two blocks consistent under the
-                # counterfactual arms, which push HC well above the baseline.
+                # k_max = 10 is MATCHED to the parent's hc_max -- the same object either
+                # side of the age-18 handoff. See the file header.
                 simN::Int=5000, a_min::Float64=0.0, k_max::Float64=10.0, Nk::Int=30,
                 w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0,
                 phi::Float64=18.0, seed::Int=1234, college_cost::Float64=1.2,
-                # --- Wage process ------------------------------------------------
-                # Age profile and the college intercept: Daruich & Fernandez (2023)
-                # Appendix Table B3, PSID 1968-2016, quadratic in BIOLOGICAL age,
-                # estimated separately by education with a Heckman selection
-                # correction. High school (0.0234, -0.000199, const 2.247) and
-                # college (0.0552, -0.000513, const 1.953); the E terms are the
-                # college-minus-high-school differences. The implied premium runs
-                # 0.25 at age 22 to 0.51 at age 50.
-                #
-                # alpha_theta is an ELASTICITY of the wage with respect to childhood
-                # human capital, which is what both papers estimate: they regress log
-                # wages on LOG ability. Daruich & Fernandez Table B4 (PSID + NLSY, the
-                # closer data to ours): 0.654 high school, 0.976 college, so
-                # alpha_thetaE = 0.322 and the ratio is 1.49. Colas Table 2 gives
-                # 0.31 / 0.47, ratio 1.52 -- same ratio, half the level.
-                #
-                # NOT standardized per SD. An earlier attempt divided by sd(log theta),
-                # which made the investment incentive alpha_theta / s_theta; at the
-                # dispersion the parent block actually produces (sd(log theta) ~ 0.2)
-                # that is an elasticity near 0.9, above both papers, and parental
-                # investment diverges -- mean theta went 2.11 -> 3.91 in one iteration
-                # with no fixed point. As an elasticity there is no circularity at all:
-                # m_theta is a pure level shift that lnw0 absorbs.
-                # lnw0 is a pure NORMALIZATION, not a paper value: it fixes the units
-                # of the wage. Set so the mean simulated wage matches the previous
-                # w0*(1+alpha*HC) specification at the same grids, which keeps assets,
-                # consumption and the tax base on their existing scale so the rest of
-                # the calibration still applies. Re-derive if the profile parameters
-                # move: shift lnw0 by log(target mean wage / simulated mean wage).
+                # --- Wage process ---------------------------------------------
+                # Age profile and college intercept: Daruich & Fernandez (2023) Table B3
+                # (PSID 1968-2016, quadratic in BIOLOGICAL age, Heckman-corrected, by
+                # education). alpha_theta / alpha_thetaE are ELASTICITIES of the wage in
+                # childhood HC, from their Table B4: 0.654 high school, 0.976 college.
+                # NOT standardized per SD -- doing so made investment diverge. lnw0 and
+                # m_theta carry no behaviour (level normalisation and centring).
+                # All of it, with the divergence measurement: docs/WAGE_PROCESS_IMPLEMENTED.md
                 lnw0::Float64=log(w) - 0.4144,
                 beta_E::Float64=-0.294,
                 alpha_theta::Float64=0.654,
@@ -198,24 +178,13 @@ function ConSavLaborCollege_AR1(;
                 gamma1E::Float64=0.0318,
                 gamma2::Float64=-0.000199,
                 gamma2E::Float64=-0.000314,
-                # Centring constant only: the wage carries alpha_theta*(log theta -
-                # m_theta), so m_theta shifts the level and nothing else. Set near
-                # E[log theta] from the parent block so lnw0 reads as the log wage of a
-                # child of average childhood human capital. Changing it is exactly
-                # offset by lnw0 and has no behavioural content.
+                # Centring only; offset exactly by lnw0. See the wage-process doc.
                 m_theta::Float64=0.724,
-                # --- Psychic cost of college -------------------------------------
-                # Colas Table 2: kappa_0 + kappa_theta*log(theta) + kappa_fem*female
-                #                + kappa_ParEd*ParEdu, with (starred entries are
-                # 10,000x the parameter) kappa_0 = 0.44, kappa_theta = -8.3e-4,
-                # kappa_ParEd = -1.7e-4. Signs and the RATIO transport; the LEVELS
-                # cannot -- their utility is c^(1-gamma)/(1-gamma) at gamma = 1.9 with
-                # consumption in dollars, ours is rho = 1.5 with c of order 0.1-5, so
-                # a kappa of 4e-4 is meaningless here. The level is therefore set to
-                # reproduce the total discounted psychic cost of the old
-                # kappa/(HC+1)^4 form over the four college years, across the range of
-                # theta the model actually visits; the ratio
-                # kappa_ParEd / kappa_theta = 0.205 is Colas's.
+                # --- Psychic cost of college ----------------------------------
+                # kappa_0 + kappa_theta*log(theta) + kappa_ParEd*BothCollege. Signs and
+                # the ratio kappa_ParEd/kappa_theta = 0.205 are Colas Table 2; the LEVELS
+                # do not transport (different utility scale) and are set to reproduce the
+                # old kappa/(HC+1)^4 cost. docs/WAGE_PROCESS_IMPLEMENTED.md
                 kappa_0::Float64=0.0462,
                 kappa_theta::Float64=-0.0342,
                 kappa_ParEd::Float64=-0.0070,
@@ -275,20 +244,8 @@ function ConSavLaborCollege_AR1(;
     t_grid = sqrt(2) * sigma_eps .* nodes
     t_weight = weights / sqrt(pi)
 
-    # --- Setup Persistent AR1 Shock ---
-    # Rouwenhorst, not Tauchen. For a Gaussian-innovation AR(1) it matches the unconditional
-    # mean, the unconditional variance and the first-order autocorrelation EXACTLY at every
-    # N -- not asymptotically. Tauchen is built on the unconditional distribution and
-    # degrades as rho -> 1, which is where this model sits. Measured here:
-    #
-    #   rho=0.90 sigma=0.10  N=3 : Tauchen sd +21.5%, persistence +10.8%   Rouwenhorst exact
-    #   rho=0.90 sigma=0.10  N=7 : Tauchen sd +17.1%, persistence  +0.2%   Rouwenhorst exact
-    #   rho=0.95 sigma=0.20  N=5 : Tauchen sd +31.4%, persistence  +4.0%   Rouwenhorst exact
-    #
-    # Standard reference: Kopecky & Suen (2010, RED). Trade-off: Rouwenhorst fixes the grid
-    # half-width at sqrt(N-1)*sigma_z, so there is no `m` knob, and it matches the first two
-    # moments but not higher ones -- the invariant distribution is binomial, normal only as
-    # N grows. Neither matters for the moments this model targets.
+    # Rouwenhorst, not Tauchen: exact on mean, variance and autocorrelation at every N,
+    # whereas Tauchen degrades as rho -> 1. Measured comparison: docs/ERRORS.md.
     mc = rouwenhorst(Np, p_ar1, sigma_p)
     p_grid = exp.(mc.state_values)
     p_transition = mc.p
@@ -503,9 +460,6 @@ beta_E_from_rce(model::ConSavLaborCollege_AR1, rce::Real) =
 beta_E_from_rce(model::ConSavLaborCollege_AR1, rce::AbstractVector) =
     [beta_E_from_rce(model, r) for r in rce]
 
-# --------------------------
-# Simulation domain guard
-# --------------------------
 """
     snap(x, lo, hi; tol = 1e-10)
 
@@ -519,9 +473,6 @@ economically meaningful out-of-grid state would rewrite the transition law.
     return x
 end
 
-# --------------------------
-# Helper for Simulation
-# --------------------------
 # C7: `findfirst` returns `nothing` when the cumulative weights fall a floating-point
 # hair short of the draw. Fall back to the last state rather than propagating `nothing`
 # into an array index.
@@ -545,9 +496,6 @@ end
 # Constraints
 # ===========================================================================
 
-# ================================
-# Constraints
-# ================================
 # C16: a' must also stay BELOW a_max, and k' below k_max. Constraining only a' >= a_min
 # let the solver pick transitions off the top of the grid -- measured at 3.59% of stored
 # asset transitions and 5.00% of HC transitions -- where the continuation value is a
@@ -601,9 +549,6 @@ end
 # College feasibility
 # ===========================================================================
 
-# ================================
-# College feasibility
-# ================================
 # Required assets to enter college year t and still be able to FINISH. Recursion,
 # with the same consumption floor the optimizer enforces:
 #
@@ -690,9 +635,6 @@ end
 # Objectives
 # ===========================================================================
 
-# ================================
-# Objectives & constraints
-# ================================
 
 # --- Final period objective: work, consume everything (progressive tax) ---
 @inline function obj_last_period(model::ConSavLaborCollege_AR1, h_vec::Vector, assets::Float64,
@@ -1306,9 +1248,6 @@ end
 # Simulation
 # ===========================================================================
 
-# --------------------------
-# Simulation (AR1 Shock Only + Shock-free Retirement)
-# --------------------------
 function simulate_model_child!(model::ConSavLaborCollege_AR1)
     @unpack simN, T, t_college, r, college_cost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition = model
@@ -1478,9 +1417,6 @@ end
 
 
 
-# --------------------------
-# Simulation (AR1 Shock Only + Family Optimization)
-# --------------------------
 function simulate_model_family!(model::ConSavLaborCollege_AR1)
     @unpack simN, T, t_college, r, college_cost, a_min = model
     @unpack a_grid, k_grid, p_grid, p_transition, Np = model
