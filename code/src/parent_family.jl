@@ -96,11 +96,21 @@ mutable struct Parent_child_interaction_age_specific_AR1
     a_max::Float64                # Max asset level
     a_min::Float64                # Min asset level
     Na::Int                       # Asset grid size
-    k_max::Float64                # Max physical capital
-    k_min::Float64                # Min physical capital
-    Nk::Int                       # Physical capital grid size
-    hc_max::Float64               # Max human capital (for child/parent)
-    hc_min::Float64               # Min human capital
+    # NAMING. `k` in THIS module is the parent's BothCollege indicator: a binary
+    # household type, 0 = no college, 1 = college, drawn once from Bernoulli(0.3) and
+    # constant over t (sim_k[i, t+1] = k). It is neither physical nor human capital.
+    # It enters only through wage_func, as the BothCollege dummy and its age
+    # interactions. Nk = 2 is therefore exact, not an approximation -- k_grid is the
+    # two types themselves, [0.0, 1.0], not a discretization of a continuum.
+    #
+    # WARNING: `k_grid` in child_lifecycle.jl is a DIFFERENT object -- the child's
+    # human capital theta, with k_max = 8.0. Same name, unrelated quantity. The
+    # child's HC inside THIS module is hc_grid.
+    k_max::Float64                # = 1.0, the college type
+    k_min::Float64                # = 0.0, the no-college type
+    Nk::Int                       # = 2, the number of types
+    hc_max::Float64               # Max CHILD human capital
+    hc_min::Float64               # Min CHILD human capital
     Nhc::Int                      # Human capital grid size
     alpha::Float64                # Parameter in wage function
 
@@ -112,8 +122,9 @@ mutable struct Parent_child_interaction_age_specific_AR1
 
     # --- Grids ---
     a_grid::Vector{Float64}       # Asset grid
-    k_grid::Vector{Float64}       # Parent Human capital grid
-    hc_grid::Vector{Float64}      # Human capital grid
+    k_grid::Vector{Float64}       # Parent BothCollege indicator, [0.0, 1.0]
+    hc_grid::Vector{Float64}      # CHILD's human capital grid (the object the HC
+                                  # technology produces and hands to the child module)
 
     # --- Solution Arrays (for value function iteration) ---
     sol_c::Array{Float64, 5}       # Parental consumption    [T, Na, Nk, Nhc]
@@ -134,7 +145,7 @@ mutable struct Parent_child_interaction_age_specific_AR1
     sim_e::Array{Float64,2}       # Simulated education exp [simN, simT]
     sim_a::Array{Float64,2}       # Simulated assets        [simN, simT]
     sim_i::Array{Float64,2}       # Simulated child study   [simN, simT]
-    sim_k::Array{Float64,2}       # Simulated capital       [simN, simT]
+    sim_k::Array{Float64,2}       # Simulated BothCollege   [simN, simT] (constant in t)
     sim_hc::Array{Float64,2}      # Simulated human capital [simN, simT]
     sim_wage::Array{Float64,2}     # Simulated wage         [simN, simT]
     sim_income::Array{Float64,2}   # Simulated income       [simN, simT]
@@ -145,7 +156,7 @@ mutable struct Parent_child_interaction_age_specific_AR1
 
     # --- Initial conditions ---
     sim_a_init::Vector{Float64}   # Initial assets          [simN]
-    sim_k_init::Vector{Float64}   # Initial capital         [simN]
+    sim_k_init::Vector{Float64}   # BothCollege draw        [simN]
     sim_hc_init::Vector{Float64}  # Initial human capital   [simN]
     sim_p_init::Vector{Int}    # Initial AR1 shocks      [Np, simN]
     draws_uniform_p::Matrix{Float64}  # Pre-drawn uniforms for the AR(1) path [simN, simT]
@@ -165,6 +176,35 @@ mutable struct Parent_child_interaction_age_specific_AR1
     
 end
 
+"""
+    PARENT_DEFAULTS
+
+The calibration, in ONE place. The constructor's keyword defaults read from here, and so
+should anything that needs to know the baseline -- notably the notebook's counterfactual
+arms, which are defined as perturbations AROUND the baseline.
+
+This exists because they drifted. The notebook hardcoded `sigma_3_1_baseline = 0.06` and
+`sigma_3_0_baseline = -2.4`; when the HC block was recalibrated to 0.0 and -0.36 those
+numbers went stale, and the "high" arm ended up setting sigma_3_1 = 0.09 on top of
+sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity above one, so
+HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
+a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
+"""
+const PARENT_DEFAULTS = (
+    phi_1_0 = 1.0,     phi_1_1 = 0.0,
+    phi_2_0 = 0.5,     phi_2_1 = 0.0,
+    phi_3_0 = 1.0,     phi_3_1 = 0.0,
+    R_0     = 1.6,     R_1     = 0.0,
+    sigma_1_0 = -0.90, sigma_1_1 = -0.02,
+    sigma_2_0 = -1.80, sigma_2_1 =  0.02,
+    sigma_3_0 = -0.36, sigma_3_1 =  0.0,
+    sigma_4_0 = -4.50, sigma_4_1 =  0.02,
+    lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
+    lambda_2_0 = 1.0,  lambda_2_1 = 0.0,
+    mu_0 = 1.0,        mu_1 = -0.04,
+    tau = 0.18,        y = 0.6,
+)
+
 function Parent_child_interaction_age_specific_AR1(;
         # --- Scalar Defaults for Non-varying Parameters ---
         T::Int=17, rho::Float64=1.5, eta::Float64=2.0,
@@ -176,13 +216,33 @@ function Parent_child_interaction_age_specific_AR1(;
         # moments barely move (mean terminal assets 22.07 -> 22.13).
         a_max::Float64=100.0, a_min::Float64=0.0, Na::Int=30,
         k_max::Float64=1.0, k_min::Float64=0.0, Nk::Int=2,
-        hc_max::Float64=6.0, hc_min::Float64=0.001, Nhc::Int=30 ,
+        # hc_max = 10 (was 6.0, briefly 15). MEASURED. The HC technology is unbounded above, so the
+        # SOLVER is asked for HC_next at every grid point including the top corner, where
+        # it reached 10.02 -- 1.25% of stored transitions landed off-grid and were served
+        # by extrapolation, producing the bad gradients that showed up as ROUNDOFF_LIMITED.
+        # The SIMULATION never needed the room (mean 1.71, p99 4.11), which is why raising
+        # the ceiling leaves the baseline unchanged to ~0.1% (hc mean 1.71 -> 1.71, e_p17
+        # 4.78 -> 4.79, terminal assets 10.6 -> 10.6) while taking the three counterfactual
+        # arms that previously failed to 97.3 / 97.1 / 99.1%. This is a numerical fix, not
+        # a respecification. Note child_lifecycle.jl already sized ITS k_max to 8.0 because
+        # HC reaches 6.53 -- the parent's own ceiling was simply never raised to match.
+        #
+        # Do NOT raise it further without also raising Nhc: the focused grid holds 80% of
+        # nodes in [hc_min, hc_min+3], so at hc_max = 25 the remaining 6 nodes cover [3,25],
+        # tail resolution collapses, and the failure mode flips from extrapolation to
+        # maxeval -- baseline 100.0% -> 96.5% and all three arms fail again.
+        #
+        # Re-sized 15 -> 10 after sigma_3_0 went to -0.90: at sigma_3 = 0.407 the solver's
+        # own HC_next tops out at 8.0 (was 10.02) and the simulation at 4.8, so 10 covers
+        # the solver with margin and keeps more resolution than 15 did. Matched by the
+        # child's k_max, which represents the SAME object on the far side of age 18.
+        hc_max::Float64=10.0, hc_min::Float64=0.001, Nhc::Int=30 ,
         # --- simulation details ----
         simN::Int=5000, simT::Int=T, seed::Int=1234,
 
         # --- Slope/Intercept parameters for ALL age-specific variables ---
         beta_0 = 0.97,     beta_1 = 0.0,
-        phi_1_0 = 1.0,     phi_1_1 = 0.0,
+        phi_1_0 = PARENT_DEFAULTS.phi_1_0, phi_1_1 = PARENT_DEFAULTS.phi_1_1,
         # P10: 0.8, not 20.0. phi_2 used to scale a Frisch labor disutility
         # -phi_2*h^(1+eta)/(1+eta); it now weights the parent's leisure CRRA
         # phi_2*l_p^(1-eta)/(1-eta), a completely different scale. 0.8 reproduces the old
@@ -192,25 +252,29 @@ function Parent_child_interaction_age_specific_AR1(;
         # from 0.05 to 3.0, because the FOC phi_2*l^(-eta) = beta*dV/dHC*HC_next*sigma_1/tau_p
         # scales with phi_2 on both sides. tau_p is set by sigma_1 and the value of the
         # child's HC. See docs/ERRORS.md P10 for the calibration tension that creates.
-        phi_2_0 = 0.5,      phi_2_1 = 0.0,
+        phi_2_0 = PARENT_DEFAULTS.phi_2_0, phi_2_1 = PARENT_DEFAULTS.phi_2_1,
         # ---- HC block, recalibrated together (see the note below) ----
-        phi_3_0 = 1.0,      phi_3_1 = 0.0,
-        R_0 = 1.6,         R_1 = 0.0,
-        sigma_1_0 = -0.90, sigma_1_1 = -0.02,
-        sigma_2_0 = -1.8,  sigma_2_1 = 0.02,
-        sigma_3_0 = -0.36, sigma_3_1 = 0.0,
-        sigma_4_0 = -4.5,  sigma_4_1 = 0.02,
-        lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
-        lambda_2_0 = 1.0,  lambda_2_1 = 0.0,
+        phi_3_0 = PARENT_DEFAULTS.phi_3_0, phi_3_1 = PARENT_DEFAULTS.phi_3_1,
+        R_0 = PARENT_DEFAULTS.R_0, R_1 = PARENT_DEFAULTS.R_1,
+        sigma_1_0 = PARENT_DEFAULTS.sigma_1_0, sigma_1_1 = PARENT_DEFAULTS.sigma_1_1,
+        sigma_2_0 = PARENT_DEFAULTS.sigma_2_0, sigma_2_1 = PARENT_DEFAULTS.sigma_2_1,
+        sigma_3_0 = PARENT_DEFAULTS.sigma_3_0, sigma_3_1 = PARENT_DEFAULTS.sigma_3_1,
+        sigma_4_0 = PARENT_DEFAULTS.sigma_4_0, sigma_4_1 = PARENT_DEFAULTS.sigma_4_1,
+        lambda_1_0 = PARENT_DEFAULTS.lambda_1_0, lambda_1_1 = PARENT_DEFAULTS.lambda_1_1,
+        lambda_2_0 = PARENT_DEFAULTS.lambda_2_0, lambda_2_1 = PARENT_DEFAULTS.lambda_2_1,
         # --- Bargaining parameter ---
-        mu_0 = 1.0,        mu_1 = -0.04,
+        mu_0 = PARENT_DEFAULTS.mu_0, mu_1 = PARENT_DEFAULTS.mu_1,
         # Shock parameters (AR1 only)
         # Np = 7, not 3. At Np = 3 the parent's shock grid was the binding approximation in
         # the whole model: raising it to 7 moved the college share 17.85% -> 22.40% and mean
         # terminal parental assets +8.9%, while DOUBLING any state grid moved the college
         # share by at most 0.15pp (parent Nhc 30 -> 60 moved it by 0.00). It converges by
         # 5-7: Np = 5 gives 22.00%, 7 gives 22.40%, 9 gives 22.30%, 13 gives 21.80%.
-        p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=7,
+        # Np = 5 (was 7). MEASURED: Np 7 -> 5 -> 3 leaves every moment flat to the third
+        # digit (college share 50.75 / 51.50 / 50.75, hc18 2.80, assets 19.1, e_p17 7.5,
+        # tau_p 0.300 -> 0.229), so the Rouwenhorst shock grid is fully converged by 3 and
+        # 5 is a margin, not a requirement.
+        p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
         β0 = 2.798937,
         β_bothcollege = 0.3077394,
         β_age = 0.0230108,
@@ -268,6 +332,20 @@ function Parent_child_interaction_age_specific_AR1(;
     #sigma_2_vector = [0.10 + 0.01*(t-1) for t in 1:T] # slowly rising
     #sigma_3_vector = [0.30 for t in 1:T]  # moderate persistence
     #sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 : 0.10 + 0.01*(t-T_CHILD_VOICE) for t in 1:T]
+
+    # Self-productivity must stay BELOW ONE. HC_{t+1} = R * inputs * HC_t^sigma_3, so
+    # sigma_3 >= 1 makes the recursion explosive and the model has no bounded solution --
+    # the parent solve then fails as a convergence shortfall, which reads like a solver bug
+    # and is not one. Caught here, where the number is visible.
+    if maximum(sigma_3_vector) >= 1.0
+        bad = findall(>=(1.0), sigma_3_vector)
+        error("sigma_3 >= 1 at t = $bad (max $(round(maximum(sigma_3_vector), digits=3))): " *
+              "self-productivity at or above one makes HC explosive and the model unsolvable. " *
+              "sigma_3_0 = $sigma_3_0, sigma_3_1 = $sigma_3_1 give " *
+              "sigma_3 = exp($sigma_3_0 + $sigma_3_1*(t-1)), which reaches " *
+              "$(round(exp(sigma_3_0 + sigma_3_1*(T-1)), digits=3)) at t = $T. " *
+              "Reduce sigma_3_1 (or sigma_3_0) so that sigma_3_0 + sigma_3_1*(T-1) < 0.")
+    end
 
     lambda_1_vector = [lambda_1_0 + lambda_1_1 * (t-1) for t in 1:T]
     lambda_2_vector = [lambda_2_0 + lambda_2_1 * (t-1) for t in 1:T]
@@ -554,7 +632,6 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
     other_dict = Dict{Symbol, Int}()
     itercounts = Int[]
     total = 0
-    #interp = create_interp2(model, model.sol_v, t+1)
     for i_a in 1:Na, i_k in 1:Nk, i_hc in 1:Nhc, i_p in 1:Np
         assets = a_grid[i_a]
         capital = k_grid[i_k]
@@ -583,7 +660,15 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         inequality_constraint!(opt, (x, grad) -> asset_constraint_max(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
 
 
-        init = [1.0, 0.7, 1.0, 0.7, 0.2]
+        # MEASURED, and not what I expected. A "sensible" state-scaled start
+        # ([0.5bmax, 0.10, 0.05bmax, 0.30, 0.30]), or warm-starting from the previous grid
+        # point, took the counterfactual arms that solve from 21 down to 17. The fixed
+        # vector below lands in a better basin -- this objective has more than one local
+        # optimum and the starting point decides which. Kept, but now CLAMPED: it was
+        # previously unclamped, so wherever bmax < 1 it started outside its own box.
+        init = clamp.([1.0, 0.7, 1.0, 0.7, 0.2],
+                      [1e-4, TIME_FLOOR, 1e-4, TIME_FLOOR, TIME_FLOOR],
+                      [bmax, 1.0, bmax, 1.0, 1.0])
         xtol_rel!(opt, 1e-4)
         maxeval!(opt, 5000)
         (minf, x_opt, ret) = optimize(opt, init)
@@ -667,7 +752,10 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                 model.sol_t[t+1, i_a, i_k, i_hc, i_p],
             ], lo, hi)
             xtol_rel!(opt, 1e-4)
-            maxeval!(opt, 1000)
+            # 1000 was where the marginal counterfactual arms ran out: sigma_2_0 + 0.4 hit
+            # 94.8% converged against a 95% floor -- short of iterations, not stuck. Only
+            # the states that need the extra evaluations pay for them.
+            maxeval!(opt, 4000)
             (minf, x_opt, ret) = optimize(opt, init)
             
             push!(itercounts, opt.numevals)
@@ -745,7 +833,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                 model.sol_t[t+1, i_a, i_k, i_hc, i_p],
             ], [0.01, 0.01, TIME_FLOOR, TIME_FLOOR], [bmax, bmax, 1.0, 1.0])
             xtol_rel!(opt, 1e-4)
-            maxeval!(opt, 1000)
+            maxeval!(opt, 4000)      # see the note in the full-model loop
             (minf, x_opt, ret) = optimize(opt, init)
 
             push!(itercounts, opt.numevals)
@@ -783,6 +871,68 @@ end
 # ------------------------------------------------
 # Supporting functions 
 # ------------------------------------------------
+# -----------------------------------------------------------------------------
+# Spline domain, and why the gradient has to be clamped with the value
+# -----------------------------------------------------------------------------
+# Dierckx clamps a Spline2D's VALUE flat outside its data range but keeps reporting the
+# boundary DERIVATIVE. Measured on the child terminal spline at a_next = 10, with the
+# child's k_max = 8:
+#
+#     HC      V         dV/dHC
+#      8.0   -7.164      1.080
+#     10.0   -7.164      1.080     <- value flat, slope still 1.08
+#     15.0   -7.164      1.080
+#
+# So above the ceiling SLSQP is told "another unit of HC is worth 1.08" while the
+# objective does not actually move. The line search can never realize its predicted
+# decrease, and the solve ends as ROUNDOFF_LIMITED. That is what the period-17
+# counterfactual failures were: not a coarse grid (Nhc 30 -> 40 -> 50 changed nothing,
+# 22/25 each time), but an inconsistent (value, gradient) pair at the boundary.
+#
+# Fix: evaluate at the clamped point and zero the derivative component whose clamp
+# binds, so value and gradient agree. Where the spline saturates its marginal value
+# genuinely IS zero.
+"""
+    spline_domain(spl) -> (a_lo, a_hi, k_lo, k_hi)
+
+Data range of a `Dierckx.Spline2D`, recovered from its knot vectors: a degree-`k` knot
+vector repeats its boundary knot `k+1` times, so the range is `t[k+1] .. t[end-k]`
+(verified to reproduce the input range exactly).
+"""
+@inline function spline_domain(spl::Dierckx.Spline2D)
+    (spl.tx[spl.kx + 1], spl.tx[end - spl.kx],
+     spl.ty[spl.ky + 1], spl.ty[end - spl.ky])
+end
+
+"""
+    eval_child_value(V_child_interp, a_next, HC_next, want_grad)
+
+Value and derivatives of the child terminal spline, clamped to its domain in BOTH the
+value and the gradient. Returns `(V, dV_da, dV_dHC)`; the derivatives are zero in any
+direction where the point lies outside the data range.
+"""
+@inline function eval_child_value(V_child_interp::Dierckx.Spline2D, a_next::Float64,
+                                  HC_next::Float64, want_grad::Bool)
+    a_lo, a_hi, k_lo, k_hi = spline_domain(V_child_interp)
+    ac = clamp(a_next, a_lo, a_hi)
+    kc = clamp(HC_next, k_lo, k_hi)
+    V = V_child_interp(ac, kc)
+    want_grad || return (V, 0.0, 0.0)
+    dV_da  = (ac == a_next) ? Dierckx.derivative(V_child_interp, ac, kc, 1, 0) : 0.0
+    dV_dHC = (kc == HC_next) ? Dierckx.derivative(V_child_interp, ac, kc, 0, 1) : 0.0
+    return (V, dV_da, dV_dHC)
+end
+
+# Fallback: the notebook and some diagnostics pass a plain callable rather than a
+# Spline2D. Behaviour there is unchanged.
+@inline function eval_child_value(V_child_interp, a_next::Float64, HC_next::Float64,
+                                  want_grad::Bool)
+    V = V_child_interp(a_next, HC_next)
+    want_grad || return (V, 0.0, 0.0)
+    (V, Dierckx.derivative(V_child_interp, a_next, HC_next, 1, 0),
+        Dierckx.derivative(V_child_interp, a_next, HC_next, 0, 1))
+end
+
 function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, c_p, i_c, e_p, h_p, t_p,
                              assets, HC, capital, t, p_shock::Float64, V_child_interp, grad)
     # Calculate leisure
@@ -798,14 +948,12 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
 
     # Objective function
     util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
-    V_next = V_child_interp(a_next, HC_next)
+    # Value and gradient come from the SAME clamped point; see eval_child_value.
+    V_next, dV_da, dV_dHC = eval_child_value(V_child_interp, a_next, HC_next, length(grad) > 0)
     f = util_now + model.beta_vector[t] * V_next
 
     # Gradient calculations
     if length(grad) > 0
-        # Compute derivatives at the correct point
-        dV_da = Dierckx.derivative(V_child_interp, a_next, HC_next, 1, 0)
-        dV_dHC = Dierckx.derivative(V_child_interp, a_next, HC_next, 0, 1)
 
         # Partial derivatives of utility
         dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
@@ -1681,15 +1829,31 @@ function simulate_model_family_hetero!(
         LinearInterpolation((a_grid[csl(m, t)], k_grid), child_models[m].sol_h_college[t, csl(m, t), :, ip, it]; extrapolation_bc=Flat())
         for m in 1:num_bins, it in 1:Nt, t in 1:t_college, ip in 1:Np
     ]
-    # The graduate's working life is belief-specific too: each bin was solved at its own
-    # beta_E, so it has its own post-graduation policies. eps-free, hence no `it`.
-    interp_c_grad_belief = [
-        LinearInterpolation((a_grid, k_grid), child_models[m].sol_c_grad[t, :, :, ip, 1]; extrapolation_bc=Flat())
-        for m in 1:num_bins, t in 1:T, ip in 1:Np
+    # BELIEF TIMING. The bias applies to the DECISION and to the college years only. A
+    # student compares college against work believing the biased premium will hold for the
+    # whole of life, and consumes through college on that belief -- but on graduating they
+    # observe the true wage and re-optimize against it. So the post-graduation policy is
+    # the TRUE one, taken from base_child, NOT the belief-specific one.
+    #
+    # This was previously `child_models[m].sol_c_grad`, i.e. a graduate who kept consuming
+    # on a belief they had already been proved wrong about. Because realized income here
+    # always used the true beta_E, that mismatch had no budget behind it and drove assets
+    # to -192.8 with 27.2% negative; the cap below then had to fire for 23.4% of
+    # agent-periods to contain it. With the true policy, policy and income agree and the
+    # cap becomes the safety net it should be.
+    if !isassigned(base_child.sol_c_grad, 1) || all(!isfinite, base_child.sol_c_grad)
+        error("simulate_model_family_hetero!: base_child has no graduate solution. The " *
+              "post-college years use the TRUE policy, so base_child needs " *
+              "solve_model_college!(base_child) and optimal_transfer_college!(base_child) " *
+              "before this call, not just solve_model_work!.")
+    end
+    interp_c_grad_true = [
+        LinearInterpolation((a_grid, k_grid), base_child.sol_c_grad[t, :, :, ip, 1]; extrapolation_bc=Flat())
+        for t in 1:T, ip in 1:Np
     ]
-    interp_h_grad_belief = [
-        LinearInterpolation((a_grid, k_grid), child_models[m].sol_h_grad[t, :, :, ip, 1]; extrapolation_bc=Flat())
-        for m in 1:num_bins, t in 1:T, ip in 1:Np
+    interp_h_grad_true = [
+        LinearInterpolation((a_grid, k_grid), base_child.sol_h_grad[t, :, :, ip, 1]; extrapolation_bc=Flat())
+        for t in 1:T, ip in 1:Np
     ]
 
     sol_tr_v_college_interp_belief = [
@@ -1713,6 +1877,9 @@ function simulate_model_family_hetero!(
     # -- Assign initial path and transfer --
     path_choice = Vector{Symbol}(undef, simN)
     tr_initial = Vector{Float64}(undef, simN)
+    # Counters for the belief/realization budget gap; see the cap in the simulation loop.
+    n_capped = 0        # times a belief-optimal c exceeded actual resources
+    n_infeasible = 0    # times resources - a_min <= 0 (cannot afford even ~0 consumption)
     for i in 1:simN
         m = belief_type[i]
         it = eps_indices[i]
@@ -1773,8 +1940,9 @@ function simulate_model_family_hetero!(
                 # A graduate's working life is solved with E = 1 into the college
                 # arrays, so read it from there.
                 if path_choice[i] == :college
-                    c = interp_c_grad_belief[m, t, p_idx](a, k)
-                    h = interp_h_grad_belief[m, t, p_idx](a, k)
+                    # Graduated: the true wage is now observed, so optimize against it.
+                    c = interp_c_grad_true[t, p_idx](a, k)
+                    h = interp_h_grad_true[t, p_idx](a, k)
                 else
                     c = interp_c_work[t, p_idx](a, k)
                     h = interp_h_work[t, p_idx](a, k)
@@ -1788,17 +1956,40 @@ function simulate_model_family_hetero!(
                 sim_income[i, t] = after_tax_income(base_child, w_pre, h)
             end
 
+            # BUDGET FEASIBILITY UNDER A WRONG BELIEF.
+            # The consumption policy above is BELIEF-optimal (interp_*_belief, solved at
+            # beta_E_bin[m]) while the income realized above is the TRUE one (base_child).
+            # That asymmetry is deliberate -- the belief governs the decision, not the
+            # paycheck -- but it means an optimistic believer can ask to consume more than
+            # they actually have, and nothing was stopping them: snap_parent only corrects
+            # float-sized violations, so the gap was financed by borrowing the model does
+            # not permit. Measured before this fix: assets hit exactly 0 at the first
+            # post-college period and then diverged monotonically, 27.2% of all simulated
+            # child assets negative, reaching -192.8 against a_min = 0.
+            #
+            # The budget constraint is physical and binds whatever the agent believed, so
+            # cap consumption at resources - a_min. A wrong belief now shows up where it
+            # belongs -- as disappointed CONSUMPTION -- rather than as an impossible asset
+            # position.
+            resources = (path_choice[i] == :college && t <= t_college) ?
+                        (1 + r) * a - college_cost + y :
+                        (1 + r) * a + sim_income[i, t] + y
+            c_max = resources - a_min
+            if c > c_max
+                n_capped += 1
+                # c_max <= 0 means the agent cannot afford even zero consumption: genuine
+                # infeasibility, not a belief error. Counted separately, never silent.
+                c_max <= 0.0 && (n_infeasible += 1)
+                c = max(c_max, 1e-8)
+            end
+
             # Store
             sim_c[i, t] = c
             sim_h[i, t] = h
 
             # Update states for next period (if t < T)
             if t < T
-                if path_choice[i] == :college && t <= t_college
-                    a_next = (1 + r) * a - c - college_cost + y
-                else
-                    a_next = (1 + r) * a + sim_income[i, t] - c + y
-                end
+                a_next = resources - c
                 # Human capital is fixed at theta for life, so there is no perceived
                 # stock to drift from the true one and no correction to apply.
                 k_next = k
@@ -1814,6 +2005,16 @@ function simulate_model_family_hetero!(
                 sim_p_idx[i, t+1] = discrete_draw(p_trans_probs, p_draw)
             end
         end
+    end
+
+    # -- Budget-cap report: never silent --
+    if n_capped > 0
+        @warn("Belief-optimal consumption exceeded realized resources; capped at the " *
+              "borrowing constraint. This is the disappointment of a wrong belief, not " *
+              "an error -- but a large share means beliefs are far from the truth.",
+              times_capped = n_capped,
+              share = round(100n_capped / (simN * T), digits = 2),
+              infeasible = n_infeasible)
     end
 
     # -- Report results --
