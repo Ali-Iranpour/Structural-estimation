@@ -195,9 +195,25 @@ const PARENT_DEFAULTS = (
     phi_2_0 = 0.5,     phi_2_1 = 0.0,
     phi_3_0 = 1.0,     phi_3_1 = 0.0,
     R_0     = 1.6,     R_1     = 0.0,
-    sigma_1_0 = -0.90, sigma_1_1 = -0.02,
+    # sigma_1_1 = -0.08 (was -0.02). Lowering sigma_3 to 0.407 flipped tau_p from flat
+    # to RISING (0.287 -> 0.457): with less carryover, investment close to 18 matters
+    # relatively more, so parents shift time later. A steeper decline in sigma_1 offsets
+    # it. Measured tau_p at t = 1 / 9 / 17:
+    #     -0.02  0.287  0.208  0.457     rising
+    #     -0.05  0.295  0.173  0.330     rising
+    #     -0.08  0.300  0.143  0.226     DECLINING
+    #     -0.11  0.303  0.117  0.150     declining, but tau_p_17 down at 0.15
+    # The profile is U-shaped either way -- that is structural, late investment sits
+    # closest to the age-18 payoff -- so this targets "declining overall", not monotone.
+    sigma_1_0 = -0.90, sigma_1_1 = -0.08,
     sigma_2_0 = -1.80, sigma_2_1 =  0.02,
-    sigma_3_0 = -0.36, sigma_3_1 =  0.0,
+    # sigma_3_0 = -0.90 gives sigma_3 = exp(-0.90) = 0.407, the ~0.4 self-productivity
+    # asked for; sigma_3_1 = 0 holds it flat in t. Was -0.36 (sigma_3 = 0.698), which
+    # overshot that target AND left no room above: the +-0.4 counterfactual arm reached
+    # exp(-0.36+0.4) = 1.041 >= 1, i.e. explosive, so the arm could not be solved at all.
+    # At -0.90 the same +-0.4 arm spans exp(-0.5) = 0.607 and exp(-1.3) = 0.272, both
+    # comfortably stable, so the persistence counterfactual runs symmetrically.
+    sigma_3_0 = -0.90, sigma_3_1 =  0.0,
     sigma_4_0 = -4.50, sigma_4_1 =  0.02,
     lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
     lambda_2_0 = 1.0,  lambda_2_1 = 0.0,
