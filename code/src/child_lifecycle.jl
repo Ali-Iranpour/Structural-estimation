@@ -50,7 +50,6 @@ mutable struct ConSavLaborCollege_AR1
     # Transitory shocks
     Nt::Int                     # Number of grid points for t
     t_grid::Vector{Float64}     # Grid for transitory shock t
-    sigma_eps::Float64          # Std dev of transitory shock
     t_weight::Vector{Float64}   # Weights for t quadrature
 
     # --- Stochastic Shock Parameters (AR1 only) ---
@@ -317,7 +316,7 @@ function ConSavLaborCollege_AR1(;
         a_max, a_min, Na, k_max, Nk, simT, simN, a_grid, k_grid,
         ap_grid, Nap, ap_min, ap_max,
         psi_terminal, kappa_terminal, omega, mu,
-        Nt, t_grid, sigma_eps, t_weight,
+        Nt, t_grid, t_weight,
         Np, p_grid, p_transition, p_ar1, sigma_p,
         sol_c_work, sol_h_work, sol_v_work,
         sol_c_grad, sol_h_grad, sol_v_grad,
