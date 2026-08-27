@@ -97,6 +97,22 @@ parent's resources arrive as a transfer; or accept a smaller `φ₃`/`λ₂` and
 Which one depends on whether the college share or the time-use profile is the moment you
 most want to match — they are in direct tension here.
 
+### The elasticities sum to more than one — the honest cost of hitting τ_p ≈ 0.40
+
+Moved here from `parent_family.jl`. `σ₁ = 0.41` with `σ₃ = 0.70` makes the input elasticities
+sum to **1.29**, i.e. increasing returns. Cunha–Heckman–Schennach-style technologies put
+self-productivity at 0.85–0.95 and investment elasticities at 0.05–0.20, summing to about 1.
+
+This is a property of the model, not of the solver. At the optimum
+`σ₁ × (value share of HC) = τ_p × (price of time)`, so asking the parent to spend 40% of
+their time on the child **requires** either a large `σ₁` or a large skill valuation. If a
+`τ_p` nearer 0.15 → 0.08 is acceptable, `σ₁` can sit at ≈0.15, squarely in the literature
+range.
+
+`psi_terminal` had to move with `phi_3`/`lambda_2`: left at 1.0 while the flow weight went to
+1.0, the last period valued skill far less than every earlier one and `τ_p` collapsed at
+t = 17 (0.059, against 0.155 once `psi` rose).
+
 ## ✅ P12 — Counterfactual arms failing to solve — **fixed 2026-08-27, 25/25 now solve**
 
 Started as "one arm fails", grew to four as the arm set was corrected, and turned out to be
@@ -282,6 +298,66 @@ every moment flat to the third digit, so `Np = 3` would also be defensible. The 
 `Na`/`Nk` 50 → 30 is **not** free: it moves the **college share 57.7% → 50.8%** while leaving
 every other moment unchanged. The college margin is a threshold choice, so its location moves
 with child asset/HC resolution — worth remembering when reading the college-share results.
+
+## ⚪ Rouwenhorst rather than Tauchen for the AR(1) wage shock
+
+Moved here from `parent_family.jl`. For a Gaussian-innovation AR(1), Rouwenhorst matches the
+unconditional mean, unconditional variance and first-order autocorrelation **exactly at every
+N** — not asymptotically. Tauchen is built on the unconditional distribution and degrades as
+`ρ → 1`, which is where this model sits. Measured:
+
+| ρ | σ | N | Tauchen sd | Tauchen persistence | Rouwenhorst |
+|---|---|---|---|---|---|
+| 0.90 | 0.10 | 3 | +21.5% | +10.8% | exact |
+| 0.90 | 0.10 | 7 | +17.1% | +0.2% | exact |
+| 0.95 | 0.20 | 5 | +31.4% | +4.0% | exact |
+
+Reference: Kopecky & Suen (2010, RED). Trade-off: Rouwenhorst fixes the grid half-width at
+`sqrt(N-1)·σ_z`, so there is no `m` knob, and it matches the first two moments but not higher
+ones — the invariant distribution is binomial, normal only as N grows. Neither matters for
+the moments this model targets.
+
+## ⚪ Numerical guards in the parent solver — the floors, and why they are those values
+
+Moved here from `parent_family.jl` so the file reads; the constants still carry a one-line
+pointer to this entry.
+
+### `LEISURE_FLOOR = 1e-2` (P4 / T9)
+
+Child leisure is the **only** quantity SLSQP can drive non-positive: `c`, `i_c`, `e_p`, `t_p`
+and `h_p` are held positive by box bounds, but `leisure_c = 1 − t_p − i_c` is a *nonlinear*
+constraint, which SLSQP may violate at trial points.
+
+The original code returned a flat `−1e8` there while still computing the gradient from the
+smooth formula, so objective and gradient described different functions and the line search
+accepted steps that worsened the objective. Flooring the gradient to match made the pair
+consistent but not safe: `d/dl [λ·log(max(l, L))]` is `λ/l` above `L` and `0` below, so the
+derivative **cliffs by λ/L** at the floor. At `L = 1e-8` that cliff is ~1.3e7, SLSQP builds a
+BFGS quadratic model out of it, and one step across returns NaN. Measured: the parent solve
+died with `|grad| = 1.28e7` at `leisure_c = 0` (`t_p = 0.3135`, `i_c = 0.6865`, summing to
+exactly 1).
+
+The fix linearizes the log below the floor rather than flattening it:
+
+| region | value | derivative |
+|---|---|---|
+| `l ≥ L` | `log(l)` | `1/l` |
+| `l < L` | `log(L) + (l − L)/L` | `1/L` |
+
+Value and slope both match at `l = L`, so the pair is **C1** rather than merely continuous,
+and the derivative is bounded by `1/L` everywhere.
+
+`L = 1e-2`, not `1e-4`, because the parent's leisure enters as CRRA with curvature `eta`
+(P10). The bounded derivative below the floor is `L^(−eta)`: at `eta = 2` that is `1e8` with
+`L = 1e-4` but `1e4` with `L = 1e-2`. The floor is a numerical guard, not economics — it
+binds only at trial points that violate the nonlinear leisure constraint, and the optimum
+keeps leisure far above it because `λ·log(l) → −∞` as `l → 0`.
+
+### `TIME_FLOOR = 1e-3`
+
+A slack lower bound on the time choices. `df/dx → +∞` as `x → 0` and the true optimum is
+always interior, so the floor is never active at a solution; it exists to stop SLSQP
+evaluating the objective at exactly zero.
 
 ## 🟡 P10 — Parental leisure restored; the calibration tension it exposes is open
 
