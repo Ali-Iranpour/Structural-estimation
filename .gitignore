@@ -28,3 +28,7 @@ output/data/smm_estimates.toml
 # generated targets file IS tracked, because run_smm.jl needs it.
 Input/*.dta
 temp/
+
+# Server-local: agent config and per-clone Julia depot
+.claude/
+.julia_depot/
