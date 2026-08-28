@@ -341,7 +341,7 @@ function simulate_moments(theta)
     t1 = child_for(cc, rr, om, PSI_TERM, kap)
     g = GRIDS[]
     m = Parent_child_interaction_age_specific_AR1(
-            Na = g.p_na, Nk = 2, Nhc = g.p_nhc, Np = g.p_np, w = 12.5, simN = g.simN, seed = SEED,
+            Na = g.p_na, Nk = 2, Nhc = g.p_nhc, Np = g.p_np, simN = g.simN, seed = SEED,
             sigma_1_0 = s10, sigma_1_1 = s11, sigma_2_0 = s20, sigma_2_1 = s21,
             sigma_3_0 = s30, sigma_3_1 = 0.0, sigma_4_0 = s40, sigma_4_1 = s41,
             phi_2_0 = p2, phi_3_0 = p3, lambda_2_0 = p3, R_0 = R0, R_1 = 0.0,

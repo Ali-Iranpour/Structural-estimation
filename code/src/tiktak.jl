@@ -154,7 +154,11 @@ Keyword arguments
   N, Nstar            pre-testing points and local searches (paper: N* is 1-10% of N)
   theta_p/lo/hi       mixing-weight schedule, clamp((j/Nstar)^p, lo, hi)
   local_alg/tol/maxeval    local stage (default Nelder-Mead, 1e-3)
+  local_ftol_abs/xtol_rel  absolute stopping rules for the local stage. Needed
+                           because ftol_rel cannot stop a search whose optimum is
+                           0 -- see the note in the signature. Do not set to 0.
   polish_alg/tol/maxeval   final polish (default BOBYQA, 1e-10)
+  polish_ftol_abs          same, for the polish
   extra_seeds         points forced into the pre-testing pool
   stop_tol            early stop on |Z* - Z*_prev|; 0.0 disables
   on_sobol/on_local   callbacks for progress reporting
@@ -164,12 +168,35 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 theta_p::Float64 = 0.5, theta_lo::Float64 = 0.1, theta_hi::Float64 = 0.995,
                 local_alg::Symbol = :LN_NELDERMEAD, local_tol::Float64 = 1e-3,
                 local_maxeval::Int = 2000,
+                # ftol_rel CANNOT STOP A SEARCH WHOSE OPTIMUM IS ZERO. It tests
+                # |df| <= ftol_rel * |f|, so as f -> 0 the threshold goes to 0 with
+                # it and the test stops being satisfiable; the search then runs to
+                # maxeval every time. That is not hypothetical here: a just-identified
+                # SMM (3 moments, 3 parameters) can drive Q to ~0, and measured
+                # 2026-08-27 restart 1 reached Q ~ 0 at evaluation 61 and was still
+                # going at 290 with the value unchanged, bound for all 2000.
+                # At 15.5 s an evaluation that is 8 h per restart instead of 15 min.
+                #
+                # ftol_abs is scale-free and fires exactly where ftol_rel dies; xtol_rel
+                # is the backstop that works at ANY value of f, because a collapsed
+                # simplex means converged regardless of what f is worth there. Both are
+                # far tighter than local_tol, so on a problem with a non-zero optimum
+                # ftol_rel still stops the search first and behaviour is unchanged.
+                local_ftol_abs::Float64 = 1e-10, local_xtol_rel::Float64 = 1e-8,
                 polish_alg::Symbol = :LN_BOBYQA, polish_tol::Float64 = 1e-10,
-                polish_maxeval::Int = 4000,
+                polish_maxeval::Int = 4000, polish_ftol_abs::Float64 = 1e-14,
                 extra_seeds::Vector{Vector{Float64}} = Vector{Vector{Float64}}(),
                 stop_tol::Float64 = 0.0,
                 parallel::Bool = false,     # see the NLopt warning in the header
                 batch::Int = max(1, min(Threads.nthreads(), floor(Int, sqrt(Nstar)))),
+                # PROCESS-level parallelism for the pre-testing stage. Pass `pmap`
+                # (with workers added and the objective defined @everywhere) to spread
+                # the N Sobol evaluations across worker PROCESSES. This is the safe way
+                # to parallelise here: `parallel = true` above uses THREADS, and
+                # NLopt.jl is not thread-safe in this project. Each worker process
+                # carries its own NLopt state, so the hazard cannot arise.
+                # Default `map` is plain serial and changes nothing.
+                map_fn = map,
                 on_sobol = (i, N, fx, best) -> nothing,
                 on_local = (j, Nstar, theta, f_local, best) -> nothing)
 
@@ -195,6 +222,17 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             end
         end
         n_eval += length(cands)
+    elseif map_fn !== map
+        # Distributed (or any user-supplied map). Evaluated as one batch, so the
+        # progress callback fires afterwards rather than during -- a worker process
+        # cannot write into this process's closure.
+        fs .= map_fn(f, cands)
+        n_eval += length(cands)
+        best_so_far = Inf
+        for (i, v) in pairs(fs)
+            v < best_so_far && (best_so_far = v)
+            on_sobol(i, length(cands), v, best_so_far)
+        end
     else
         best_so_far = Inf
         for (i, x) in pairs(cands)
@@ -230,6 +268,10 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             opt = Opt(local_alg, length(lo))
             lower_bounds!(opt, lo); upper_bounds!(opt, hi)
             ftol_rel!(opt, local_tol); maxeval!(opt, local_maxeval)
+            # See the note on local_ftol_abs in the signature: without these two a
+            # search whose optimum is 0 can never satisfy ftol_rel and always runs
+            # the full maxeval.
+            ftol_abs!(opt, local_ftol_abs); xtol_rel!(opt, local_xtol_rel)
             nev = Ref(0)
             min_objective!(opt, (x, g) -> (nev[] += 1; f(x)))
             floc, xloc = fstart, x0
@@ -271,6 +313,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     opt = Opt(polish_alg, length(lo))
     lower_bounds!(opt, lo); upper_bounds!(opt, hi)
     ftol_rel!(opt, polish_tol); xtol_rel!(opt, polish_tol); maxeval!(opt, polish_maxeval)
+    ftol_abs!(opt, polish_ftol_abs)      # same reason as the local stage, one order tighter
     min_objective!(opt, (x, g) -> (n_eval += 1; f(x)))
     try
         (fp, xp, _) = optimize(opt, Z)

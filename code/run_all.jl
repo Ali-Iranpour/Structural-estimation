@@ -91,7 +91,7 @@ banner("3. Parent problem")
 # -----------------------------------------------------------------------------
 V_child = terminal_value_spline(child; s = 10.0)
 parent  = Parent_child_interaction_age_specific_AR1(Na = P_NA, Nk = P_NK, Nhc = P_NHC,
-                                                   w = 12.5, simN = SIMN, seed = SEED)
+                                                   simN = SIMN, seed = SEED)
 parent.V_child_interp = V_child
 diag = solve_model!(parent; verbose = true)
 @printf("parent solved; min converged share %.4f\n", minimum(d.converged_share for d in diag))
