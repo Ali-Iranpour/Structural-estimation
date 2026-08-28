@@ -1,0 +1,70 @@
+
+============================================================================
+SMM: three parent moments   [QUICK -- smoke test, not an estimate]
+============================================================================
+started    2026-08-27 15:49:39
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 1.2
+workers    0 of 112 cores (0%) -- capped by shared-server budget
+budget     12 Sobol points, 2 restarts
+writing to /srv/project/speech/apps/Structural-estimation/output/smm_runs/2026-08-27_154939
+running on 1 process(es): 1 master + 0 worker(s), 1 BLAS thread each
+4.0s
+16.0s (all processes at once)
+
+============================================================================
+Targets  (Input/smm_targets_baseline.toml)
+============================================================================
+moment           mean         sd        N   source
+mean_c_p       3.1577     1.6993     6742   cons_exhous_real_w99
+mean_l_p       0.5286     0.1436     1046   (leis_mom + leis_dad)/2 / 112
+mean_e_p       0.3945     0.5747    15360   m_method2_final_w99
+
+SDs are shown but NOT targeted: the model's cross-sectional dispersion comes
+from a 5-node wage shock plus initial draws and cannot reach the data's
+(leisure SD is 7.4x too small). Targeting them would distort the means.
+6.6s
+
+projected runtime
+  sobol stage       13 evals /  1 workers  =    1.4 min   (parallel)
+  local stage      120 evals, sequential    =   13.2 min   (cannot be parallelised)
+  total                                      14.7 min
+
+The local stage dominates because TikTak's restarts are sequential by
+construction. More workers shorten the first line only -- to use a wide
+machine well, raise --sobol (better seeds), not --restarts.
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 21.273375
+
+Parameters
+--------------------------------------------------------------
+  phi_1_0          1.0000   (was 1.0000)
+  phi_2_0          0.5000   (was 0.5000)
+  sigma_2_0       -1.8000   (was -1.8000)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.0525     3.1577     -3.3%   cons_exhous_real_w99
+  mean_l_p       0.4708     0.5286    -10.9%   (leis_mom + leis_dad)/2 / 112
+  mean_e_p       2.2133     0.3945    461.1%   m_method2_final_w99
+
+  c_p  30525 USD/yr  vs data 31577
+  l_p  52.7 hrs/wk  vs data 59.2
+  e_p  22133 USD/yr  vs data 3945
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        5.2716  (52716 USD/yr)
+  implied saving rate       10.3%
+  terminal assets        18.4228  (184228 USD)
+  work  h_p               0.3505  (39.3 hrs/wk)
+  child time t_p          0.1787  (20.0 hrs/wk)
+
+============================================================================
+--report-only: stopping before the search
+============================================================================
+wrote /srv/project/speech/apps/Structural-estimation/output/smm_runs/2026-08-27_154939/run.log

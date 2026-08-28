@@ -1,0 +1,94 @@
+
+============================================================================
+SMM: parent-block moments
+============================================================================
+started    2026-08-28 12:57:47
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 4.6
+workers    20 of 112 cores (18%) -- capped by shared-server budget
+budget     400 Sobol points, 5 restarts
+grids      search at Na=Nhc=20, fit REPORTED at Na=Nhc=30
+writing to output/smm_runs/2026-08-28_125747
+6.4s
+running on 21 process(es): 1 master + 20 worker(s), 1 BLAS thread each
+10.5s
+32.7s (all processes at once)
+
+============================================================================
+Targets  (Input/smm_targets_baseline.toml)
+============================================================================
+6 moments, 6 parameters -- just-identified, Q can reach 0
+parameters: phi_1_0, phi_2_0, sigma_1_0, sigma_1_1, sigma_2_0, sigma_2_1
+moment           mean         sd        N   source
+mean_c_p       3.1577     1.6993     6742   cons_exhous_real_w99
+mean_h_p       0.3070     0.0999    15665   (wh_mom + wh_dad)/2 / 112
+mean_t_p_early     0.4672     0.1656      475   par_time_tot / 112, child ages 1-9
+mean_t_p_late     0.3232     0.1669      590   par_time_tot / 112, child ages 10-17
+mean_e_p_early     0.3532     0.4794     8178   m_method2_final_w99, child ages 1-9
+mean_e_p_late     0.4414     0.6638     7182   m_method2_final_w99, child ages 10-17
+
+SDs are shown but NOT targeted: the model's cross-sectional dispersion comes
+from a 5-node wage shock plus initial draws and cannot reach the data's
+(leisure SD is 7.4x too small). Targeting them would distort the means.
+10.2s
+
+projected runtime
+  sobol stage      401 evals / 20 workers  =    3.4 min   (parallel)
+  local stage      825 evals, sequential    =  139.8 min   (cannot be parallelised)
+  total                                     143.2 min
+
+The local stage dominates because TikTak's restarts are sequential by
+construction. More workers shorten the first line only -- to use a wide
+machine well, raise --sobol (better seeds), not --restarts.
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 0.497332
+
+Parameters
+--------------------------------------------------------------
+  phi_1_0          0.8417   (was 0.8417)
+  phi_2_0          0.5256   (was 0.5256)
+  sigma_1_0       -0.9000   (was -0.9000)
+  sigma_1_1       -0.0800   (was -0.0800)
+  sigma_2_0       -3.3268   (was -3.3268)
+  sigma_2_1       -0.0229   (was -0.0229)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.1123     3.1577     -1.4%   cons_exhous_real_w99
+  mean_h_p       0.2697     0.3070    -12.2%   (wh_mom + wh_dad)/2 / 112
+  mean_t_p_early     0.2492     0.4672    -46.7%   par_time_tot / 112, child ages 1-9
+  mean_t_p_late     0.1570     0.3232    -51.4%   par_time_tot / 112, child ages 10-17
+  mean_e_p_early     0.3368     0.3532     -4.7%   m_method2_final_w99, child ages 1-9
+  mean_e_p_late     0.4593     0.4414      4.1%   m_method2_final_w99, child ages 10-17
+
+  c_p           31123 USD/yr  vs data 31577
+  h_p            30.2 hrs/wk  vs data 34.4
+  t_p  1-9       27.9 hrs/wk  vs data 52.3
+  t_p 10-17      17.6 hrs/wk  vs data 36.2
+  e_p  1-9       3368 USD/yr  vs data 3532
+  e_p 10-17      4593 USD/yr  vs data 4414
+
+  t_p late/early  model 0.63x  vs data 0.69x
+  e_p late/early  model 1.36x  vs data 1.25x
+  l_p (residual)  model 58.7 hrs/wk  vs 32.9 implied by the h_p/t_p targets
+                  (measured leisure is 59.2 hrs/wk -- par_time_tot overlaps it)
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        4.2133  (42133 USD/yr)
+  implied saving rate       27.1%
+  terminal assets        31.9840  (319840 USD)
+  leisure l_p             0.5245  (58.7 hrs/wk)
+
+============================================================================
+TikTak search
+============================================================================
+  sobol        1/401     0%   best Q       6.335     0.2 min elapsed, ~91 min left
+  sobol       22/401     5%   best Q      0.4147     0.3 min elapsed, ~6 min left
+  sobol       43/401    11%   best Q      0.4147     0.4 min elapsed, ~3 min left
+  sobol       63/401    16%   best Q      0.4147     0.5 min elapsed, ~3 min left
+  sobol       81/401    20%   best Q      0.4147     0.5 min elapsed, ~2 min left

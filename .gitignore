@@ -34,3 +34,6 @@ output/figures/
 # Server-local: agent config and per-clone Julia depot
 .claude/
 .julia_depot/
+
+# Server-local MCP config
+.mcp.json

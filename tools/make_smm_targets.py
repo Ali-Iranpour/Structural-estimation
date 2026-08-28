@@ -86,8 +86,39 @@ def main():
     m = pd.read_stata(MICRO)
     r = m[(m.Child_Age >= AGE_LO) & (m.Child_Age <= AGE_HI)].copy()
 
-    # Per-parent leisure share. leis_mom/leis_dad are already 112 - work - active.
+    # ------------------------------------------------------------------
+    # t_p USES par_time_tot, BY INSTRUCTION (2026-08-28). READ THIS BEFORE
+    # INTERPRETING phi_2_0 OR ANY LEISURE NUMBER.
+    # ------------------------------------------------------------------
+    # par_time_tot is the broader time concept -- active PLUS nearby/supervisory
+    # presence -- chosen deliberately over per-parent active time. Two properties
+    # of it are worth having in front of you:
+    #
+    # (1) It is a CHILD-side union, not a per-parent allocation. par_time_act
+    #     (27.38) sits between max(mom, dad) = 22.07 and the sum = 36.69, which is
+    #     the signature of "time the child spent with AT LEAST ONE parent", not an
+    #     average over parents. The model's t_p is the PARENT's own time out of a
+    #     112-hour week. These are different objects.
+    #
+    # (2) It does not fit an exhaustive time budget, because nearby time overlaps
+    #     with leisure and work. Measured, per parent:
+    #         leis_mom + wh_mom + Mom_Total_Act = 112.00   <- exact
+    #         leis_mom + wh_mom + par_time_act  = 117.28
+    #         leis_mom + wh_mom + par_time_tot  = 133.25   <- +21 hrs
+    #
+    # CONSEQUENCE, which does not go away by leaving l_p untargeted: the model
+    # enforces l_p + h_p + t_p = 1 identically, so targeting h_p = 0.3070 and
+    # t_p = 0.3874 FORCES model leisure to 0.3056, i.e. 34.2 hrs/wk -- against the
+    # 59.2 hrs/wk this same dataset measures. That 25-hour gap has to land
+    # somewhere, and where it lands is phi_2_0, the taste for leisure. Do not read
+    # the estimated phi_2_0 as a preference parameter without this caveat.
+    #
+    # To revert to the budget-consistent measure, set:
+    #     r["t_share"] = ((r.Mom_Total_Act + r.Dad_Total_Act) / 2.0) / HOURS_PER_WEEK
+    # and the identity closes exactly (112.00 for both parents).
     r["leis_share"] = ((r.leis_mom + r.leis_dad) / 2.0) / HOURS_PER_WEEK
+    r["h_share"] = ((r.wh_mom + r.wh_dad) / 2.0) / HOURS_PER_WEEK
+    r["t_share"] = r.par_time_tot / HOURS_PER_WEEK
 
     moments = [
         dict(name="mean_c_p",
@@ -95,11 +126,40 @@ def main():
              source="cons_exhous_real_w99",
              units="model units (10k USD/yr, real 2015)",
              model="mean of sim_c over t = 1..17"),
+        # l_p is NO LONGER TARGETED -- kept for reference. Targeting h_p and t_p
+        # instead is strictly more information: l_p = 1 - h_p - t_p, so matching
+        # leisure alone pins the SUM of work and child time but not the split, and
+        # the split is where the model was wrong (work 14% below data, child time
+        # 27% above, the two errors cancelling inside the leisure moment).
         dict(name="mean_l_p",
              series=r.leis_share,
              source="(leis_mom + leis_dad)/2 / 112",
              units="share of the 112h non-sleep week, per parent",
              model="mean of 1 - sim_h - sim_t over t = 1..17"),
+        # h_p is flat in child age (0.3062 early vs 0.3080 late), so one pooled
+        # mean is right -- and it carries 15,665 observations against t_p's 1,065,
+        # because work hours are measured for everyone and time diaries only for
+        # the CDS subsample.
+        dict(name="mean_h_p",
+             series=r.h_share,
+             source="(wh_mom + wh_dad)/2 / 112",
+             units="share of the 112h non-sleep week, per parent",
+             model="mean of sim_h over t = 1..17"),
+        # t_p IS split, because sigma_1_1 (the age slope of the HC elasticity to
+        # parent TIME) needs a second moment exactly as sigma_2_1 did. On
+        # par_time_tot the profile runs 52.3 -> 36.2 hrs/wk, late/early 0.692x --
+        # monotone, so exp(sigma_1_0 + sigma_1_1*(t-1)) can reproduce its shape.
+        # (Per-parent active time falls faster, 25.1 -> 12.9, 0.512x.)
+        dict(name="mean_t_p_early",
+             series=r[r.Child_Age <= AGE_SPLIT].t_share,
+             source=f"par_time_tot / 112, child ages {AGE_LO}-{AGE_SPLIT}",
+             units="share of the 112h non-sleep week (active+nearby, child-side union)",
+             model=f"mean of sim_t over t = {AGE_LO}..{AGE_SPLIT}"),
+        dict(name="mean_t_p_late",
+             series=r[r.Child_Age > AGE_SPLIT].t_share,
+             source=f"par_time_tot / 112, child ages {AGE_SPLIT+1}-{AGE_HI}",
+             units="share of the 112h non-sleep week (active+nearby, child-side union)",
+             model=f"mean of sim_t over t = {AGE_SPLIT+1}..{AGE_HI}"),
         # Kept for reference and for switching back to the 3-moment design; the
         # estimation targets the two age groups below instead. See SMM_MOMENTS in
         # code/smm/moments.jl for which set is live.

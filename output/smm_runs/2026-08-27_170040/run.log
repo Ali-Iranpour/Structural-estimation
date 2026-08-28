@@ -1,0 +1,117 @@
+
+============================================================================
+SMM: three parent moments
+============================================================================
+started    2026-08-27 17:00:40
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 1.1
+workers    20 of 112 cores (18%) -- capped by shared-server budget
+budget     400 Sobol points, 5 restarts
+grids      search at Na=Nhc=20, fit REPORTED at Na=Nhc=30
+writing to output/smm_runs/2026-08-27_170040
+5.6s
+running on 21 process(es): 1 master + 20 worker(s), 1 BLAS thread each
+9.8s
+30.5s (all processes at once)
+
+============================================================================
+Targets  (Input/smm_targets_baseline.toml)
+============================================================================
+moment           mean         sd        N   source
+mean_c_p       3.1577     1.6993     6742   cons_exhous_real_w99
+mean_l_p       0.5286     0.1436     1046   (leis_mom + leis_dad)/2 / 112
+mean_e_p_early     0.3532     0.4794     8178   m_method2_final_w99, child ages 1-9
+mean_e_p_late     0.4414     0.6638     7182   m_method2_final_w99, child ages 10-17
+
+SDs are shown but NOT targeted: the model's cross-sectional dispersion comes
+from a 5-node wage shock plus initial draws and cannot reach the data's
+(leisure SD is 7.4x too small). Targeting them would distort the means.
+9.7s
+
+projected runtime
+  sobol stage      401 evals / 20 workers  =    3.2 min   (parallel)
+  local stage      825 evals, sequential    =  133.7 min   (cannot be parallelised)
+  total                                     136.9 min
+
+The local stage dominates because TikTak's restarts are sequential by
+construction. More workers shorten the first line only -- to use a wide
+machine well, raise --sobol (better seeds), not --restarts.
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 43.232978
+
+Parameters
+--------------------------------------------------------------
+  phi_1_0          1.0000   (was 1.0000)
+  phi_2_0          0.5000   (was 0.5000)
+  sigma_2_0       -1.8000   (was -1.8000)
+  sigma_2_1        0.0200   (was 0.0200)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.0153     3.1577     -4.5%   cons_exhous_real_w99
+  mean_l_p       0.4703     0.5286    -11.0%   (leis_mom + leis_dad)/2 / 112
+  mean_e_p_early     1.5085     0.3532    327.1%   m_method2_final_w99, child ages 1-9
+  mean_e_p_late     2.9534     0.4414    569.1%   m_method2_final_w99, child ages 10-17
+
+  c_p        30153 USD/yr  vs data 31577
+  l_p        52.7 hrs/wk  vs data 59.2
+  e_p  1-9   15085 USD/yr  vs data 3532
+  e_p 10-17  29534 USD/yr  vs data 4414
+  e_p late/early  model 1.96x  vs data 1.25x
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        5.2264  (52264 USD/yr)
+  implied saving rate       10.7%
+  terminal assets        19.0799  (190799 USD)
+  work  h_p               0.3525  (39.5 hrs/wk)
+  child time t_p          0.1772  (19.9 hrs/wk)
+
+============================================================================
+TikTak search
+============================================================================
+  sobol        1/401     0%   best Q      0.8342     0.2 min elapsed, ~89 min left
+  sobol       21/401     5%   best Q      0.5247     0.3 min elapsed, ~6 min left
+  sobol       41/401    10%   best Q      0.3374     0.4 min elapsed, ~4 min left
+  sobol       59/401    15%   best Q      0.3374     0.4 min elapsed, ~3 min left
+  sobol       61/401    15%   best Q      0.3374     0.5 min elapsed, ~3 min left
+  sobol       80/401    20%   best Q      0.2351     0.5 min elapsed, ~2 min left
+  sobol       82/401    20%   best Q      0.2351     0.6 min elapsed, ~2 min left
+  sobol       98/401    24%   best Q      0.1394     0.6 min elapsed, ~2 min left
+  sobol      102/401    25%   best Q      0.1394     0.7 min elapsed, ~2 min left
+  sobol      116/401    29%   best Q      0.1394     0.7 min elapsed, ~2 min left
+  sobol      121/401    30%   best Q      0.1394     0.8 min elapsed, ~2 min left
+  sobol      130/401    32%   best Q      0.1161     0.8 min elapsed, ~2 min left
+  sobol      140/401    35%   best Q      0.1161     0.8 min elapsed, ~2 min left
+  sobol      144/401    36%   best Q      0.1161     0.9 min elapsed, ~2 min left
+  sobol      159/401    40%   best Q      0.1161     0.9 min elapsed, ~1 min left
+  sobol      161/401    40%   best Q     0.01978     1.0 min elapsed, ~1 min left
+  sobol      174/401    43%   best Q     0.01978     1.0 min elapsed, ~1 min left
+  sobol      180/401    45%   best Q     0.01978     1.0 min elapsed, ~1 min left
+  sobol      187/401    47%   best Q     0.01978     1.1 min elapsed, ~1 min left
+  sobol      200/401    50%   best Q     0.01978     1.1 min elapsed, ~1 min left
+  sobol      208/401    52%   best Q     0.01978     1.2 min elapsed, ~1 min left
+  sobol      220/401    55%   best Q     0.01978     1.2 min elapsed, ~1 min left
+  sobol      229/401    57%   best Q     0.01978     1.3 min elapsed, ~1 min left
+  sobol      240/401    60%   best Q     0.01978     1.3 min elapsed, ~1 min left
+  sobol      247/401    62%   best Q     0.01978     1.3 min elapsed, ~1 min left
+  sobol      260/401    65%   best Q     0.01978     1.4 min elapsed, ~1 min left
+  sobol      267/401    67%   best Q     0.01978     1.4 min elapsed, ~1 min left
+  sobol      278/401    69%   best Q     0.01978     1.5 min elapsed, ~1 min left
+  sobol      281/401    70%   best Q     0.01978     1.5 min elapsed, ~1 min left
+  sobol      291/401    73%   best Q     0.01978     1.5 min elapsed, ~1 min left
+  sobol      299/401    75%   best Q     0.01978     1.6 min elapsed, ~1 min left
+  sobol      305/401    76%   best Q     0.01978     1.6 min elapsed, ~1 min left
+  sobol      314/401    78%   best Q     0.01978     1.6 min elapsed, ~0 min left
+  sobol      323/401    81%   best Q     0.01978     1.7 min elapsed, ~0 min left
+  sobol      331/401    83%   best Q     0.01978     1.7 min elapsed, ~0 min left
+  sobol      338/401    84%   best Q     0.01978     1.8 min elapsed, ~0 min left
+  sobol      343/401    86%   best Q     0.01978     1.8 min elapsed, ~0 min left
+  sobol      355/401    89%   best Q     0.01978     1.8 min elapsed, ~0 min left
+  sobol      361/401    90%   best Q     0.01978     1.9 min elapsed, ~0 min left
+  sobol      370/401    92%   best Q     0.01978     1.9 min elapsed, ~0 min left
+  sobol      376/401    94%   best Q     0.01978     1.9 min elapsed, ~0 min left

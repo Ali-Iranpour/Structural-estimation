@@ -5,10 +5,11 @@
 # per parent (the model's single adult stands for two earners: wage_func x2).
 # Child ages 1-17 only, matching the parent block's t = 1..17.
 
-generated  = "2026-08-27"
-git_commit = "2bf7268"
+generated  = "2026-08-28"
+git_commit = "ea050f9"
 source     = "Input/SMM_Moments_Micro.dta"
 age_range  = [1, 17]
+age_split  = 9   # early = 1..9, late = 10..17
 dollars_per_model_unit = 10000.0
 hours_per_week = 112.0
 
@@ -30,6 +31,33 @@ mean   = 0.528598
 sd     = 0.143590
 median = 0.530520
 
+[mean_h_p]
+source = "(wh_mom + wh_dad)/2 / 112"
+units  = "share of the 112h non-sleep week, per parent"
+model  = "mean of sim_h over t = 1..17"
+n      = 15665
+mean   = 0.307000
+sd     = 0.099895
+median = 0.325249
+
+[mean_t_p_early]
+source = "par_time_tot / 112, child ages 1-9"
+units  = "share of the 112h non-sleep week (active+nearby, child-side union)"
+model  = "mean of sim_t over t = 1..9"
+n      = 475
+mean   = 0.467206
+sd     = 0.165585
+median = 0.439732
+
+[mean_t_p_late]
+source = "par_time_tot / 112, child ages 10-17"
+units  = "share of the 112h non-sleep week (active+nearby, child-side union)"
+model  = "mean of sim_t over t = 10..17"
+n      = 590
+mean   = 0.323207
+sd     = 0.166854
+median = 0.325446
+
 [mean_e_p]
 source = "m_method2_final_w99"
 units  = "model units (10k USD/yr, real 2015)"
@@ -38,3 +66,21 @@ n      = 15360
 mean   = 0.394459
 sd     = 0.574738
 median = 0.196954
+
+[mean_e_p_early]
+source = "m_method2_final_w99, child ages 1-9"
+units  = "model units (10k USD/yr, real 2015)"
+model  = "mean of sim_e over t = 1..9"
+n      = 8178
+mean   = 0.353228
+sd     = 0.479412
+median = 0.195398
+
+[mean_e_p_late]
+source = "m_method2_final_w99, child ages 10-17"
+units  = "model units (10k USD/yr, real 2015)"
+model  = "mean of sim_e over t = 10..17"
+n      = 7182
+mean   = 0.441408
+sd     = 0.663818
+median = 0.197651

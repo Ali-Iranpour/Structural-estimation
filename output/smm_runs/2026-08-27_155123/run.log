@@ -1,0 +1,236 @@
+
+============================================================================
+SMM: three parent moments   [QUICK -- smoke test, not an estimate]
+============================================================================
+started    2026-08-27 15:51:23
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 1.4
+workers    20 of 112 cores (18%) -- capped by shared-server budget
+budget     40 Sobol points, 2 restarts
+writing to output/smm_runs/2026-08-27_155123
+7.6s
+running on 21 process(es): 1 master + 20 worker(s), 1 BLAS thread each
+9.3s
+19.6s (all processes at once)
+
+============================================================================
+Targets  (Input/smm_targets_baseline.toml)
+============================================================================
+moment           mean         sd        N   source
+mean_c_p       3.1577     1.6993     6742   cons_exhous_real_w99
+mean_l_p       0.5286     0.1436     1046   (leis_mom + leis_dad)/2 / 112
+mean_e_p       0.3945     0.5747    15360   m_method2_final_w99
+
+SDs are shown but NOT targeted: the model's cross-sectional dispersion comes
+from a 5-node wage shock plus initial draws and cannot reach the data's
+(leisure SD is 7.4x too small). Targeting them would distort the means.
+6.4s
+
+projected runtime
+  sobol stage       41 evals / 20 workers  =    0.2 min   (parallel)
+  local stage      120 evals, sequential    =   12.8 min   (cannot be parallelised)
+  total                                      13.0 min
+
+The local stage dominates because TikTak's restarts are sequential by
+construction. More workers shorten the first line only -- to use a wide
+machine well, raise --sobol (better seeds), not --restarts.
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 21.273375
+
+Parameters
+--------------------------------------------------------------
+  phi_1_0          1.0000   (was 1.0000)
+  phi_2_0          0.5000   (was 0.5000)
+  sigma_2_0       -1.8000   (was -1.8000)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.0525     3.1577     -3.3%   cons_exhous_real_w99
+  mean_l_p       0.4708     0.5286    -10.9%   (leis_mom + leis_dad)/2 / 112
+  mean_e_p       2.2133     0.3945    461.1%   m_method2_final_w99
+
+  c_p  30525 USD/yr  vs data 31577
+  l_p  52.7 hrs/wk  vs data 59.2
+  e_p  22133 USD/yr  vs data 3945
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        5.2716  (52716 USD/yr)
+  implied saving rate       10.3%
+  terminal assets        18.4228  (184228 USD)
+  work  h_p               0.3505  (39.3 hrs/wk)
+  child time t_p          0.1787  (20.0 hrs/wk)
+
+============================================================================
+TikTak search
+============================================================================
+  sobol        1/41      2%   best Q   13.56794     0.2 min elapsed, ~7 min left
+  sobol       21/41     51%   best Q    0.37492     0.2 min elapsed, ~0 min left
+  sobol       41/41    100%   best Q    0.08071     0.2 min elapsed, ~0 min left
+  sobol    complete: 41 evaluations, best Q 0.08071, 0.2 min
+  restart   1/2    eval     1   this Q    0.08071   best Q    0.08071     0.3 min
+  restart   1/2    eval     2   this Q    0.08071   best Q    0.08071     0.3 min
+  restart   1/2    eval     4   this Q    0.44402   best Q    0.08071     0.4 min
+  restart   1/2    eval     6   this Q    0.49806   best Q    0.08071     0.4 min
+  restart   1/2    eval     8   this Q    0.26938   best Q    0.08071     0.5 min
+  restart   1/2    eval    10   this Q    0.30235   best Q    0.06374     0.6 min
+  restart   1/2    eval    12   this Q    0.11917   best Q    0.03423     0.6 min
+  restart   1/2    eval    14   this Q    0.00699   best Q    0.00699     0.7 min
+  restart   1/2    eval    16   this Q    0.03801   best Q    0.00567     0.7 min
+  restart   1/2    eval    18   this Q    0.01751   best Q    0.00567     0.8 min
+  restart   1/2    eval    20   this Q    0.01377   best Q    0.00567     0.9 min
+  restart   1/2    eval    22   this Q    0.01483   best Q    0.00567     0.9 min
+  restart   1/2    eval    24   this Q    0.00458   best Q    0.00458     1.0 min
+  restart   1/2    eval    26   this Q    0.00439   best Q    0.00439     1.0 min
+  restart   1/2    eval    27   this Q    0.05017   best Q    0.00439     1.1 min
+  restart   1/2    eval    29   this Q    0.01161   best Q    0.00174     1.1 min
+  restart   1/2    eval    31   this Q    0.00402   best Q    0.00174     1.2 min
+  restart   1/2    eval    33   this Q    0.00130   best Q    0.00130     1.2 min
+  restart   1/2    eval    35   this Q    0.00428   best Q    0.00130     1.3 min
+  restart   1/2    eval    37   this Q    0.00856   best Q    0.00070     1.4 min
+  restart   1/2    eval    39   this Q    0.00102   best Q    0.00011     1.4 min
+  restart   1/2    eval    41   this Q    0.00036   best Q    0.00011     1.5 min
+  restart   1/2    eval    43   this Q    0.00022   best Q    0.00011     1.5 min
+  restart   1/2    eval    45   this Q    0.00016   best Q    0.00011     1.6 min
+  restart   1/2    eval    47   this Q    0.00062   best Q    0.00011     1.7 min
+  restart   1/2    eval    49   this Q    0.00005   best Q    0.00005     1.7 min
+  restart   1/2    eval    51   this Q    0.00002   best Q    0.00002     1.8 min
+  restart   1/2    eval    53   this Q    0.00001   best Q    0.00001     1.8 min
+  restart   1/2    eval    55   this Q    0.00003   best Q    0.00001     1.9 min
+  restart   1/2    eval    57   this Q    0.00001   best Q    0.00001     2.0 min
+  restart   1/2    eval    59   this Q    0.00001   best Q    0.00001     2.0 min
+  restart   1/2    eval    61   this Q    0.00000   best Q    0.00000     2.1 min
+  restart   1/2    eval    63   this Q    0.00000   best Q    0.00000     2.1 min
+  restart   1/2    eval    65   this Q    0.00001   best Q    0.00000     2.2 min
+  restart   1/2    eval    67   this Q    0.00001   best Q    0.00000     2.3 min
+  restart   1/2    eval    69   this Q    0.00001   best Q    0.00000     2.3 min
+  restart   1/2    eval    70   this Q    0.00000   best Q    0.00000     2.3 min
+  restart   1/2    eval    72   this Q    0.00000   best Q    0.00000     2.4 min
+  restart   1/2    eval    74   this Q    0.00000   best Q    0.00000     2.5 min
+  restart   1/2    eval    76   this Q    0.00000   best Q    0.00000     2.5 min
+  restart   1/2    eval    78   this Q    0.00000   best Q    0.00000     2.6 min
+  restart   1/2    eval    80   this Q    0.00000   best Q    0.00000     2.7 min
+  restart   1/2    eval    82   this Q    0.00000   best Q    0.00000     2.7 min
+  restart   1/2    eval    84   this Q    0.00000   best Q    0.00000     2.8 min
+  restart   1/2    eval    86   this Q    0.00000   best Q    0.00000     2.8 min
+  restart   1/2    eval    88   this Q    0.00000   best Q    0.00000     2.9 min
+  restart   1/2    eval    90   this Q    0.00000   best Q    0.00000     3.0 min
+  restart   1/2    eval    91   this Q    0.00000   best Q    0.00000     3.0 min
+  restart   1/2    eval    93   this Q    0.00000   best Q    0.00000     3.1 min
+  restart   1/2    eval    95   this Q    0.00000   best Q    0.00000     3.1 min
+  restart   1/2    eval    97   this Q    0.00000   best Q    0.00000     3.2 min
+  restart   1/2    eval    99   this Q    0.00000   best Q    0.00000     3.2 min
+  restart   1/2    eval   101   this Q    0.00000   best Q    0.00000     3.3 min
+  restart   1/2    eval   103   this Q    0.00000   best Q    0.00000     3.4 min
+  restart   1/2    eval   105   this Q    0.00000   best Q    0.00000     3.4 min
+  restart   1/2    eval   107   this Q    0.00000   best Q    0.00000     3.5 min
+  restart   1/2    eval   109   this Q    0.00000   best Q    0.00000     3.5 min
+  restart   1/2    eval   111   this Q    0.00000   best Q    0.00000     3.6 min
+  restart   1/2    eval   112   this Q    0.00000   best Q    0.00000     3.6 min
+  restart   1/2    eval   114   this Q    0.00000   best Q    0.00000     3.7 min
+  restart   1/2    eval   116   this Q    0.00000   best Q    0.00000     3.7 min
+  restart   1/2    eval   118   this Q    0.00000   best Q    0.00000     3.8 min
+  restart   1/2    eval   120   this Q    0.00000   best Q    0.00000     3.9 min
+  restart   1/2    eval   122   this Q    0.00000   best Q    0.00000     3.9 min
+  restart   1/2    eval   124   this Q    0.00000   best Q    0.00000     4.0 min
+  restart   1/2    eval   126   this Q    0.00000   best Q    0.00000     4.0 min
+  restart   1/2    eval   128   this Q    0.00000   best Q    0.00000     4.1 min
+  restart   1/2    eval   130   this Q    0.00000   best Q    0.00000     4.2 min
+  restart   1/2    eval   132   this Q    0.00000   best Q    0.00000     4.2 min
+  restart   1/2    eval   134   this Q    0.00000   best Q    0.00000     4.3 min
+  restart   1/2    eval   136   this Q    0.00000   best Q    0.00000     4.3 min
+  restart   1/2    eval   138   this Q    0.00000   best Q    0.00000     4.4 min
+  restart   1/2    eval   140   this Q    0.00000   best Q    0.00000     4.5 min
+  restart   1/2    eval   142   this Q    0.00000   best Q    0.00000     4.5 min
+  restart   1/2    eval   144   this Q    0.00000   best Q    0.00000     4.6 min
+  restart   1/2    eval   146   this Q    0.00000   best Q    0.00000     4.6 min
+  restart   1/2    eval   148   this Q    0.00000   best Q    0.00000     4.7 min
+  restart   1/2    eval   150   this Q    0.00000   best Q    0.00000     4.8 min
+  restart   1/2    eval   152   this Q    0.00000   best Q    0.00000     4.8 min
+  restart   1/2    eval   154   this Q    0.00000   best Q    0.00000     4.9 min
+  restart   1/2    eval   156   this Q    0.00000   best Q    0.00000     4.9 min
+  restart   1/2    eval   158   this Q    0.00000   best Q    0.00000     5.0 min
+  restart   1/2    eval   160   this Q    0.00000   best Q    0.00000     5.1 min
+  restart   1/2    eval   162   this Q    0.00000   best Q    0.00000     5.1 min
+  restart   1/2    eval   164   this Q    0.00000   best Q    0.00000     5.2 min
+  restart   1/2    eval   166   this Q    0.00000   best Q    0.00000     5.2 min
+  restart   1/2    eval   168   this Q    0.00000   best Q    0.00000     5.3 min
+  restart   1/2    eval   170   this Q    0.00000   best Q    0.00000     5.4 min
+  restart   1/2    eval   172   this Q    0.00000   best Q    0.00000     5.4 min
+  restart   1/2    eval   174   this Q    0.00000   best Q    0.00000     5.5 min
+  restart   1/2    eval   176   this Q    0.00000   best Q    0.00000     5.5 min
+  restart   1/2    eval   177   this Q    0.00000   best Q    0.00000     5.6 min
+  restart   1/2    eval   179   this Q    0.00000   best Q    0.00000     5.6 min
+  restart   1/2    eval   181   this Q    0.00000   best Q    0.00000     5.7 min
+  restart   1/2    eval   183   this Q    0.00000   best Q    0.00000     5.8 min
+  restart   1/2    eval   185   this Q    0.00000   best Q    0.00000     5.8 min
+  restart   1/2    eval   187   this Q    0.00000   best Q    0.00000     5.9 min
+  restart   1/2    eval   189   this Q    0.00000   best Q    0.00000     5.9 min
+  restart   1/2    eval   191   this Q    0.00000   best Q    0.00000     6.0 min
+  restart   1/2    eval   193   this Q    0.00000   best Q    0.00000     6.0 min
+  restart   1/2    eval   195   this Q    0.00000   best Q    0.00000     6.1 min
+  restart   1/2    eval   197   this Q    0.00000   best Q    0.00000     6.2 min
+  restart   1/2    eval   198   this Q    0.00000   best Q    0.00000     6.2 min
+  restart   1/2    eval   200   this Q    0.00000   best Q    0.00000     6.3 min
+  restart   1/2    eval   202   this Q    0.00000   best Q    0.00000     6.3 min
+  restart   1/2    eval   204   this Q    0.00000   best Q    0.00000     6.4 min
+  restart   1/2    eval   206   this Q    0.00000   best Q    0.00000     6.4 min
+  restart   1/2    eval   208   this Q    0.00000   best Q    0.00000     6.5 min
+  restart   1/2    eval   210   this Q    0.00000   best Q    0.00000     6.6 min
+  restart   1/2    eval   212   this Q    0.00000   best Q    0.00000     6.6 min
+  restart   1/2    eval   214   this Q    0.00000   best Q    0.00000     6.7 min
+  restart   1/2    eval   216   this Q    0.00000   best Q    0.00000     6.7 min
+  restart   1/2    eval   218   this Q    0.00000   best Q    0.00000     6.8 min
+  restart   1/2    eval   219   this Q    0.00000   best Q    0.00000     6.8 min
+  restart   1/2    eval   221   this Q    0.00000   best Q    0.00000     6.9 min
+  restart   1/2    eval   223   this Q    0.00000   best Q    0.00000     7.0 min
+  restart   1/2    eval   225   this Q    0.00000   best Q    0.00000     7.0 min
+  restart   1/2    eval   227   this Q    0.00000   best Q    0.00000     7.1 min
+  restart   1/2    eval   229   this Q    0.00000   best Q    0.00000     7.1 min
+  restart   1/2    eval   231   this Q    0.00000   best Q    0.00000     7.2 min
+  restart   1/2    eval   233   this Q    0.00000   best Q    0.00000     7.2 min
+  restart   1/2    eval   235   this Q    0.00000   best Q    0.00000     7.3 min
+  restart   1/2    eval   237   this Q    0.00000   best Q    0.00000     7.4 min
+  restart   1/2    eval   239   this Q    0.00000   best Q    0.00000     7.4 min
+  restart   1/2    eval   240   this Q    0.00000   best Q    0.00000     7.5 min
+  restart   1/2    eval   242   this Q    0.00000   best Q    0.00000     7.5 min
+  restart   1/2    eval   244   this Q    0.00000   best Q    0.00000     7.6 min
+  restart   1/2    eval   246   this Q    0.00000   best Q    0.00000     7.6 min
+  restart   1/2    eval   248   this Q    0.00000   best Q    0.00000     7.7 min
+  restart   1/2    eval   250   this Q    0.00000   best Q    0.00000     7.8 min
+  restart   1/2    eval   252   this Q    0.00000   best Q    0.00000     7.8 min
+  restart   1/2    eval   254   this Q    0.00000   best Q    0.00000     7.9 min
+  restart   1/2    eval   256   this Q    0.00000   best Q    0.00000     7.9 min
+  restart   1/2    eval   258   this Q    0.00000   best Q    0.00000     8.0 min
+  restart   1/2    eval   260   this Q    0.00000   best Q    0.00000     8.1 min
+  restart   1/2    eval   262   this Q    0.00000   best Q    0.00000     8.1 min
+  restart   1/2    eval   264   this Q    0.00000   best Q    0.00000     8.2 min
+  restart   1/2    eval   266   this Q    0.00000   best Q    0.00000     8.2 min
+  restart   1/2    eval   268   this Q    0.00000   best Q    0.00000     8.3 min
+  restart   1/2    eval   270   this Q    0.00000   best Q    0.00000     8.4 min
+  restart   1/2    eval   272   this Q    0.00000   best Q    0.00000     8.4 min
+  restart   1/2    eval   274   this Q    0.00000   best Q    0.00000     8.5 min
+  restart   1/2    eval   276   this Q    0.00000   best Q    0.00000     8.5 min
+  restart   1/2    eval   278   this Q    0.00000   best Q    0.00000     8.6 min
+  restart   1/2    eval   280   this Q    0.00000   best Q    0.00000     8.7 min
+  restart   1/2    eval   282   this Q    0.00000   best Q    0.00000     8.7 min
+  restart   1/2    eval   284   this Q    0.00000   best Q    0.00000     8.8 min
+  restart   1/2    eval   286   this Q    0.00000   best Q    0.00000     8.8 min
+  restart   1/2    eval   288   this Q    0.00000   best Q    0.00000     8.9 min
+  restart   1/2    eval   290   this Q    0.00000   best Q    0.00000     9.0 min
+  restart   1/2    eval   292   this Q    0.00000   best Q    0.00000     9.0 min
+  restart   1/2    eval   294   this Q    0.00000   best Q    0.00000     9.1 min
+  restart   1/2    eval   296   this Q    0.00000   best Q    0.00000     9.1 min
+  restart   1/2    eval   298   this Q    0.00000   best Q    0.00000     9.2 min
+  restart   1/2    eval   300   this Q    0.00000   best Q    0.00000     9.3 min
+  restart   1/2    eval   302   this Q    0.00000   best Q    0.00000     9.3 min
+  restart   1/2    eval   304   this Q    0.00000   best Q    0.00000     9.4 min
+  restart   1/2    eval   306   this Q    0.00000   best Q    0.00000     9.4 min
+  restart   1/2    eval   308   this Q    0.00000   best Q    0.00000     9.5 min
+  restart   1/2    eval   310   this Q    0.00000   best Q    0.00000     9.6 min
+  restart   1/2    eval   312   this Q    0.00000   best Q    0.00000     9.6 min
+  restart   1/2    eval   314   this Q    0.00000   best Q    0.00000     9.7 min

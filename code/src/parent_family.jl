@@ -313,7 +313,20 @@ function Parent_child_interaction_age_specific_AR1(;
         simN::Int=5000, simT::Int=T, seed::Int=1234,
 
         # --- Slope/Intercept parameters for ALL age-specific variables ---
-        beta_0 = 0.97,     beta_1 = 0.0,
+        # beta_0 = 0.98 (was 0.97), by instruction 2026-08-28. WHY: consumption was
+        # FLAT because beta*(1+r) = 0.97*1.03 = 0.9991, i.e. the Euler condition was
+        # almost exactly balanced and nothing tilted the profile. The data rises 21.8%
+        # over the family stage (early 2.864 -> late 3.489, +1.87%/yr).
+        #     beta   beta(1+r)   growth/yr   over 16 yrs
+        #     0.97   0.9991      -0.06%       -1%
+        #     0.98   1.0094      +0.63%      +10.5%   <- here
+        #     0.99   1.0197      +1.31%      +23.1%
+        # So 0.98 recovers about half the observed tilt; ~0.989 would match it. It is
+        # SET, not estimated, by instruction -- the consumption moment stays a single
+        # pooled mean, so nothing in the SMM identifies beta. Raise it here, not in
+        # the SMM, and note this changes the BASELINE for the notebook and
+        # counterfactuals too, not only the estimation.
+        beta_0 = 0.98,     beta_1 = 0.0,
         phi_1_0 = PARENT_DEFAULTS.phi_1_0, phi_1_1 = PARENT_DEFAULTS.phi_1_1,
         # phi_2 weights the parent's leisure CRRA (not the old Frisch disutility), so
         # its scale changed with P10. tau_p is NOT pinned by it. docs/ERRORS.md, P10.
