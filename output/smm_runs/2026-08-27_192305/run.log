@@ -1,0 +1,1150 @@
+
+============================================================================
+SMM: parent-block moments
+============================================================================
+started    2026-08-27 19:23:05
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 1.2
+workers    20 of 112 cores (18%) -- capped by shared-server budget
+budget     400 Sobol points, 5 restarts
+grids      search at Na=Nhc=20, fit REPORTED at Na=Nhc=30
+writing to output/smm_runs/2026-08-27_192305
+7.6s
+running on 21 process(es): 1 master + 20 worker(s), 1 BLAS thread each
+9.2s
+31.5s (all processes at once)
+
+============================================================================
+Targets  (Input/smm_targets_baseline.toml)
+============================================================================
+4 moments, 4 parameters -- just-identified, Q can reach 0
+parameters: phi_1_0, phi_2_0, sigma_2_0, sigma_2_1
+moment           mean         sd        N   source
+mean_c_p       3.1577     1.6993     6742   cons_exhous_real_w99
+mean_l_p       0.5286     0.1436     1046   (leis_mom + leis_dad)/2 / 112
+mean_e_p_early     0.3532     0.4794     8178   m_method2_final_w99, child ages 1-9
+mean_e_p_late     0.4414     0.6638     7182   m_method2_final_w99, child ages 10-17
+
+SDs are shown but NOT targeted: the model's cross-sectional dispersion comes
+from a 5-node wage shock plus initial draws and cannot reach the data's
+(leisure SD is 7.4x too small). Targeting them would distort the means.
+9.5s
+
+projected runtime
+  sobol stage      401 evals / 20 workers  =    3.2 min   (parallel)
+  local stage      825 evals, sequential    =  130.4 min   (cannot be parallelised)
+  total                                     133.6 min
+
+The local stage dominates because TikTak's restarts are sequential by
+construction. More workers shorten the first line only -- to use a wide
+machine well, raise --sobol (better seeds), not --restarts.
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 43.232978
+
+Parameters
+--------------------------------------------------------------
+  phi_1_0          1.0000   (was 1.0000)
+  phi_2_0          0.5000   (was 0.5000)
+  sigma_2_0       -1.8000   (was -1.8000)
+  sigma_2_1        0.0200   (was 0.0200)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.0153     3.1577     -4.5%   cons_exhous_real_w99
+  mean_l_p       0.4703     0.5286    -11.0%   (leis_mom + leis_dad)/2 / 112
+  mean_e_p_early     1.5085     0.3532    327.1%   m_method2_final_w99, child ages 1-9
+  mean_e_p_late     2.9534     0.4414    569.1%   m_method2_final_w99, child ages 10-17
+
+  c_p        30153 USD/yr  vs data 31577
+  l_p        52.7 hrs/wk  vs data 59.2
+  e_p  1-9   15085 USD/yr  vs data 3532
+  e_p 10-17  29534 USD/yr  vs data 4414
+  e_p late/early  model 1.96x  vs data 1.25x
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        5.2264  (52264 USD/yr)
+  implied saving rate       10.7%
+  terminal assets        19.0799  (190799 USD)
+  work  h_p               0.3525  (39.5 hrs/wk)
+  child time t_p          0.1772  (19.9 hrs/wk)
+
+============================================================================
+TikTak search
+============================================================================
+  sobol        1/401     0%   best Q       1.229     0.2 min elapsed, ~87 min left
+  sobol       21/401     5%   best Q      0.5247     0.3 min elapsed, ~6 min left
+  sobol       41/401    10%   best Q      0.3374     0.4 min elapsed, ~3 min left
+  sobol       59/401    15%   best Q      0.3374     0.4 min elapsed, ~2 min left
+  sobol       61/401    15%   best Q      0.3374     0.5 min elapsed, ~3 min left
+  sobol       82/401    20%   best Q      0.2351     0.6 min elapsed, ~2 min left
+  sobol       99/401    25%   best Q      0.1394     0.6 min elapsed, ~2 min left
+  sobol      102/401    25%   best Q      0.1394     0.7 min elapsed, ~2 min left
+  sobol      116/401    29%   best Q      0.1394     0.7 min elapsed, ~2 min left
+  sobol      122/401    30%   best Q      0.1394     0.8 min elapsed, ~2 min left
+  sobol      133/401    33%   best Q      0.1161     0.8 min elapsed, ~2 min left
+  sobol      142/401    35%   best Q      0.1161     0.9 min elapsed, ~2 min left
+  sobol      154/401    38%   best Q      0.1161     0.9 min elapsed, ~1 min left
+  sobol      162/401    40%   best Q     0.01978     0.9 min elapsed, ~1 min left
+  sobol      172/401    43%   best Q     0.01978     1.0 min elapsed, ~1 min left
+  sobol      181/401    45%   best Q     0.01978     1.0 min elapsed, ~1 min left
+  sobol      186/401    46%   best Q     0.01978     1.1 min elapsed, ~1 min left
+  sobol      200/401    50%   best Q     0.01978     1.1 min elapsed, ~1 min left
+  sobol      204/401    51%   best Q     0.01978     1.1 min elapsed, ~1 min left
+  sobol      216/401    54%   best Q     0.01978     1.2 min elapsed, ~1 min left
+  sobol      222/401    55%   best Q     0.01978     1.2 min elapsed, ~1 min left
+  sobol      228/401    57%   best Q     0.01978     1.2 min elapsed, ~1 min left
+  sobol      240/401    60%   best Q     0.01978     1.3 min elapsed, ~1 min left
+  sobol      244/401    61%   best Q     0.01978     1.3 min elapsed, ~1 min left
+  sobol      257/401    64%   best Q     0.01978     1.4 min elapsed, ~1 min left
+  sobol      263/401    66%   best Q     0.01978     1.4 min elapsed, ~1 min left
+  sobol      269/401    67%   best Q     0.01978     1.4 min elapsed, ~1 min left
+  sobol      281/401    70%   best Q     0.01978     1.5 min elapsed, ~1 min left
+  sobol      287/401    72%   best Q     0.01978     1.5 min elapsed, ~1 min left
+  sobol      299/401    75%   best Q     0.01978     1.5 min elapsed, ~1 min left
+  sobol      304/401    76%   best Q     0.01978     1.6 min elapsed, ~1 min left
+  sobol      313/401    78%   best Q     0.01978     1.6 min elapsed, ~0 min left
+  sobol      323/401    81%   best Q     0.01978     1.7 min elapsed, ~0 min left
+  sobol      329/401    82%   best Q     0.01978     1.7 min elapsed, ~0 min left
+  sobol      340/401    85%   best Q     0.01978     1.7 min elapsed, ~0 min left
+  sobol      345/401    86%   best Q     0.01978     1.8 min elapsed, ~0 min left
+  sobol      356/401    89%   best Q     0.01978     1.8 min elapsed, ~0 min left
+  sobol      364/401    91%   best Q     0.01978     1.9 min elapsed, ~0 min left
+  sobol      370/401    92%   best Q     0.01978     1.9 min elapsed, ~0 min left
+  sobol      380/401    95%   best Q     0.01978     1.9 min elapsed, ~0 min left
+  sobol      385/401    96%   best Q     0.01978     2.0 min elapsed, ~0 min left
+  sobol      393/401    98%   best Q     0.01978     2.0 min elapsed, ~0 min left
+  sobol      401/401   100%   best Q     0.01978     2.0 min elapsed, ~0 min left
+  sobol    complete: 401 evaluations, best Q 0.01978, 2.0 min
+  restart   1/5    eval     1   this Q     0.01978   best Q     0.01978     2.1 min
+  restart   1/5    eval     2   this Q     0.01978   best Q     0.01978     2.2 min
+  restart   1/5    eval     3   this Q      0.2147   best Q     0.01978     2.3 min
+  restart   1/5    eval     4   this Q      0.8823   best Q     0.01978     2.4 min
+  restart   1/5    eval     5   this Q        7.01   best Q     0.01978     2.5 min
+  restart   1/5    eval     6   this Q       0.226   best Q     0.01978     2.5 min
+  restart   1/5    eval     7   this Q       1.199   best Q     0.01978     2.6 min
+  restart   1/5    eval     8   this Q      0.6073   best Q     0.01978     2.7 min
+  restart   1/5    eval     9   this Q      0.3622   best Q     0.01978     2.8 min
+  restart   1/5    eval    10   this Q       2.256   best Q     0.01978     2.9 min
+  restart   1/5    eval    11   this Q      0.1889   best Q     0.01978     3.0 min
+  restart   1/5    eval    12   this Q      0.5716   best Q     0.01978     3.0 min
+  restart   1/5    eval    13   this Q      0.1118   best Q     0.01978     3.1 min
+  restart   1/5    eval    14   this Q      0.4827   best Q     0.01978     3.2 min
+  restart   1/5    eval    15   this Q     0.04172   best Q     0.01978     3.3 min
+  restart   1/5    eval    16   this Q     0.07573   best Q     0.01978     3.4 min
+  restart   1/5    eval    17   this Q      0.4682   best Q     0.01978     3.5 min
+  restart   1/5    eval    18   this Q      0.0585   best Q     0.01978     3.5 min
+  restart   1/5    eval    19   this Q      0.1928   best Q     0.01978     3.6 min
+  restart   1/5    eval    20   this Q      0.0324   best Q     0.01978     3.7 min
+  restart   1/5    eval    21   this Q     0.09899   best Q     0.01978     3.8 min
+  restart   1/5    eval    22   this Q     0.03438   best Q     0.01978     3.9 min
+  restart   1/5    eval    23   this Q      0.1057   best Q     0.01978     4.0 min
+  restart   1/5    eval    24   this Q     0.02755   best Q     0.01978     4.0 min
+  restart   1/5    eval    25   this Q     0.01925   best Q     0.01925     4.1 min
+  restart   1/5    eval    26   this Q     0.04347   best Q     0.01925     4.2 min
+  restart   1/5    eval    27   this Q     0.02235   best Q     0.01925     4.3 min
+  restart   1/5    eval    28   this Q     0.05544   best Q     0.01925     4.4 min
+  restart   1/5    eval    29   this Q     0.01597   best Q     0.01597     4.5 min
+  restart   1/5    eval    30   this Q    0.002373   best Q    0.002373     4.5 min
+  restart   1/5    eval    31   this Q    0.002676   best Q    0.002373     4.6 min
+  restart   1/5    eval    32   this Q     0.02597   best Q    0.002373     4.7 min
+  restart   1/5    eval    33   this Q     0.01122   best Q    0.002373     4.8 min
+  restart   1/5    eval    34   this Q     0.02994   best Q    0.002373     4.9 min
+  restart   1/5    eval    35   this Q     0.01039   best Q    0.002373     4.9 min
+  restart   1/5    eval    36   this Q    0.008519   best Q    0.002373     5.0 min
+  restart   1/5    eval    37   this Q    0.006304   best Q    0.002373     5.1 min
+  restart   1/5    eval    38   this Q    0.007474   best Q    0.002373     5.2 min
+  restart   1/5    eval    39   this Q     0.00413   best Q    0.002373     5.3 min
+  restart   1/5    eval    40   this Q     0.01557   best Q    0.002373     5.4 min
+  restart   1/5    eval    41   this Q     0.00307   best Q    0.002373     5.4 min
+  restart   1/5    eval    42   this Q    0.004397   best Q    0.002373     5.5 min
+  restart   1/5    eval    43   this Q    0.004468   best Q    0.002373     5.6 min
+  restart   1/5    eval    44   this Q    0.001889   best Q    0.001889     5.7 min
+  restart   1/5    eval    45   this Q    0.004386   best Q    0.001889     5.8 min
+  restart   1/5    eval    46   this Q     0.00192   best Q    0.001889     5.9 min
+  restart   1/5    eval    47   this Q    0.005495   best Q    0.001889     5.9 min
+  restart   1/5    eval    48   this Q    0.001694   best Q    0.001694     6.0 min
+  restart   1/5    eval    49   this Q    0.000138   best Q    0.000138     6.1 min
+  restart   1/5    eval    50   this Q    0.001064   best Q    0.000138     6.2 min
+  restart   1/5    eval    51   this Q    0.005946   best Q    0.000138     6.3 min
+  restart   1/5    eval    52   this Q   0.0007448   best Q    0.000138     6.4 min
+  restart   1/5    eval    53   this Q    0.001392   best Q    0.000138     6.4 min
+  restart   1/5    eval    54   this Q    0.001206   best Q    0.000138     6.5 min
+  restart   1/5    eval    55   this Q    0.002515   best Q    0.000138     6.6 min
+  restart   1/5    eval    56   this Q   0.0006356   best Q    0.000138     6.7 min
+  restart   1/5    eval    57   this Q    0.002046   best Q    0.000138     6.8 min
+  restart   1/5    eval    58   this Q   0.0005603   best Q    0.000138     6.9 min
+  restart   1/5    eval    59   this Q    0.001126   best Q    0.000138     7.0 min
+  restart   1/5    eval    60   this Q   0.0005169   best Q    0.000138     7.0 min
+  restart   1/5    eval    61   this Q   0.0007651   best Q    0.000138     7.1 min
+  restart   1/5    eval    62   this Q   0.0004242   best Q    0.000138     7.2 min
+  restart   1/5    eval    63   this Q   0.0004917   best Q    0.000138     7.3 min
+  restart   1/5    eval    64   this Q   0.0001569   best Q    0.000138     7.4 min
+  restart   1/5    eval    65   this Q   0.0003048   best Q    0.000138     7.5 min
+  restart   1/5    eval    66   this Q   0.0003772   best Q    0.000138     7.5 min
+  restart   1/5    eval    67   this Q   0.0001645   best Q    0.000138     7.6 min
+  restart   1/5    eval    68   this Q   0.0003183   best Q    0.000138     7.7 min
+  restart   1/5    eval    69   this Q   0.0001307   best Q   0.0001307     7.8 min
+  restart   1/5    eval    70   this Q   5.228e-05   best Q   5.228e-05     7.9 min
+  restart   1/5    eval    71   this Q   0.0003195   best Q   5.228e-05     8.0 min
+  restart   1/5    eval    72   this Q    0.000339   best Q   5.228e-05     8.0 min
+  restart   1/5    eval    73   this Q   4.708e-05   best Q   4.708e-05     8.1 min
+  restart   1/5    eval    74   this Q   0.0002894   best Q   4.708e-05     8.2 min
+  restart   1/5    eval    75   this Q    4.96e-05   best Q   4.708e-05     8.3 min
+  restart   1/5    eval    76   this Q   3.502e-05   best Q   3.502e-05     8.4 min
+  restart   1/5    eval    77   this Q   0.0001924   best Q   3.502e-05     8.5 min
+  restart   1/5    eval    78   this Q   0.0001481   best Q   3.502e-05     8.5 min
+  restart   1/5    eval    79   this Q   3.595e-05   best Q   3.502e-05     8.6 min
+  restart   1/5    eval    80   this Q   0.0001773   best Q   3.502e-05     8.7 min
+  restart   1/5    eval    81   this Q   9.193e-06   best Q   9.193e-06     8.8 min
+  restart   1/5    eval    82   this Q   3.595e-05   best Q   9.193e-06     8.9 min
+  restart   1/5    eval    83   this Q   3.846e-05   best Q   9.193e-06     9.0 min
+  restart   1/5    eval    84   this Q   1.277e-05   best Q   9.193e-06     9.0 min
+  restart   1/5    eval    85   this Q    6.35e-05   best Q   9.193e-06     9.1 min
+  restart   1/5    eval    86   this Q   1.031e-05   best Q   9.193e-06     9.2 min
+  restart   1/5    eval    87   this Q   4.229e-05   best Q   9.193e-06     9.3 min
+  restart   1/5    eval    88   this Q    1.18e-05   best Q   9.193e-06     9.4 min
+  restart   1/5    eval    89   this Q   2.184e-05   best Q   9.193e-06     9.5 min
+  restart   1/5    eval    90   this Q   5.454e-06   best Q   5.454e-06     9.5 min
+  restart   1/5    eval    91   this Q   2.224e-05   best Q   5.454e-06     9.6 min
+  restart   1/5    eval    92   this Q   3.631e-06   best Q   3.631e-06     9.7 min
+  restart   1/5    eval    93   this Q   4.164e-06   best Q   3.631e-06     9.8 min
+  restart   1/5    eval    94   this Q   2.094e-05   best Q   3.631e-06     9.9 min
+  restart   1/5    eval    95   this Q   1.958e-06   best Q   1.958e-06    10.0 min
+  restart   1/5    eval    96   this Q   1.481e-05   best Q   1.958e-06    10.1 min
+  restart   1/5    eval    97   this Q   2.119e-06   best Q   1.958e-06    10.1 min
+  restart   1/5    eval    98   this Q   3.333e-06   best Q   1.958e-06    10.2 min
+  restart   1/5    eval    99   this Q   7.953e-06   best Q   1.958e-06    10.3 min
+  restart   1/5    eval   100   this Q   6.612e-07   best Q   6.612e-07    10.4 min
+  restart   1/5    eval   101   this Q   6.651e-06   best Q   6.612e-07    10.5 min
+  restart   1/5    eval   102   this Q   7.284e-07   best Q   6.612e-07    10.6 min
+  restart   1/5    eval   103   this Q   5.298e-06   best Q   6.612e-07    10.6 min
+  restart   1/5    eval   104   this Q   6.642e-07   best Q   6.612e-07    10.7 min
+  restart   1/5    eval   105   this Q   4.912e-06   best Q   6.612e-07    10.8 min
+  restart   1/5    eval   106   this Q   3.127e-07   best Q   3.127e-07    10.9 min
+  restart   1/5    eval   107   this Q   2.519e-06   best Q   3.127e-07    11.0 min
+  restart   1/5    eval   108   this Q   4.403e-07   best Q   3.127e-07    11.1 min
+  restart   1/5    eval   109   this Q   1.808e-06   best Q   3.127e-07    11.2 min
+  restart   1/5    eval   110   this Q   1.081e-07   best Q   1.081e-07    11.2 min
+  restart   1/5    eval   111   this Q   8.727e-07   best Q   1.081e-07    11.3 min
+  restart   1/5    eval   112   this Q   1.937e-07   best Q   1.081e-07    11.4 min
+  restart   1/5    eval   113   this Q   7.867e-07   best Q   1.081e-07    11.5 min
+  restart   1/5    eval   114   this Q   1.911e-07   best Q   1.081e-07    11.6 min
+  restart   1/5    eval   115   this Q   6.219e-07   best Q   1.081e-07    11.7 min
+  restart   1/5    eval   116   this Q   1.067e-07   best Q   1.067e-07    11.7 min
+  restart   1/5    eval   117   this Q   7.454e-07   best Q   1.067e-07    11.8 min
+  restart   1/5    eval   118   this Q    5.78e-08   best Q    5.78e-08    11.9 min
+  restart   1/5    eval   119   this Q   1.355e-07   best Q    5.78e-08    12.0 min
+  restart   1/5    eval   120   this Q   2.756e-07   best Q    5.78e-08    12.1 min
+  restart   1/5    eval   121   this Q    6.71e-08   best Q    5.78e-08    12.2 min
+  restart   1/5    eval   122   this Q   1.469e-07   best Q    5.78e-08    12.2 min
+  restart   1/5    eval   123   this Q   5.241e-08   best Q   5.241e-08    12.3 min
+  restart   1/5    eval   124   this Q   3.044e-07   best Q   5.241e-08    12.4 min
+  restart   1/5    eval   125   this Q   2.633e-08   best Q   2.633e-08    12.5 min
+  restart   1/5    eval   126   this Q   5.428e-08   best Q   2.633e-08    12.6 min
+  restart   1/5    eval   127   this Q   4.004e-08   best Q   2.633e-08    12.7 min
+  restart   1/5    eval   128   this Q   3.391e-08   best Q   2.633e-08    12.7 min
+  restart   1/5    eval   129   this Q   1.869e-07   best Q   2.633e-08    12.8 min
+  restart   1/5    eval   130   this Q   1.487e-08   best Q   1.487e-08    12.9 min
+  restart   1/5    eval   131   this Q   2.116e-08   best Q   1.487e-08    13.0 min
+  restart   1/5    eval   132   this Q   3.587e-08   best Q   1.487e-08    13.1 min
+  restart   1/5    eval   133   this Q   1.405e-08   best Q   1.405e-08    13.2 min
+  restart   1/5    eval   134   this Q   1.523e-08   best Q   1.405e-08    13.3 min
+  restart   1/5    eval   135   this Q   3.455e-08   best Q   1.405e-08    13.3 min
+  restart   1/5    eval   136   this Q   7.302e-09   best Q   7.302e-09    13.4 min
+  restart   1/5    eval   137   this Q   2.692e-08   best Q   7.302e-09    13.5 min
+  restart   1/5    eval   138   this Q   8.029e-09   best Q   7.302e-09    13.6 min
+  restart   1/5    eval   139   this Q   2.545e-08   best Q   7.302e-09    13.7 min
+  restart   1/5    eval   140   this Q   2.876e-09   best Q   2.876e-09    13.8 min
+  restart   1/5    eval   141   this Q   4.858e-08   best Q   2.876e-09    13.8 min
+  restart   1/5    eval   142   this Q   2.016e-09   best Q   2.016e-09    13.9 min
+  restart   1/5    eval   143   this Q   1.289e-08   best Q   2.016e-09    14.0 min
+  restart   1/5    eval   144   this Q    4.85e-09   best Q   2.016e-09    14.1 min
+  restart   1/5    eval   145   this Q   4.044e-09   best Q   2.016e-09    14.2 min
+  restart   1/5    eval   146   this Q   1.351e-08   best Q   2.016e-09    14.3 min
+  restart   1/5    eval   147   this Q   2.241e-09   best Q   2.016e-09    14.3 min
+  restart   1/5    eval   148   this Q   4.884e-09   best Q   2.016e-09    14.4 min
+  restart   1/5    eval   149   this Q       2e-09   best Q       2e-09    14.5 min
+  restart   1/5    eval   150   this Q     5.8e-09   best Q       2e-09    14.6 min
+  restart   1/5    eval   151   this Q   2.177e-09   best Q       2e-09    14.7 min
+  restart   1/5    eval   152   this Q   3.371e-09   best Q       2e-09    14.8 min
+  restart   1/5    eval   153   this Q   1.703e-09   best Q   1.703e-09    14.8 min
+  restart   1/5    eval   154   this Q   4.618e-09   best Q   1.703e-09    14.9 min
+  restart   1/5    eval   155   this Q    2.09e-09   best Q   1.703e-09    15.0 min
+  restart   1/5    eval   156   this Q   1.922e-09   best Q   1.703e-09    15.1 min
+  restart   1/5    eval   157   this Q   2.542e-09   best Q   1.703e-09    15.2 min
+  restart   1/5    eval   158   this Q   1.287e-09   best Q   1.287e-09    15.3 min
+  restart   1/5    eval   159   this Q   4.415e-09   best Q   1.287e-09    15.4 min
+  restart   1/5    eval   160   this Q   1.233e-09   best Q   1.233e-09    15.4 min
+  restart   1/5    eval   161   this Q   7.525e-10   best Q   7.525e-10    15.5 min
+  restart   1/5    eval   162   this Q   7.143e-10   best Q   7.143e-10    15.6 min
+  restart   1/5    eval   163   this Q   1.066e-09   best Q   7.143e-10    15.7 min
+  restart   1/5    eval   164   this Q   9.712e-10   best Q   7.143e-10    15.8 min
+  restart   1/5    eval   165   this Q   6.329e-10   best Q   6.329e-10    15.9 min
+  restart   1/5    eval   166   this Q   1.928e-09   best Q   6.329e-10    15.9 min
+  restart   1/5    eval   167   this Q   9.991e-10   best Q   6.329e-10    16.0 min
+  restart   1/5    eval   168   this Q   3.101e-09   best Q   6.329e-10    16.1 min
+  restart   1/5    eval   169   this Q   9.461e-10   best Q   6.329e-10    16.2 min
+  restart   1/5    eval   170   this Q   1.199e-09   best Q   6.329e-10    16.3 min
+  restart   1/5    eval   171   this Q     1.5e-09   best Q   6.329e-10    16.4 min
+  restart   1/5    eval   172   this Q   3.683e-10   best Q   3.683e-10    16.4 min
+  restart   1/5    eval   173   this Q   1.183e-09   best Q   3.683e-10    16.5 min
+  restart   1/5    eval   174   this Q   7.306e-10   best Q   3.683e-10    16.6 min
+  restart   1/5    eval   175   this Q   7.326e-10   best Q   3.683e-10    16.7 min
+  restart   1/5    eval   176   this Q    6.32e-10   best Q   3.683e-10    16.8 min
+  restart   1/5    eval   177   this Q   9.248e-10   best Q   3.683e-10    16.9 min
+  restart   1/5    eval   178   this Q   4.719e-10   best Q   3.683e-10    16.9 min
+  restart   1/5    eval   179   this Q   2.604e-10   best Q   2.604e-10    17.0 min
+  restart   1/5    eval   180   this Q   2.214e-10   best Q   2.214e-10    17.1 min
+  restart   1/5    eval   181   this Q   3.524e-10   best Q   2.214e-10    17.2 min
+  restart   1/5    eval   182   this Q   3.828e-10   best Q   2.214e-10    17.3 min
+  restart   1/5    eval   183   this Q    2.37e-10   best Q   2.214e-10    17.4 min
+  restart   1/5    eval   184   this Q   5.037e-10   best Q   2.214e-10    17.5 min
+  restart   1/5    eval   185   this Q   1.695e-10   best Q   1.695e-10    17.5 min
+  restart   1/5    eval   186   this Q   2.868e-10   best Q   1.695e-10    17.6 min
+  restart   1/5    eval   187   this Q   1.304e-10   best Q   1.304e-10    17.7 min
+  restart   1/5    eval   188   this Q   2.344e-10   best Q   1.304e-10    17.8 min
+  restart   1/5    eval   189   this Q   3.155e-10   best Q   1.304e-10    17.9 min
+  restart   1/5    eval   190   this Q   1.731e-10   best Q   1.304e-10    18.0 min
+  restart   1/5    eval   191   this Q   8.773e-11   best Q   8.773e-11    18.0 min
+  restart   1/5    eval   192   this Q   1.308e-10   best Q   8.773e-11    18.1 min
+  restart   1/5    eval   193   this Q   1.686e-10   best Q   8.773e-11    18.2 min
+  restart   1/5   DONE   this   8.773e-11   best Q   8.773e-11    18.2 min, ~73 min left
+  restart   2/5    eval     1   this Q    0.008618   best Q   8.773e-11    18.3 min
+  restart   2/5    eval     2   this Q    0.008618   best Q   8.773e-11    18.4 min
+  restart   2/5    eval     3   this Q      0.2964   best Q   8.773e-11    18.5 min
+  restart   2/5    eval     4   this Q      0.6445   best Q   8.773e-11    18.6 min
+  restart   2/5    eval     5   this Q       7.857   best Q   8.773e-11    18.6 min
+  restart   2/5    eval     6   this Q     0.05755   best Q   8.773e-11    18.7 min
+  restart   2/5    eval     7   this Q       1.142   best Q   8.773e-11    18.8 min
+  restart   2/5    eval     8   this Q      0.5438   best Q   8.773e-11    18.9 min
+  restart   2/5    eval     9   this Q      0.4875   best Q   8.773e-11    19.0 min
+  restart   2/5    eval    10   this Q       1.951   best Q   8.773e-11    19.1 min
+  restart   2/5    eval    11   this Q      0.1884   best Q   8.773e-11    19.2 min
+  restart   2/5    eval    12   this Q      0.3681   best Q   8.773e-11    19.2 min
+  restart   2/5    eval    13   this Q     0.08713   best Q   8.773e-11    19.3 min
+  restart   2/5    eval    14   this Q      0.1282   best Q   8.773e-11    19.4 min
+  restart   2/5    eval    15   this Q       0.454   best Q   8.773e-11    19.5 min
+  restart   2/5    eval    16   this Q     0.04573   best Q   8.773e-11    19.6 min
+  restart   2/5    eval    17   this Q        0.18   best Q   8.773e-11    19.7 min
+  restart   2/5    eval    18   this Q     0.04362   best Q   8.773e-11    19.7 min
+  restart   2/5    eval    19   this Q     0.05809   best Q   8.773e-11    19.8 min
+  restart   2/5    eval    20   this Q     0.01554   best Q   8.773e-11    19.9 min
+  restart   2/5    eval    21   this Q     0.06635   best Q   8.773e-11    20.0 min
+  restart   2/5    eval    22   this Q     0.01259   best Q   8.773e-11    20.1 min
+  restart   2/5    eval    23   this Q       0.172   best Q   8.773e-11    20.2 min
+  restart   2/5    eval    24   this Q    0.007587   best Q   8.773e-11    20.3 min
+  restart   2/5    eval    25   this Q     0.04713   best Q   8.773e-11    20.3 min
+  restart   2/5    eval    26   this Q     0.01357   best Q   8.773e-11    20.4 min
+  restart   2/5    eval    27   this Q     0.01614   best Q   8.773e-11    20.5 min
+  restart   2/5    eval    28   this Q    0.006516   best Q   8.773e-11    20.6 min
+  restart   2/5    eval    29   this Q     0.01071   best Q   8.773e-11    20.7 min
+  restart   2/5    eval    30   this Q    0.007238   best Q   8.773e-11    20.8 min
+  restart   2/5    eval    31   this Q      0.0115   best Q   8.773e-11    20.9 min
+  restart   2/5    eval    32   this Q    0.003856   best Q   8.773e-11    20.9 min
+  restart   2/5    eval    33   this Q    0.004654   best Q   8.773e-11    21.0 min
+  restart   2/5    eval    34   this Q     0.01038   best Q   8.773e-11    21.1 min
+  restart   2/5    eval    35   this Q     0.00235   best Q   8.773e-11    21.2 min
+  restart   2/5    eval    36   this Q    0.003828   best Q   8.773e-11    21.3 min
+  restart   2/5    eval    37   this Q     0.00912   best Q   8.773e-11    21.4 min
+  restart   2/5    eval    38   this Q     0.00143   best Q   8.773e-11    21.4 min
+  restart   2/5    eval    39   this Q     0.01227   best Q   8.773e-11    21.5 min
+  restart   2/5    eval    40   this Q    0.000815   best Q   8.773e-11    21.6 min
+  restart   2/5    eval    41   this Q    0.005582   best Q   8.773e-11    21.7 min
+  restart   2/5    eval    42   this Q   0.0009681   best Q   8.773e-11    21.8 min
+  restart   2/5    eval    43   this Q    0.006407   best Q   8.773e-11    21.9 min
+  restart   2/5    eval    44   this Q   0.0008544   best Q   8.773e-11    22.0 min
+  restart   2/5    eval    45   this Q    0.003742   best Q   8.773e-11    22.0 min
+  restart   2/5    eval    46   this Q   0.0006834   best Q   8.773e-11    22.1 min
+  restart   2/5    eval    47   this Q    0.001536   best Q   8.773e-11    22.2 min
+  restart   2/5    eval    48   this Q   0.0005156   best Q   8.773e-11    22.3 min
+  restart   2/5    eval    49   this Q    0.001287   best Q   8.773e-11    22.4 min
+  restart   2/5    eval    50   this Q   0.0003785   best Q   8.773e-11    22.5 min
+  restart   2/5    eval    51   this Q    0.001804   best Q   8.773e-11    22.5 min
+  restart   2/5    eval    52   this Q   0.0003038   best Q   8.773e-11    22.6 min
+  restart   2/5    eval    53   this Q    0.001761   best Q   8.773e-11    22.7 min
+  restart   2/5    eval    54   this Q    0.000318   best Q   8.773e-11    22.8 min
+  restart   2/5    eval    55   this Q   0.0006505   best Q   8.773e-11    22.9 min
+  restart   2/5    eval    56   this Q   0.0003382   best Q   8.773e-11    23.0 min
+  restart   2/5    eval    57   this Q   0.0002014   best Q   8.773e-11    23.1 min
+  restart   2/5    eval    58   this Q   0.0004861   best Q   8.773e-11    23.1 min
+  restart   2/5    eval    59   this Q    0.000231   best Q   8.773e-11    23.2 min
+  restart   2/5    eval    60   this Q   0.0007092   best Q   8.773e-11    23.3 min
+  restart   2/5    eval    61   this Q    0.000171   best Q   8.773e-11    23.4 min
+  restart   2/5    eval    62   this Q   0.0003619   best Q   8.773e-11    23.5 min
+  restart   2/5    eval    63   this Q   0.0001953   best Q   8.773e-11    23.6 min
+  restart   2/5    eval    64   this Q   0.0002777   best Q   8.773e-11    23.6 min
+  restart   2/5    eval    65   this Q   0.0001802   best Q   8.773e-11    23.7 min
+  restart   2/5    eval    66   this Q   0.0002864   best Q   8.773e-11    23.8 min
+  restart   2/5    eval    67   this Q   0.0001659   best Q   8.773e-11    23.9 min
+  restart   2/5    eval    68   this Q   0.0001695   best Q   8.773e-11    24.0 min
+  restart   2/5    eval    69   this Q   0.0001242   best Q   8.773e-11    24.1 min
+  restart   2/5    eval    70   this Q    0.000155   best Q   8.773e-11    24.1 min
+  restart   2/5    eval    71   this Q   0.0003041   best Q   8.773e-11    24.2 min
+  restart   2/5    eval    72   this Q   0.0001344   best Q   8.773e-11    24.3 min
+  restart   2/5    eval    73   this Q    0.000224   best Q   8.773e-11    24.4 min
+  restart   2/5    eval    74   this Q   0.0001386   best Q   8.773e-11    24.5 min
+  restart   2/5    eval    75   this Q   0.0001191   best Q   8.773e-11    24.6 min
+  restart   2/5    eval    76   this Q    0.000138   best Q   8.773e-11    24.7 min
+  restart   2/5    eval    77   this Q    0.000107   best Q   8.773e-11    24.7 min
+  restart   2/5    eval    78   this Q   0.0001325   best Q   8.773e-11    24.8 min
+  restart   2/5    eval    79   this Q   9.621e-05   best Q   8.773e-11    24.9 min
+  restart   2/5    eval    80   this Q   0.0001013   best Q   8.773e-11    25.0 min
+  restart   2/5    eval    81   this Q   0.0001032   best Q   8.773e-11    25.1 min
+  restart   2/5    eval    82   this Q    0.000103   best Q   8.773e-11    25.2 min
+  restart   2/5    eval    83   this Q   8.739e-05   best Q   8.773e-11    25.2 min
+  restart   2/5    eval    84   this Q   0.0001112   best Q   8.773e-11    25.3 min
+  restart   2/5    eval    85   this Q   8.616e-05   best Q   8.773e-11    25.4 min
+  restart   2/5    eval    86   this Q   0.0001087   best Q   8.773e-11    25.5 min
+  restart   2/5    eval    87   this Q   0.0001013   best Q   8.773e-11    25.6 min
+  restart   2/5    eval    88   this Q   6.908e-05   best Q   8.773e-11    25.7 min
+  restart   2/5    eval    89   this Q   7.081e-05   best Q   8.773e-11    25.8 min
+  restart   2/5    eval    90   this Q   0.0001041   best Q   8.773e-11    25.8 min
+  restart   2/5    eval    91   this Q   8.181e-05   best Q   8.773e-11    25.9 min
+  restart   2/5    eval    92   this Q   7.462e-05   best Q   8.773e-11    26.0 min
+  restart   2/5    eval    93   this Q   0.0001009   best Q   8.773e-11    26.1 min
+  restart   2/5    eval    94   this Q    7.43e-05   best Q   8.773e-11    26.2 min
+  restart   2/5    eval    95   this Q   6.139e-05   best Q   8.773e-11    26.3 min
+  restart   2/5    eval    96   this Q   6.345e-05   best Q   8.773e-11    26.3 min
+  restart   2/5    eval    97   this Q   8.033e-05   best Q   8.773e-11    26.4 min
+  restart   2/5    eval    98   this Q   6.944e-05   best Q   8.773e-11    26.5 min
+  restart   2/5    eval    99   this Q   7.252e-05   best Q   8.773e-11    26.6 min
+  restart   2/5    eval   100   this Q   5.986e-05   best Q   8.773e-11    26.7 min
+  restart   2/5    eval   101   this Q   6.209e-05   best Q   8.773e-11    26.8 min
+  restart   2/5    eval   102   this Q   5.903e-05   best Q   8.773e-11    26.8 min
+  restart   2/5    eval   103   this Q   6.614e-05   best Q   8.773e-11    26.9 min
+  restart   2/5    eval   104   this Q   5.977e-05   best Q   8.773e-11    27.0 min
+  restart   2/5    eval   105   this Q   5.091e-05   best Q   8.773e-11    27.1 min
+  restart   2/5    eval   106   this Q   5.288e-05   best Q   8.773e-11    27.2 min
+  restart   2/5    eval   107   this Q   5.119e-05   best Q   8.773e-11    27.3 min
+  restart   2/5    eval   108   this Q   4.867e-05   best Q   8.773e-11    27.4 min
+  restart   2/5    eval   109   this Q   5.249e-05   best Q   8.773e-11    27.4 min
+  restart   2/5    eval   110   this Q   5.876e-05   best Q   8.773e-11    27.5 min
+  restart   2/5    eval   111   this Q   3.947e-05   best Q   8.773e-11    27.6 min
+  restart   2/5    eval   112   this Q   3.319e-05   best Q   8.773e-11    27.7 min
+  restart   2/5    eval   113   this Q   5.221e-05   best Q   8.773e-11    27.8 min
+  restart   2/5    eval   114   this Q    4.45e-05   best Q   8.773e-11    27.9 min
+  restart   2/5    eval   115   this Q   4.112e-05   best Q   8.773e-11    27.9 min
+  restart   2/5    eval   116   this Q   3.119e-05   best Q   8.773e-11    28.0 min
+  restart   2/5    eval   117   this Q   2.764e-05   best Q   8.773e-11    28.1 min
+  restart   2/5    eval   118   this Q   2.957e-05   best Q   8.773e-11    28.2 min
+  restart   2/5    eval   119   this Q   1.857e-05   best Q   8.773e-11    28.3 min
+  restart   2/5    eval   120   this Q   1.404e-05   best Q   8.773e-11    28.4 min
+  restart   2/5    eval   121   this Q   1.767e-05   best Q   8.773e-11    28.5 min
+  restart   2/5    eval   122   this Q   1.024e-05   best Q   8.773e-11    28.5 min
+  restart   2/5    eval   123   this Q   1.374e-05   best Q   8.773e-11    28.6 min
+  restart   2/5    eval   124   this Q   4.906e-06   best Q   8.773e-11    28.7 min
+  restart   2/5    eval   125   this Q   8.522e-06   best Q   8.773e-11    28.8 min
+  restart   2/5    eval   126   this Q   4.921e-06   best Q   8.773e-11    28.9 min
+  restart   2/5    eval   127   this Q   7.958e-06   best Q   8.773e-11    29.0 min
+  restart   2/5    eval   128   this Q   7.809e-06   best Q   8.773e-11    29.0 min
+  restart   2/5    eval   129   this Q   5.886e-06   best Q   8.773e-11    29.1 min
+  restart   2/5    eval   130   this Q   9.254e-06   best Q   8.773e-11    29.2 min
+  restart   2/5    eval   131   this Q   2.556e-06   best Q   8.773e-11    29.3 min
+  restart   2/5    eval   132   this Q   1.077e-05   best Q   8.773e-11    29.4 min
+  restart   2/5    eval   133   this Q   2.226e-06   best Q   8.773e-11    29.5 min
+  restart   2/5    eval   134   this Q   1.006e-05   best Q   8.773e-11    29.5 min
+  restart   2/5    eval   135   this Q   1.647e-06   best Q   8.773e-11    29.6 min
+  restart   2/5    eval   136   this Q    8.82e-06   best Q   8.773e-11    29.7 min
+  restart   2/5    eval   137   this Q   1.454e-06   best Q   8.773e-11    29.8 min
+  restart   2/5    eval   138   this Q   1.091e-05   best Q   8.773e-11    29.9 min
+  restart   2/5    eval   139   this Q   1.386e-06   best Q   8.773e-11    30.0 min
+  restart   2/5    eval   140   this Q   1.639e-06   best Q   8.773e-11    30.1 min
+  restart   2/5    eval   141   this Q   5.771e-07   best Q   8.773e-11    30.1 min
+  restart   2/5    eval   142   this Q   2.344e-06   best Q   8.773e-11    30.2 min
+  restart   2/5    eval   143   this Q   3.029e-06   best Q   8.773e-11    30.3 min
+  restart   2/5    eval   144   this Q   6.279e-07   best Q   8.773e-11    30.4 min
+  restart   2/5    eval   145   this Q   3.207e-06   best Q   8.773e-11    30.5 min
+  restart   2/5    eval   146   this Q   6.233e-07   best Q   8.773e-11    30.6 min
+  restart   2/5    eval   147   this Q   1.035e-06   best Q   8.773e-11    30.6 min
+  restart   2/5    eval   148   this Q   4.252e-07   best Q   8.773e-11    30.7 min
+  restart   2/5    eval   149   this Q   1.844e-06   best Q   8.773e-11    30.8 min
+  restart   2/5    eval   150   this Q   2.354e-06   best Q   8.773e-11    30.9 min
+  restart   2/5    eval   151   this Q   3.193e-07   best Q   8.773e-11    31.0 min
+  restart   2/5    eval   152   this Q    1.12e-07   best Q   8.773e-11    31.1 min
+  restart   2/5    eval   153   this Q   4.517e-07   best Q   8.773e-11    31.2 min
+  restart   2/5    eval   154   this Q   9.149e-07   best Q   8.773e-11    31.2 min
+  restart   2/5    eval   155   this Q   2.234e-07   best Q   8.773e-11    31.3 min
+  restart   2/5    eval   156   this Q   3.625e-07   best Q   8.773e-11    31.4 min
+  restart   2/5    eval   157   this Q   9.739e-07   best Q   8.773e-11    31.5 min
+  restart   2/5    eval   158   this Q   1.444e-07   best Q   8.773e-11    31.6 min
+  restart   2/5    eval   159   this Q   5.629e-07   best Q   8.773e-11    31.7 min
+  restart   2/5    eval   160   this Q   1.442e-07   best Q   8.773e-11    31.7 min
+  restart   2/5    eval   161   this Q   2.805e-07   best Q   8.773e-11    31.8 min
+  restart   2/5    eval   162   this Q    1.31e-07   best Q   8.773e-11    31.9 min
+  restart   2/5    eval   163   this Q   1.985e-08   best Q   8.773e-11    32.0 min
+  restart   2/5    eval   164   this Q   1.018e-07   best Q   8.773e-11    32.1 min
+  restart   2/5    eval   165   this Q    1.42e-07   best Q   8.773e-11    32.2 min
+  restart   2/5    eval   166   this Q   2.809e-07   best Q   8.773e-11    32.2 min
+  restart   2/5    eval   167   this Q    5.81e-08   best Q   8.773e-11    32.3 min
+  restart   2/5    eval   168   this Q    1.31e-07   best Q   8.773e-11    32.4 min
+  restart   2/5    eval   169   this Q   2.075e-08   best Q   8.773e-11    32.5 min
+  restart   2/5    eval   170   this Q   1.325e-07   best Q   8.773e-11    32.6 min
+  restart   2/5    eval   171   this Q   4.634e-08   best Q   8.773e-11    32.7 min
+  restart   2/5    eval   172   this Q   9.915e-08   best Q   8.773e-11    32.8 min
+  restart   2/5    eval   173   this Q   3.303e-08   best Q   8.773e-11    32.8 min
+  restart   2/5    eval   174   this Q     9.2e-08   best Q   8.773e-11    32.9 min
+  restart   2/5    eval   175   this Q   1.985e-08   best Q   8.773e-11    33.0 min
+  restart   2/5    eval   176   this Q   8.877e-09   best Q   8.773e-11    33.1 min
+  restart   2/5    eval   177   this Q   5.123e-08   best Q   8.773e-11    33.2 min
+  restart   2/5    eval   178   this Q   1.558e-08   best Q   8.773e-11    33.3 min
+  restart   2/5    eval   179   this Q   3.366e-08   best Q   8.773e-11    33.3 min
+  restart   2/5    eval   180   this Q   5.646e-09   best Q   8.773e-11    33.4 min
+  restart   2/5    eval   181   this Q   3.974e-08   best Q   8.773e-11    33.5 min
+  restart   2/5    eval   182   this Q   4.738e-09   best Q   8.773e-11    33.6 min
+  restart   2/5    eval   183   this Q   2.975e-08   best Q   8.773e-11    33.7 min
+  restart   2/5    eval   184   this Q   4.547e-09   best Q   8.773e-11    33.8 min
+  restart   2/5    eval   185   this Q   2.259e-08   best Q   8.773e-11    33.8 min
+  restart   2/5    eval   186   this Q   3.851e-09   best Q   8.773e-11    33.9 min
+  restart   2/5    eval   187   this Q   2.519e-08   best Q   8.773e-11    34.0 min
+  restart   2/5    eval   188   this Q   1.098e-09   best Q   8.773e-11    34.1 min
+  restart   2/5    eval   189   this Q   4.464e-09   best Q   8.773e-11    34.2 min
+  restart   2/5    eval   190   this Q    3.98e-09   best Q   8.773e-11    34.3 min
+  restart   2/5    eval   191   this Q   6.031e-09   best Q   8.773e-11    34.3 min
+  restart   2/5    eval   192   this Q   1.703e-09   best Q   8.773e-11    34.4 min
+  restart   2/5    eval   193   this Q   1.105e-08   best Q   8.773e-11    34.5 min
+  restart   2/5    eval   194   this Q   2.871e-09   best Q   8.773e-11    34.6 min
+  restart   2/5    eval   195   this Q   6.273e-10   best Q   8.773e-11    34.7 min
+  restart   2/5    eval   196   this Q   8.179e-09   best Q   8.773e-11    34.8 min
+  restart   2/5    eval   197   this Q   5.947e-09   best Q   8.773e-11    34.9 min
+  restart   2/5    eval   198   this Q   7.827e-10   best Q   8.773e-11    34.9 min
+  restart   2/5    eval   199   this Q   1.327e-09   best Q   8.773e-11    35.0 min
+  restart   2/5    eval   200   this Q   3.055e-09   best Q   8.773e-11    35.1 min
+  restart   2/5    eval   201   this Q   4.201e-10   best Q   8.773e-11    35.2 min
+  restart   2/5    eval   202   this Q     2.2e-09   best Q   8.773e-11    35.3 min
+  restart   2/5    eval   203   this Q   4.552e-10   best Q   8.773e-11    35.4 min
+  restart   2/5    eval   204   this Q   3.126e-09   best Q   8.773e-11    35.4 min
+  restart   2/5    eval   205   this Q   1.654e-10   best Q   8.773e-11    35.5 min
+  restart   2/5    eval   206   this Q   1.056e-09   best Q   8.773e-11    35.6 min
+  restart   2/5    eval   207   this Q   2.425e-10   best Q   8.773e-11    35.7 min
+  restart   2/5    eval   208   this Q   1.844e-09   best Q   8.773e-11    35.8 min
+  restart   2/5    eval   209   this Q   3.303e-10   best Q   8.773e-11    35.9 min
+  restart   2/5    eval   210   this Q   9.764e-11   best Q   8.773e-11    35.9 min
+  restart   2/5    eval   211   this Q   1.462e-09   best Q   8.773e-11    36.0 min
+  restart   2/5    eval   212   this Q   2.488e-10   best Q   8.773e-11    36.1 min
+  restart   2/5    eval   213   this Q   3.025e-10   best Q   8.773e-11    36.2 min
+  restart   2/5    eval   214   this Q   9.007e-11   best Q   8.773e-11    36.3 min
+  restart   2/5    eval   215   this Q   7.161e-10   best Q   8.773e-11    36.4 min
+  restart   2/5    eval   216   this Q   5.276e-11   best Q   5.276e-11    36.5 min
+  restart   2/5    eval   217   this Q   2.991e-10   best Q   5.276e-11    36.5 min
+  restart   2/5    eval   218   this Q    7.36e-11   best Q   5.276e-11    36.6 min
+  restart   2/5    eval   219   this Q   2.609e-10   best Q   5.276e-11    36.7 min
+  restart   2/5    eval   220   this Q   7.907e-11   best Q   5.276e-11    36.8 min
+  restart   2/5   DONE   this   5.276e-11   best Q   5.276e-11    36.8 min, ~55 min left
+  restart   3/5    eval     1   this Q    0.004435   best Q   5.276e-11    36.9 min
+  restart   3/5    eval     2   this Q    0.004435   best Q   5.276e-11    37.0 min
+  restart   3/5    eval     3   this Q      0.3138   best Q   5.276e-11    37.0 min
+  restart   3/5    eval     4   this Q      0.6021   best Q   5.276e-11    37.1 min
+  restart   3/5    eval     5   this Q       7.395   best Q   5.276e-11    37.2 min
+  restart   3/5    eval     6   this Q      0.2217   best Q   5.276e-11    37.3 min
+  restart   3/5    eval     7   this Q       1.093   best Q   5.276e-11    37.4 min
+  restart   3/5    eval     8   this Q      0.5114   best Q   5.276e-11    37.5 min
+  restart   3/5    eval     9   this Q       0.506   best Q   5.276e-11    37.5 min
+  restart   3/5    eval    10   this Q       2.107   best Q   5.276e-11    37.6 min
+  restart   3/5    eval    11   this Q      0.1797   best Q   5.276e-11    37.7 min
+  restart   3/5    eval    12   this Q      0.3343   best Q   5.276e-11    37.8 min
+  restart   3/5    eval    13   this Q     0.07401   best Q   5.276e-11    37.9 min
+  restart   3/5    eval    14   this Q       0.153   best Q   5.276e-11    38.0 min
+  restart   3/5    eval    15   this Q      0.2804   best Q   5.276e-11    38.0 min
+  restart   3/5    eval    16   this Q     0.04287   best Q   5.276e-11    38.1 min
+  restart   3/5    eval    17   this Q      0.3869   best Q   5.276e-11    38.2 min
+  restart   3/5    eval    18   this Q     0.05092   best Q   5.276e-11    38.3 min
+  restart   3/5    eval    19   this Q      0.2092   best Q   5.276e-11    38.4 min
+  restart   3/5    eval    20   this Q      0.0565   best Q   5.276e-11    38.4 min
+  restart   3/5    eval    21   this Q     0.06367   best Q   5.276e-11    38.5 min
+  restart   3/5    eval    22   this Q     0.02802   best Q   5.276e-11    38.6 min
+  restart   3/5    eval    23   this Q     0.04982   best Q   5.276e-11    38.7 min
+  restart   3/5    eval    24   this Q      0.1288   best Q   5.276e-11    38.8 min
+  restart   3/5    eval    25   this Q     0.01887   best Q   5.276e-11    38.9 min
+  restart   3/5    eval    26   this Q     0.06006   best Q   5.276e-11    38.9 min
+  restart   3/5    eval    27   this Q      0.0206   best Q   5.276e-11    39.0 min
+  restart   3/5    eval    28   this Q     0.02348   best Q   5.276e-11    39.1 min
+  restart   3/5    eval    29   this Q     0.04204   best Q   5.276e-11    39.2 min
+  restart   3/5    eval    30   this Q     0.01358   best Q   5.276e-11    39.3 min
+  restart   3/5    eval    31   this Q     0.03044   best Q   5.276e-11    39.3 min
+  restart   3/5    eval    32   this Q     0.01344   best Q   5.276e-11    39.4 min
+  restart   3/5    eval    33   this Q     0.00846   best Q   5.276e-11    39.5 min
+  restart   3/5    eval    34   this Q    0.009233   best Q   5.276e-11    39.6 min
+  restart   3/5    eval    35   this Q    0.003474   best Q   5.276e-11    39.7 min
+  restart   3/5    eval    36   this Q    0.007716   best Q   5.276e-11    39.8 min
+  restart   3/5    eval    37   this Q    0.008382   best Q   5.276e-11    39.8 min
+  restart   3/5    eval    38   this Q    0.004954   best Q   5.276e-11    39.9 min
+  restart   3/5    eval    39   this Q    0.004453   best Q   5.276e-11    40.0 min
+  restart   3/5    eval    40   this Q     0.00724   best Q   5.276e-11    40.1 min
+  restart   3/5    eval    41   this Q    0.002403   best Q   5.276e-11    40.2 min
+  restart   3/5    eval    42   this Q      0.0121   best Q   5.276e-11    40.3 min
+  restart   3/5    eval    43   this Q    0.001445   best Q   5.276e-11    40.3 min
+  restart   3/5    eval    44   this Q      0.0112   best Q   5.276e-11    40.4 min
+  restart   3/5    eval    45   this Q    0.001392   best Q   5.276e-11    40.5 min
+  restart   3/5    eval    46   this Q    0.004652   best Q   5.276e-11    40.6 min
+  restart   3/5    eval    47   this Q    0.002012   best Q   5.276e-11    40.7 min
+  restart   3/5    eval    48   this Q    0.001383   best Q   5.276e-11    40.8 min
+  restart   3/5    eval    49   this Q    0.004418   best Q   5.276e-11    40.8 min
+  restart   3/5    eval    50   this Q    0.002584   best Q   5.276e-11    40.9 min
+  restart   3/5    eval    51   this Q    0.001238   best Q   5.276e-11    41.0 min
+  restart   3/5    eval    52   this Q   0.0001805   best Q   5.276e-11    41.1 min
+  restart   3/5    eval    53   this Q    0.000522   best Q   5.276e-11    41.2 min
+  restart   3/5    eval    54   this Q     0.00158   best Q   5.276e-11    41.3 min
+  restart   3/5    eval    55   this Q   0.0007149   best Q   5.276e-11    41.3 min
+  restart   3/5    eval    56   this Q     0.00245   best Q   5.276e-11    41.4 min
+  restart   3/5    eval    57   this Q   0.0006183   best Q   5.276e-11    41.5 min
+  restart   3/5    eval    58   this Q     0.00163   best Q   5.276e-11    41.6 min
+  restart   3/5    eval    59   this Q   0.0006785   best Q   5.276e-11    41.7 min
+  restart   3/5    eval    60   this Q   0.0004343   best Q   5.276e-11    41.8 min
+  restart   3/5    eval    61   this Q   0.0003486   best Q   5.276e-11    41.8 min
+  restart   3/5    eval    62   this Q   0.0004231   best Q   5.276e-11    41.9 min
+  restart   3/5    eval    63   this Q    0.000721   best Q   5.276e-11    42.0 min
+  restart   3/5    eval    64   this Q   0.0002873   best Q   5.276e-11    42.1 min
+  restart   3/5    eval    65   this Q   0.0001379   best Q   5.276e-11    42.2 min
+  restart   3/5    eval    66   this Q   0.0003778   best Q   5.276e-11    42.3 min
+  restart   3/5    eval    67   this Q   0.0004359   best Q   5.276e-11    42.3 min
+  restart   3/5    eval    68   this Q   0.0001949   best Q   5.276e-11    42.4 min
+  restart   3/5    eval    69   this Q   0.0003972   best Q   5.276e-11    42.5 min
+  restart   3/5    eval    70   this Q   0.0001691   best Q   5.276e-11    42.6 min
+  restart   3/5    eval    71   this Q   3.545e-05   best Q   5.276e-11    42.7 min
+  restart   3/5    eval    72   this Q   0.0001211   best Q   5.276e-11    42.8 min
+  restart   3/5    eval    73   this Q   7.011e-05   best Q   5.276e-11    42.8 min
+  restart   3/5    eval    74   this Q    0.000203   best Q   5.276e-11    42.9 min
+  restart   3/5    eval    75   this Q   7.192e-05   best Q   5.276e-11    43.0 min
+  restart   3/5    eval    76   this Q   0.0001727   best Q   5.276e-11    43.1 min
+  restart   3/5    eval    77   this Q   6.778e-05   best Q   5.276e-11    43.2 min
+  restart   3/5    eval    78   this Q   0.0001368   best Q   5.276e-11    43.3 min
+  restart   3/5    eval    79   this Q   5.784e-05   best Q   5.276e-11    43.3 min
+  restart   3/5    eval    80   this Q   3.499e-06   best Q   5.276e-11    43.4 min
+  restart   3/5    eval    81   this Q   6.032e-06   best Q   5.276e-11    43.5 min
+  restart   3/5    eval    82   this Q   0.0001041   best Q   5.276e-11    43.6 min
+  restart   3/5    eval    83   this Q   2.791e-05   best Q   5.276e-11    43.7 min
+  restart   3/5    eval    84   this Q   7.002e-05   best Q   5.276e-11    43.8 min
+  restart   3/5    eval    85   this Q   2.935e-05   best Q   5.276e-11    43.8 min
+  restart   3/5    eval    86   this Q     2.9e-05   best Q   5.276e-11    43.9 min
+  restart   3/5    eval    87   this Q   4.694e-05   best Q   5.276e-11    44.0 min
+  restart   3/5    eval    88   this Q   1.592e-05   best Q   5.276e-11    44.1 min
+  restart   3/5    eval    89   this Q   6.151e-06   best Q   5.276e-11    44.2 min
+  restart   3/5    eval    90   this Q   3.714e-05   best Q   5.276e-11    44.3 min
+  restart   3/5    eval    91   this Q   1.083e-05   best Q   5.276e-11    44.3 min
+  restart   3/5    eval    92   this Q   3.111e-05   best Q   5.276e-11    44.4 min
+  restart   3/5    eval    93   this Q    1.07e-05   best Q   5.276e-11    44.5 min
+  restart   3/5    eval    94   this Q   5.324e-06   best Q   5.276e-11    44.6 min
+  restart   3/5    eval    95   this Q   7.223e-06   best Q   5.276e-11    44.7 min
+  restart   3/5    eval    96   this Q   3.389e-06   best Q   5.276e-11    44.8 min
+  restart   3/5    eval    97   this Q   1.568e-05   best Q   5.276e-11    44.8 min
+  restart   3/5    eval    98   this Q   8.339e-06   best Q   5.276e-11    44.9 min
+  restart   3/5    eval    99   this Q   2.489e-06   best Q   5.276e-11    45.0 min
+  restart   3/5    eval   100   this Q   8.485e-06   best Q   5.276e-11    45.1 min
+  restart   3/5    eval   101   this Q   1.992e-06   best Q   5.276e-11    45.2 min
+  restart   3/5    eval   102   this Q    2.02e-06   best Q   5.276e-11    45.3 min
+  restart   3/5    eval   103   this Q    9.92e-06   best Q   5.276e-11    45.3 min
+  restart   3/5    eval   104   this Q   6.198e-07   best Q   5.276e-11    45.4 min
+  restart   3/5    eval   105   this Q   6.708e-06   best Q   5.276e-11    45.5 min
+  restart   3/5    eval   106   this Q   8.598e-07   best Q   5.276e-11    45.6 min
+  restart   3/5    eval   107   this Q   1.988e-06   best Q   5.276e-11    45.7 min
+  restart   3/5    eval   108   this Q   2.662e-06   best Q   5.276e-11    45.8 min
+  restart   3/5    eval   109   this Q   7.118e-07   best Q   5.276e-11    45.8 min
+  restart   3/5    eval   110   this Q   1.715e-06   best Q   5.276e-11    45.9 min
+  restart   3/5    eval   111   this Q   1.563e-06   best Q   5.276e-11    46.0 min
+  restart   3/5    eval   112   this Q   2.946e-06   best Q   5.276e-11    46.1 min
+  restart   3/5    eval   113   this Q   4.882e-07   best Q   5.276e-11    46.2 min
+  restart   3/5    eval   114   this Q   1.553e-06   best Q   5.276e-11    46.3 min
+  restart   3/5    eval   115   this Q   4.835e-07   best Q   5.276e-11    46.3 min
+  restart   3/5    eval   116   this Q   2.678e-06   best Q   5.276e-11    46.4 min
+  restart   3/5    eval   117   this Q   2.235e-07   best Q   5.276e-11    46.5 min
+  restart   3/5    eval   118   this Q   6.326e-08   best Q   5.276e-11    46.6 min
+  restart   3/5    eval   119   this Q   5.003e-07   best Q   5.276e-11    46.7 min
+  restart   3/5    eval   120   this Q   8.973e-07   best Q   5.276e-11    46.8 min
+  restart   3/5    eval   121   this Q   1.738e-07   best Q   5.276e-11    46.9 min
+  restart   3/5    eval   122   this Q   4.598e-07   best Q   5.276e-11    46.9 min
+  restart   3/5    eval   123   this Q   5.976e-07   best Q   5.276e-11    47.0 min
+  restart   3/5    eval   124   this Q   1.583e-07   best Q   5.276e-11    47.1 min
+  restart   3/5    eval   125   this Q   3.994e-07   best Q   5.276e-11    47.2 min
+  restart   3/5    eval   126   this Q   1.173e-07   best Q   5.276e-11    47.3 min
+  restart   3/5    eval   127   this Q   4.678e-07   best Q   5.276e-11    47.4 min
+  restart   3/5    eval   128   this Q   6.662e-08   best Q   5.276e-11    47.4 min
+  restart   3/5    eval   129   this Q   7.561e-08   best Q   5.276e-11    47.5 min
+  restart   3/5    eval   130   this Q   1.968e-07   best Q   5.276e-11    47.6 min
+  restart   3/5    eval   131   this Q   5.153e-08   best Q   5.276e-11    47.7 min
+  restart   3/5    eval   132   this Q   8.736e-08   best Q   5.276e-11    47.8 min
+  restart   3/5    eval   133   this Q    3.14e-08   best Q   5.276e-11    47.9 min
+  restart   3/5    eval   134   this Q   9.939e-08   best Q   5.276e-11    47.9 min
+  restart   3/5    eval   135   this Q   2.528e-08   best Q   5.276e-11    48.0 min
+  restart   3/5    eval   136   this Q   2.211e-08   best Q   5.276e-11    48.1 min
+  restart   3/5    eval   137   this Q   1.219e-07   best Q   5.276e-11    48.2 min
+  restart   3/5    eval   138   this Q   1.771e-07   best Q   5.276e-11    48.3 min
+  restart   3/5    eval   139   this Q   7.516e-09   best Q   5.276e-11    48.3 min
+  restart   3/5    eval   140   this Q   5.667e-08   best Q   5.276e-11    48.4 min
+  restart   3/5    eval   141   this Q   1.516e-08   best Q   5.276e-11    48.5 min
+  restart   3/5    eval   142   this Q   1.514e-08   best Q   5.276e-11    48.6 min
+  restart   3/5    eval   143   this Q   6.674e-08   best Q   5.276e-11    48.7 min
+  restart   3/5    eval   144   this Q   4.242e-09   best Q   5.276e-11    48.8 min
+  restart   3/5    eval   145   this Q   2.793e-08   best Q   5.276e-11    48.8 min
+  restart   3/5    eval   146   this Q   7.693e-09   best Q   5.276e-11    48.9 min
+  restart   3/5    eval   147   this Q   3.591e-08   best Q   5.276e-11    49.0 min
+  restart   3/5    eval   148   this Q   2.459e-09   best Q   5.276e-11    49.1 min
+  restart   3/5    eval   149   this Q   1.508e-08   best Q   5.276e-11    49.2 min
+  restart   3/5    eval   150   this Q   3.662e-09   best Q   5.276e-11    49.3 min
+  restart   3/5    eval   151   this Q   7.724e-09   best Q   5.276e-11    49.4 min
+  restart   3/5    eval   152   this Q   2.231e-09   best Q   5.276e-11    49.4 min
+  restart   3/5    eval   153   this Q   2.053e-08   best Q   5.276e-11    49.5 min
+  restart   3/5    eval   154   this Q   1.674e-09   best Q   5.276e-11    49.6 min
+  restart   3/5    eval   155   this Q   8.952e-09   best Q   5.276e-11    49.7 min
+  restart   3/5    eval   156   this Q   1.157e-09   best Q   5.276e-11    49.8 min
+  restart   3/5    eval   157   this Q   2.249e-09   best Q   5.276e-11    49.9 min
+  restart   3/5    eval   158   this Q   3.075e-09   best Q   5.276e-11    49.9 min
+  restart   3/5    eval   159   this Q   1.039e-09   best Q   5.276e-11    50.0 min
+  restart   3/5    eval   160   this Q   3.308e-09   best Q   5.276e-11    50.1 min
+  restart   3/5    eval   161   this Q   9.669e-10   best Q   5.276e-11    50.2 min
+  restart   3/5    eval   162   this Q   1.797e-09   best Q   5.276e-11    50.3 min
+  restart   3/5    eval   163   this Q   1.178e-09   best Q   5.276e-11    50.4 min
+  restart   3/5    eval   164   this Q   4.236e-09   best Q   5.276e-11    50.4 min
+  restart   3/5    eval   165   this Q    1.01e-09   best Q   5.276e-11    50.5 min
+  restart   3/5    eval   166   this Q   3.536e-10   best Q   5.276e-11    50.6 min
+  restart   3/5    eval   167   this Q   6.435e-10   best Q   5.276e-11    50.7 min
+  restart   3/5    eval   168   this Q   2.804e-09   best Q   5.276e-11    50.8 min
+  restart   3/5    eval   169   this Q   6.533e-10   best Q   5.276e-11    50.9 min
+  restart   3/5    eval   170   this Q   2.451e-10   best Q   5.276e-11    50.9 min
+  restart   3/5    eval   171   this Q   6.803e-10   best Q   5.276e-11    51.0 min
+  restart   3/5    eval   172   this Q   8.054e-10   best Q   5.276e-11    51.1 min
+  restart   3/5    eval   173   this Q   9.566e-10   best Q   5.276e-11    51.2 min
+  restart   3/5    eval   174   this Q   5.895e-10   best Q   5.276e-11    51.3 min
+  restart   3/5    eval   175   this Q   6.589e-10   best Q   5.276e-11    51.4 min
+  restart   3/5    eval   176   this Q   2.749e-10   best Q   5.276e-11    51.4 min
+  restart   3/5    eval   177   this Q   4.703e-10   best Q   5.276e-11    51.5 min
+  restart   3/5    eval   178   this Q   9.703e-10   best Q   5.276e-11    51.6 min
+  restart   3/5    eval   179   this Q   1.744e-10   best Q   5.276e-11    51.7 min
+  restart   3/5    eval   180   this Q   6.031e-10   best Q   5.276e-11    51.8 min
+  restart   3/5    eval   181   this Q   2.603e-10   best Q   5.276e-11    51.9 min
+  restart   3/5    eval   182   this Q   2.814e-10   best Q   5.276e-11    51.9 min
+  restart   3/5    eval   183   this Q   2.055e-10   best Q   5.276e-11    52.0 min
+  restart   3/5    eval   184   this Q   3.434e-10   best Q   5.276e-11    52.1 min
+  restart   3/5    eval   185   this Q    2.02e-10   best Q   5.276e-11    52.2 min
+  restart   3/5   DONE   this   1.744e-10   best Q   5.276e-11    52.2 min, ~35 min left
+  restart   4/5    eval     1   this Q    0.001463   best Q   5.276e-11    52.3 min
+  restart   4/5    eval     2   this Q    0.001463   best Q   5.276e-11    52.4 min
+  restart   4/5    eval     3   this Q       0.293   best Q   5.276e-11    52.4 min
+  restart   4/5    eval     4   this Q      0.7242   best Q   5.276e-11    52.5 min
+  restart   4/5    eval     5   this Q       7.221   best Q   5.276e-11    52.6 min
+  restart   4/5    eval     6   this Q      0.1822   best Q   5.276e-11    52.7 min
+  restart   4/5    eval     7   this Q       1.142   best Q   5.276e-11    52.8 min
+  restart   4/5    eval     8   this Q       0.551   best Q   5.276e-11    52.9 min
+  restart   4/5    eval     9   this Q      0.4674   best Q   5.276e-11    52.9 min
+  restart   4/5    eval    10   this Q       2.161   best Q   5.276e-11    53.0 min
+  restart   4/5    eval    11   this Q      0.1802   best Q   5.276e-11    53.1 min
+  restart   4/5    eval    12   this Q      0.4317   best Q   5.276e-11    53.2 min
+  restart   4/5    eval    13   this Q      0.1116   best Q   5.276e-11    53.3 min
+  restart   4/5    eval    14   this Q      0.1654   best Q   5.276e-11    53.4 min
+  restart   4/5    eval    15   this Q      0.3288   best Q   5.276e-11    53.4 min
+  restart   4/5    eval    16   this Q      0.0321   best Q   5.276e-11    53.5 min
+  restart   4/5    eval    17   this Q      0.3794   best Q   5.276e-11    53.6 min
+  restart   4/5    eval    18   this Q     0.05734   best Q   5.276e-11    53.7 min
+  restart   4/5    eval    19   this Q      0.1987   best Q   5.276e-11    53.8 min
+  restart   4/5    eval    20   this Q     0.06732   best Q   5.276e-11    53.8 min
+  restart   4/5    eval    21   this Q     0.04051   best Q   5.276e-11    53.9 min
+  restart   4/5    eval    22   this Q     0.03431   best Q   5.276e-11    54.0 min
+  restart   4/5    eval    23   this Q      0.1727   best Q   5.276e-11    54.1 min
+  restart   4/5    eval    24   this Q     0.01195   best Q   5.276e-11    54.2 min
+  restart   4/5    eval    25   this Q     0.03994   best Q   5.276e-11    54.3 min
+  restart   4/5    eval    26   this Q     0.01361   best Q   5.276e-11    54.4 min
+  restart   4/5    eval    27   this Q      0.0579   best Q   5.276e-11    54.4 min
+  restart   4/5    eval    28   this Q     0.01018   best Q   5.276e-11    54.5 min
+  restart   4/5    eval    29   this Q     0.03804   best Q   5.276e-11    54.6 min
+  restart   4/5    eval    30   this Q     0.01032   best Q   5.276e-11    54.7 min
+  restart   4/5    eval    31   this Q     0.00688   best Q   5.276e-11    54.8 min
+  restart   4/5    eval    32   this Q     0.01912   best Q   5.276e-11    54.9 min
+  restart   4/5    eval    33   this Q    0.005064   best Q   5.276e-11    54.9 min
+  restart   4/5    eval    34   this Q    0.001875   best Q   5.276e-11    55.0 min
+  restart   4/5    eval    35   this Q    0.006732   best Q   5.276e-11    55.1 min
+  restart   4/5    eval    36   this Q    0.003667   best Q   5.276e-11    55.2 min
+  restart   4/5    eval    37   this Q     0.01325   best Q   5.276e-11    55.3 min
+  restart   4/5    eval    38   this Q    0.001722   best Q   5.276e-11    55.3 min
+  restart   4/5    eval    39   this Q    0.003661   best Q   5.276e-11    55.4 min
+  restart   4/5    eval    40   this Q    0.003595   best Q   5.276e-11    55.5 min
+  restart   4/5    eval    41   this Q    0.005875   best Q   5.276e-11    55.6 min
+  restart   4/5    eval    42   this Q   0.0009101   best Q   5.276e-11    55.7 min
+  restart   4/5    eval    43   this Q      0.0032   best Q   5.276e-11    55.8 min
+  restart   4/5    eval    44   this Q   0.0008259   best Q   5.276e-11    55.8 min
+  restart   4/5    eval    45   this Q    0.007394   best Q   5.276e-11    55.9 min
+  restart   4/5    eval    46   this Q   0.0001508   best Q   5.276e-11    56.0 min
+  restart   4/5    eval    47   this Q    0.001829   best Q   5.276e-11    56.1 min
+  restart   4/5    eval    48   this Q   0.0005825   best Q   5.276e-11    56.2 min
+  restart   4/5    eval    49   this Q     0.00112   best Q   5.276e-11    56.3 min
+  restart   4/5    eval    50   this Q   0.0003393   best Q   5.276e-11    56.3 min
+  restart   4/5    eval    51   this Q    0.001655   best Q   5.276e-11    56.4 min
+  restart   4/5    eval    52   this Q   0.0002501   best Q   5.276e-11    56.5 min
+  restart   4/5    eval    53   this Q   0.0003633   best Q   5.276e-11    56.6 min
+  restart   4/5    eval    54   this Q    0.001085   best Q   5.276e-11    56.7 min
+  restart   4/5    eval    55   this Q   0.0001317   best Q   5.276e-11    56.8 min
+  restart   4/5    eval    56   this Q   0.0007219   best Q   5.276e-11    56.9 min
+  restart   4/5    eval    57   this Q   9.734e-05   best Q   5.276e-11    56.9 min
+  restart   4/5    eval    58   this Q   0.0002405   best Q   5.276e-11    57.0 min
+  restart   4/5    eval    59   this Q   0.0001513   best Q   5.276e-11    57.1 min
+  restart   4/5    eval    60   this Q   0.0002154   best Q   5.276e-11    57.2 min
+  restart   4/5    eval    61   this Q   5.255e-05   best Q   5.276e-11    57.3 min
+  restart   4/5    eval    62   this Q   0.0002729   best Q   5.276e-11    57.4 min
+  restart   4/5    eval    63   this Q   2.743e-05   best Q   5.276e-11    57.4 min
+  restart   4/5    eval    64   this Q   0.0002899   best Q   5.276e-11    57.5 min
+  restart   4/5    eval    65   this Q   2.616e-05   best Q   5.276e-11    57.6 min
+  restart   4/5    eval    66   this Q   0.0002724   best Q   5.276e-11    57.7 min
+  restart   4/5    eval    67   this Q   2.337e-05   best Q   5.276e-11    57.8 min
+  restart   4/5    eval    68   this Q   0.0001654   best Q   5.276e-11    57.9 min
+  restart   4/5    eval    69   this Q   2.154e-05   best Q   5.276e-11    57.9 min
+  restart   4/5    eval    70   this Q   3.482e-05   best Q   5.276e-11    58.0 min
+  restart   4/5    eval    71   this Q   7.718e-06   best Q   5.276e-11    58.1 min
+  restart   4/5    eval    72   this Q   4.973e-05   best Q   5.276e-11    58.2 min
+  restart   4/5    eval    73   this Q   5.488e-06   best Q   5.276e-11    58.3 min
+  restart   4/5    eval    74   this Q   7.487e-05   best Q   5.276e-11    58.4 min
+  restart   4/5    eval    75   this Q    3.59e-06   best Q   5.276e-11    58.4 min
+  restart   4/5    eval    76   this Q   4.146e-05   best Q   5.276e-11    58.5 min
+  restart   4/5    eval    77   this Q   5.784e-06   best Q   5.276e-11    58.6 min
+  restart   4/5    eval    78   this Q   1.454e-05   best Q   5.276e-11    58.7 min
+  restart   4/5    eval    79   this Q   3.392e-06   best Q   5.276e-11    58.8 min
+  restart   4/5    eval    80   this Q   8.699e-06   best Q   5.276e-11    58.9 min
+  restart   4/5    eval    81   this Q   2.222e-06   best Q   5.276e-11    58.9 min
+  restart   4/5    eval    82   this Q   1.702e-05   best Q   5.276e-11    59.0 min
+  restart   4/5    eval    83   this Q    1.04e-06   best Q   5.276e-11    59.1 min
+  restart   4/5    eval    84   this Q   1.819e-06   best Q   5.276e-11    59.2 min
+  restart   4/5    eval    85   this Q   1.078e-05   best Q   5.276e-11    59.3 min
+  restart   4/5    eval    86   this Q   4.197e-07   best Q   5.276e-11    59.4 min
+  restart   4/5    eval    87   this Q   5.005e-06   best Q   5.276e-11    59.5 min
+  restart   4/5    eval    88   this Q   8.633e-07   best Q   5.276e-11    59.5 min
+  restart   4/5    eval    89   this Q   1.695e-06   best Q   5.276e-11    59.6 min
+  restart   4/5    eval    90   this Q   2.028e-06   best Q   5.276e-11    59.7 min
+  restart   4/5    eval    91   this Q   4.481e-07   best Q   5.276e-11    59.8 min
+  restart   4/5    eval    92   this Q   2.463e-06   best Q   5.276e-11    59.9 min
+  restart   4/5    eval    93   this Q   4.003e-07   best Q   5.276e-11    60.0 min
+  restart   4/5    eval    94   this Q   1.714e-06   best Q   5.276e-11    60.0 min
+  restart   4/5    eval    95   this Q   2.042e-07   best Q   5.276e-11    60.1 min
+  restart   4/5    eval    96   this Q   1.459e-06   best Q   5.276e-11    60.2 min
+  restart   4/5    eval    97   this Q   1.758e-07   best Q   5.276e-11    60.3 min
+  restart   4/5    eval    98   this Q   5.414e-07   best Q   5.276e-11    60.4 min
+  restart   4/5    eval    99   this Q   1.124e-07   best Q   5.276e-11    60.5 min
+  restart   4/5    eval   100   this Q   1.271e-06   best Q   5.276e-11    60.5 min
+  restart   4/5    eval   101   this Q   4.532e-08   best Q   5.276e-11    60.6 min
+  restart   4/5    eval   102   this Q   3.569e-07   best Q   5.276e-11    60.7 min
+  restart   4/5    eval   103   this Q   1.022e-07   best Q   5.276e-11    60.8 min
+  restart   4/5    eval   104   this Q   2.252e-07   best Q   5.276e-11    60.9 min
+  restart   4/5    eval   105   this Q   6.199e-08   best Q   5.276e-11    61.0 min
+  restart   4/5    eval   106   this Q   1.218e-07   best Q   5.276e-11    61.0 min
+  restart   4/5    eval   107   this Q   2.669e-08   best Q   5.276e-11    61.1 min
+  restart   4/5    eval   108   this Q   1.886e-07   best Q   5.276e-11    61.2 min
+  restart   4/5    eval   109   this Q   2.461e-08   best Q   5.276e-11    61.3 min
+  restart   4/5    eval   110   this Q   1.315e-07   best Q   5.276e-11    61.4 min
+  restart   4/5    eval   111   this Q   2.961e-08   best Q   5.276e-11    61.5 min
+  restart   4/5    eval   112   this Q   6.485e-08   best Q   5.276e-11    61.5 min
+  restart   4/5    eval   113   this Q   1.593e-08   best Q   5.276e-11    61.6 min
+  restart   4/5    eval   114   this Q   1.907e-07   best Q   5.276e-11    61.7 min
+  restart   4/5    eval   115   this Q   4.579e-09   best Q   5.276e-11    61.8 min
+  restart   4/5    eval   116   this Q   4.845e-08   best Q   5.276e-11    61.9 min
+  restart   4/5    eval   117   this Q    9.35e-09   best Q   5.276e-11    62.0 min
+  restart   4/5    eval   118   this Q    2.11e-08   best Q   5.276e-11    62.0 min
+  restart   4/5    eval   119   this Q   2.649e-08   best Q   5.276e-11    62.1 min
+  restart   4/5    eval   120   this Q   9.077e-09   best Q   5.276e-11    62.2 min
+  restart   4/5    eval   121   this Q   2.388e-08   best Q   5.276e-11    62.3 min
+  restart   4/5    eval   122   this Q   8.778e-09   best Q   5.276e-11    62.4 min
+  restart   4/5    eval   123   this Q    3.99e-09   best Q   5.276e-11    62.5 min
+  restart   4/5    eval   124   this Q   2.307e-08   best Q   5.276e-11    62.5 min
+  restart   4/5    eval   125   this Q   1.336e-08   best Q   5.276e-11    62.6 min
+  restart   4/5    eval   126   this Q   1.863e-09   best Q   5.276e-11    62.7 min
+  restart   4/5    eval   127   this Q   8.206e-09   best Q   5.276e-11    62.8 min
+  restart   4/5    eval   128   this Q   1.783e-08   best Q   5.276e-11    62.9 min
+  restart   4/5    eval   129   this Q   1.109e-09   best Q   5.276e-11    63.0 min
+  restart   4/5    eval   130   this Q   6.481e-09   best Q   5.276e-11    63.0 min
+  restart   4/5    eval   131   this Q   1.893e-09   best Q   5.276e-11    63.1 min
+  restart   4/5    eval   132   this Q    1.23e-08   best Q   5.276e-11    63.2 min
+  restart   4/5    eval   133   this Q   7.498e-10   best Q   5.276e-11    63.3 min
+  restart   4/5    eval   134   this Q   5.655e-09   best Q   5.276e-11    63.4 min
+  restart   4/5    eval   135   this Q   1.438e-09   best Q   5.276e-11    63.5 min
+  restart   4/5    eval   136   this Q    8.98e-10   best Q   5.276e-11    63.5 min
+  restart   4/5    eval   137   this Q   5.721e-09   best Q   5.276e-11    63.6 min
+  restart   4/5    eval   138   this Q    5.33e-10   best Q   5.276e-11    63.7 min
+  restart   4/5    eval   139   this Q   2.078e-09   best Q   5.276e-11    63.8 min
+  restart   4/5    eval   140   this Q   7.305e-10   best Q   5.276e-11    63.9 min
+  restart   4/5    eval   141   this Q   9.461e-10   best Q   5.276e-11    64.0 min
+  restart   4/5    eval   142   this Q   3.954e-10   best Q   5.276e-11    64.0 min
+  restart   4/5    eval   143   this Q   1.327e-09   best Q   5.276e-11    64.1 min
+  restart   4/5    eval   144   this Q   4.408e-10   best Q   5.276e-11    64.2 min
+  restart   4/5    eval   145   this Q   1.299e-09   best Q   5.276e-11    64.3 min
+  restart   4/5    eval   146   this Q   3.699e-10   best Q   5.276e-11    64.4 min
+  restart   4/5    eval   147   this Q   1.922e-10   best Q   5.276e-11    64.5 min
+  restart   4/5    eval   148   this Q   4.363e-10   best Q   5.276e-11    64.5 min
+  restart   4/5    eval   149   this Q   1.695e-09   best Q   5.276e-11    64.6 min
+  restart   4/5    eval   150   this Q   2.005e-10   best Q   5.276e-11    64.7 min
+  restart   4/5    eval   151   this Q   2.151e-10   best Q   5.276e-11    64.8 min
+  restart   4/5    eval   152   this Q   1.036e-10   best Q   5.276e-11    64.9 min
+  restart   4/5    eval   153   this Q   3.387e-10   best Q   5.276e-11    65.0 min
+  restart   4/5    eval   154   this Q   4.546e-10   best Q   5.276e-11    65.0 min
+  restart   4/5    eval   155   this Q   1.169e-10   best Q   5.276e-11    65.1 min
+  restart   4/5    eval   156   this Q   3.931e-10   best Q   5.276e-11    65.2 min
+  restart   4/5    eval   157   this Q   1.181e-10   best Q   5.276e-11    65.3 min
+  restart   4/5   DONE   this   1.036e-10   best Q   5.276e-11    65.3 min, ~16 min left
+  restart   5/5    eval     1   this Q   2.386e-06   best Q   5.276e-11    65.4 min
+  restart   5/5    eval     2   this Q   2.386e-06   best Q   5.276e-11    65.5 min
+  restart   5/5    eval     3   this Q      0.3109   best Q   5.276e-11    65.5 min
+  restart   5/5    eval     4   this Q       0.682   best Q   5.276e-11    65.6 min
+  restart   5/5    eval     5   this Q       6.971   best Q   5.276e-11    65.7 min
+  restart   5/5    eval     6   this Q      0.1632   best Q   5.276e-11    65.8 min
+  restart   5/5    eval     7   this Q       1.131   best Q   5.276e-11    65.9 min
+  restart   5/5    eval     8   this Q      0.5464   best Q   5.276e-11    66.0 min
+  restart   5/5    eval     9   this Q      0.4804   best Q   5.276e-11    66.0 min
+  restart   5/5    eval    10   this Q       2.007   best Q   5.276e-11    66.1 min
+  restart   5/5    eval    11   this Q      0.1891   best Q   5.276e-11    66.2 min
+  restart   5/5    eval    12   this Q      0.3975   best Q   5.276e-11    66.3 min
+  restart   5/5    eval    13   this Q     0.09908   best Q   5.276e-11    66.4 min
+  restart   5/5    eval    14   this Q      0.1481   best Q   5.276e-11    66.5 min
+  restart   5/5    eval    15   this Q      0.5139   best Q   5.276e-11    66.5 min
+  restart   5/5    eval    16   this Q     0.04775   best Q   5.276e-11    66.6 min
+  restart   5/5    eval    17   this Q      0.2686   best Q   5.276e-11    66.7 min
+  restart   5/5    eval    18   this Q     0.03296   best Q   5.276e-11    66.8 min
+  restart   5/5    eval    19   this Q      0.1931   best Q   5.276e-11    66.9 min
+  restart   5/5    eval    20   this Q     0.05654   best Q   5.276e-11    67.0 min
+  restart   5/5    eval    21   this Q     0.04946   best Q   5.276e-11    67.0 min
+  restart   5/5    eval    22   this Q     0.03929   best Q   5.276e-11    67.1 min
+  restart   5/5    eval    23   this Q      0.0612   best Q   5.276e-11    67.2 min
+  restart   5/5    eval    24   this Q     0.01454   best Q   5.276e-11    67.3 min
+  restart   5/5    eval    25   this Q      0.1323   best Q   5.276e-11    67.4 min
+  restart   5/5    eval    26   this Q     0.01109   best Q   5.276e-11    67.5 min
+  restart   5/5    eval    27   this Q     0.04802   best Q   5.276e-11    67.5 min
+  restart   5/5    eval    28   this Q     0.01222   best Q   5.276e-11    67.6 min
+  restart   5/5    eval    29   this Q     0.02609   best Q   5.276e-11    67.7 min
+  restart   5/5    eval    30   this Q    0.008789   best Q   5.276e-11    67.8 min
+  restart   5/5    eval    31   this Q     0.02177   best Q   5.276e-11    67.9 min
+  restart   5/5    eval    32   this Q    0.005471   best Q   5.276e-11    68.0 min
+  restart   5/5    eval    33   this Q    0.006946   best Q   5.276e-11    68.0 min
+  restart   5/5    eval    34   this Q    0.003922   best Q   5.276e-11    68.1 min
+  restart   5/5    eval    35   this Q    0.005184   best Q   5.276e-11    68.2 min
+  restart   5/5    eval    36   this Q     0.01798   best Q   5.276e-11    68.3 min
+  restart   5/5    eval    37   this Q    0.001316   best Q   5.276e-11    68.4 min
+  restart   5/5    eval    38   this Q    0.006628   best Q   5.276e-11    68.5 min
+  restart   5/5    eval    39   this Q    0.001589   best Q   5.276e-11    68.5 min
+  restart   5/5    eval    40   this Q    0.006432   best Q   5.276e-11    68.6 min
+  restart   5/5    eval    41   this Q    0.001496   best Q   5.276e-11    68.7 min
+  restart   5/5    eval    42   this Q    0.005235   best Q   5.276e-11    68.8 min
+  restart   5/5    eval    43   this Q    0.001114   best Q   5.276e-11    68.9 min
+  restart   5/5    eval    44   this Q    0.001299   best Q   5.276e-11    69.0 min
+  restart   5/5    eval    45   this Q    0.001272   best Q   5.276e-11    69.0 min
+  restart   5/5    eval    46   this Q    0.001682   best Q   5.276e-11    69.1 min
+  restart   5/5    eval    47   this Q   0.0004717   best Q   5.276e-11    69.2 min
+  restart   5/5    eval    48   this Q    0.001498   best Q   5.276e-11    69.3 min
+  restart   5/5    eval    49   this Q   0.0004574   best Q   5.276e-11    69.4 min
+  restart   5/5    eval    50   this Q     0.00131   best Q   5.276e-11    69.5 min
+  restart   5/5    eval    51   this Q   0.0004402   best Q   5.276e-11    69.5 min
+  restart   5/5    eval    52   this Q     0.00181   best Q   5.276e-11    69.6 min
+  restart   5/5    eval    53   this Q   0.0003401   best Q   5.276e-11    69.7 min
+  restart   5/5    eval    54   this Q    0.000361   best Q   5.276e-11    69.8 min
+  restart   5/5    eval    55   this Q   0.0004515   best Q   5.276e-11    69.9 min
+  restart   5/5    eval    56   this Q    0.000212   best Q   5.276e-11    70.0 min
+  restart   5/5    eval    57   this Q   0.0006178   best Q   5.276e-11    70.0 min
+  restart   5/5    eval    58   this Q   0.0001929   best Q   5.276e-11    70.1 min
+  restart   5/5    eval    59   this Q   0.0001874   best Q   5.276e-11    70.2 min
+  restart   5/5    eval    60   this Q   0.0001518   best Q   5.276e-11    70.3 min
+  restart   5/5    eval    61   this Q   0.0001857   best Q   5.276e-11    70.4 min
+  restart   5/5    eval    62   this Q   0.0003031   best Q   5.276e-11    70.5 min
+  restart   5/5    eval    63   this Q   7.859e-05   best Q   5.276e-11    70.5 min
+  restart   5/5    eval    64   this Q   0.0001664   best Q   5.276e-11    70.6 min
+  restart   5/5    eval    65   this Q   0.0001687   best Q   5.276e-11    70.7 min
+  restart   5/5    eval    66   this Q   7.287e-05   best Q   5.276e-11    70.8 min
+  restart   5/5    eval    67   this Q   0.0001402   best Q   5.276e-11    70.9 min
+  restart   5/5    eval    68   this Q   0.0001221   best Q   5.276e-11    71.0 min
+  restart   5/5    eval    69   this Q   6.334e-05   best Q   5.276e-11    71.1 min
+  restart   5/5    eval    70   this Q   0.0001868   best Q   5.276e-11    71.1 min
+  restart   5/5    eval    71   this Q   3.714e-05   best Q   5.276e-11    71.2 min
+  restart   5/5    eval    72   this Q   0.0001154   best Q   5.276e-11    71.3 min
+  restart   5/5    eval    73   this Q   2.848e-05   best Q   5.276e-11    71.4 min
+  restart   5/5    eval    74   this Q   4.908e-05   best Q   5.276e-11    71.5 min
+  restart   5/5    eval    75   this Q   8.525e-05   best Q   5.276e-11    71.6 min
+  restart   5/5    eval    76   this Q   2.195e-05   best Q   5.276e-11    71.6 min
+  restart   5/5    eval    77   this Q   6.304e-05   best Q   5.276e-11    71.7 min
+  restart   5/5    eval    78   this Q   1.864e-05   best Q   5.276e-11    71.8 min
+  restart   5/5    eval    79   this Q    1.41e-05   best Q   5.276e-11    71.9 min
+  restart   5/5    eval    80   this Q   3.085e-05   best Q   5.276e-11    72.0 min
+  restart   5/5    eval    81   this Q   1.059e-05   best Q   5.276e-11    72.1 min
+  restart   5/5    eval    82   this Q   4.103e-06   best Q   5.276e-11    72.1 min
+  restart   5/5    eval    83   this Q   2.367e-05   best Q   5.276e-11    72.2 min
+  restart   5/5    eval    84   this Q   5.026e-06   best Q   5.276e-11    72.3 min
+  restart   5/5    eval    85   this Q   1.886e-05   best Q   5.276e-11    72.4 min
+  restart   5/5    eval    86   this Q   3.802e-06   best Q   5.276e-11    72.5 min
+  restart   5/5    eval    87   this Q   5.729e-06   best Q   5.276e-11    72.6 min
+  restart   5/5    eval    88   this Q   1.028e-06   best Q   5.276e-11    72.6 min
+  restart   5/5    eval    89   this Q   8.836e-06   best Q   5.276e-11    72.7 min
+  restart   5/5    eval    90   this Q   9.477e-07   best Q   5.276e-11    72.8 min
+  restart   5/5    eval    91   this Q    6.16e-06   best Q   5.276e-11    72.9 min
+  restart   5/5    eval    92   this Q   8.864e-07   best Q   5.276e-11    73.0 min
+  restart   5/5    eval    93   this Q   5.556e-06   best Q   5.276e-11    73.1 min
+  restart   5/5    eval    94   this Q   7.768e-07   best Q   5.276e-11    73.1 min
+  restart   5/5    eval    95   this Q   5.962e-06   best Q   5.276e-11    73.2 min
+  restart   5/5    eval    96   this Q   3.178e-07   best Q   5.276e-11    73.3 min
+  restart   5/5    eval    97   this Q   1.794e-06   best Q   5.276e-11    73.4 min
+  restart   5/5    eval    98   this Q   2.416e-07   best Q   5.276e-11    73.5 min
+  restart   5/5    eval    99   this Q   1.669e-06   best Q   5.276e-11    73.6 min
+  restart   5/5    eval   100   this Q   2.168e-07   best Q   5.276e-11    73.7 min
+  restart   5/5    eval   101   this Q   9.307e-07   best Q   5.276e-11    73.7 min
+  restart   5/5    eval   102   this Q   2.099e-07   best Q   5.276e-11    73.8 min
+  restart   5/5    eval   103   this Q   8.855e-07   best Q   5.276e-11    73.9 min
+  restart   5/5    eval   104   this Q   2.264e-07   best Q   5.276e-11    74.0 min
+  restart   5/5    eval   105   this Q   1.383e-06   best Q   5.276e-11    74.1 min
+  restart   5/5    eval   106   this Q   3.193e-08   best Q   5.276e-11    74.2 min
+  restart   5/5    eval   107   this Q   3.136e-07   best Q   5.276e-11    74.2 min
+  restart   5/5    eval   108   this Q   9.365e-08   best Q   5.276e-11    74.3 min
+  restart   5/5    eval   109   this Q   1.856e-07   best Q   5.276e-11    74.4 min
+  restart   5/5    eval   110   this Q   4.552e-07   best Q   5.276e-11    74.5 min
+  restart   5/5    eval   111   this Q   6.396e-08   best Q   5.276e-11    74.6 min
+  restart   5/5    eval   112   this Q   6.639e-08   best Q   5.276e-11    74.7 min
+  restart   5/5    eval   113   this Q   1.144e-07   best Q   5.276e-11    74.7 min
+  restart   5/5    eval   114   this Q   3.154e-08   best Q   5.276e-11    74.8 min
+  restart   5/5    eval   115   this Q   7.175e-08   best Q   5.276e-11    74.9 min
+  restart   5/5    eval   116   this Q   1.906e-08   best Q   5.276e-11    75.0 min
+  restart   5/5    eval   117   this Q   7.554e-08   best Q   5.276e-11    75.1 min
+  restart   5/5    eval   118   this Q   1.285e-08   best Q   5.276e-11    75.2 min
+  restart   5/5    eval   119   this Q   1.728e-07   best Q   5.276e-11    75.2 min
+  restart   5/5    eval   120   this Q   9.919e-09   best Q   5.276e-11    75.3 min
+  restart   5/5    eval   121   this Q   7.563e-08   best Q   5.276e-11    75.4 min
+  restart   5/5    eval   122   this Q   8.613e-09   best Q   5.276e-11    75.5 min
+  restart   5/5    eval   123   this Q   3.786e-08   best Q   5.276e-11    75.6 min
+  restart   5/5    eval   124   this Q   1.091e-08   best Q   5.276e-11    75.7 min
+  restart   5/5    eval   125   this Q   1.926e-08   best Q   5.276e-11    75.7 min
+  restart   5/5    eval   126   this Q   7.775e-09   best Q   5.276e-11    75.8 min
+  restart   5/5    eval   127   this Q   9.185e-09   best Q   5.276e-11    75.9 min
+  restart   5/5    eval   128   this Q   2.411e-09   best Q   5.276e-11    76.0 min
+  restart   5/5    eval   129   this Q   9.634e-09   best Q   5.276e-11    76.1 min
+  restart   5/5    eval   130   this Q    2.11e-08   best Q   5.276e-11    76.2 min
+  restart   5/5    eval   131   this Q   2.929e-09   best Q   5.276e-11    76.2 min
+  restart   5/5    eval   132   this Q   1.581e-08   best Q   5.276e-11    76.3 min
+  restart   5/5    eval   133   this Q   2.092e-09   best Q   5.276e-11    76.4 min
+  restart   5/5    eval   134   this Q   1.102e-08   best Q   5.276e-11    76.5 min
+  restart   5/5    eval   135   this Q   2.027e-09   best Q   5.276e-11    76.6 min
+  restart   5/5    eval   136   this Q   1.578e-08   best Q   5.276e-11    76.7 min
+  restart   5/5    eval   137   this Q   1.799e-09   best Q   5.276e-11    76.7 min
+  restart   5/5    eval   138   this Q   3.842e-09   best Q   5.276e-11    76.8 min
+  restart   5/5    eval   139   this Q   4.745e-10   best Q   5.276e-11    76.9 min
+  restart   5/5    eval   140   this Q   7.477e-09   best Q   5.276e-11    77.0 min
+  restart   5/5    eval   141   this Q   2.691e-10   best Q   5.276e-11    77.1 min
+  restart   5/5    eval   142   this Q   1.766e-09   best Q   5.276e-11    77.2 min
+  restart   5/5    eval   143   this Q   2.065e-09   best Q   5.276e-11    77.2 min
+  restart   5/5    eval   144   this Q   7.971e-10   best Q   5.276e-11    77.3 min
+  restart   5/5    eval   145   this Q   5.171e-10   best Q   5.276e-11    77.4 min
+  restart   5/5    eval   146   this Q   3.633e-09   best Q   5.276e-11    77.5 min
+  restart   5/5    eval   147   this Q   4.134e-10   best Q   5.276e-11    77.6 min
+  restart   5/5    eval   148   this Q   3.058e-09   best Q   5.276e-11    77.7 min
+  restart   5/5    eval   149   this Q   1.934e-10   best Q   5.276e-11    77.8 min
+  restart   5/5    eval   150   this Q   1.176e-09   best Q   5.276e-11    77.8 min
+  restart   5/5    eval   151   this Q   1.023e-10   best Q   5.276e-11    77.9 min
+  restart   5/5    eval   152   this Q    7.39e-10   best Q   5.276e-11    78.0 min
+  restart   5/5    eval   153   this Q    1.24e-10   best Q   5.276e-11    78.1 min
+  restart   5/5    eval   154   this Q   1.087e-09   best Q   5.276e-11    78.2 min
+  restart   5/5    eval   155   this Q   6.395e-11   best Q   5.276e-11    78.3 min
+  restart   5/5    eval   156   this Q   2.752e-10   best Q   5.276e-11    78.3 min
+  restart   5/5    eval   157   this Q   8.812e-11   best Q   5.276e-11    78.4 min
+  restart   5/5    eval   158   this Q   1.168e-10   best Q   5.276e-11    78.5 min
+  restart   5/5   DONE   this   6.395e-11   best Q   5.276e-11    78.5 min, ~0 min left
+  restart   5/5    eval     1   this Q   5.276e-11   best Q   5.276e-11    78.6 min
+  restart   5/5    eval     2   this Q      0.3099   best Q   5.276e-11    78.7 min
+  restart   5/5    eval     3   this Q      0.6831   best Q   5.276e-11    78.8 min
+  restart   5/5    eval     4   this Q       6.955   best Q   5.276e-11    78.8 min
+  restart   5/5    eval     5   this Q      0.1621   best Q   5.276e-11    78.9 min
+  restart   5/5    eval     6   this Q      0.1824   best Q   5.276e-11    79.0 min
+  restart   5/5    eval     7   this Q      0.4769   best Q   5.276e-11    79.1 min
+  restart   5/5    eval     8   this Q      0.8878   best Q   5.276e-11    79.2 min
+  restart   5/5    eval     9   this Q     0.08474   best Q   5.276e-11    79.3 min
+  restart   5/5    eval    10   this Q      0.2039   best Q   5.276e-11    79.3 min
+  restart   5/5    eval    11   this Q      0.0303   best Q   5.276e-11    79.4 min
+  restart   5/5    eval    12   this Q     0.00217   best Q   5.276e-11    79.5 min
+  restart   5/5    eval    13   this Q    0.005974   best Q   5.276e-11    79.6 min
+  restart   5/5    eval    14   this Q   0.0002152   best Q   5.276e-11    79.7 min
+  restart   5/5    eval    15   this Q   0.0002024   best Q   5.276e-11    79.8 min
+  restart   5/5    eval    16   this Q   6.319e-05   best Q   5.276e-11    79.8 min
+  restart   5/5    eval    17   this Q   9.381e-05   best Q   5.276e-11    79.9 min
+  restart   5/5    eval    18   this Q   0.0002357   best Q   5.276e-11    80.0 min
+  restart   5/5    eval    19   this Q   2.936e-05   best Q   5.276e-11    80.1 min
+  restart   5/5    eval    20   this Q   1.164e-05   best Q   5.276e-11    80.2 min
+  restart   5/5    eval    21   this Q   1.037e-05   best Q   5.276e-11    80.3 min
+  restart   5/5    eval    22   this Q   8.052e-06   best Q   5.276e-11    80.3 min
+  restart   5/5    eval    23   this Q   2.194e-06   best Q   5.276e-11    80.4 min
+  restart   5/5    eval    24   this Q   6.748e-07   best Q   5.276e-11    80.5 min
+  restart   5/5    eval    25   this Q   5.799e-07   best Q   5.276e-11    80.6 min
+  restart   5/5    eval    26   this Q   5.634e-08   best Q   5.276e-11    80.7 min
+  restart   5/5    eval    27   this Q   3.819e-08   best Q   5.276e-11    80.8 min
+  restart   5/5    eval    28   this Q   1.136e-08   best Q   5.276e-11    80.8 min
+  restart   5/5    eval    29   this Q   7.996e-09   best Q   5.276e-11    80.9 min
+  restart   5/5    eval    30   this Q   2.045e-09   best Q   5.276e-11    81.0 min
+  restart   5/5    eval    31   this Q   2.413e-08   best Q   5.276e-11    81.1 min
+  restart   5/5    eval    32   this Q   4.262e-09   best Q   5.276e-11    81.2 min
+  restart   5/5    eval    33   this Q   3.142e-09   best Q   5.276e-11    81.3 min
+  restart   5/5    eval    34   this Q   1.639e-10   best Q   5.276e-11    81.3 min
+  restart   5/5    eval    35   this Q    2.33e-11   best Q    2.33e-11    81.4 min
+  restart   5/5    eval    36   this Q   3.008e-10   best Q    2.33e-11    81.5 min
+  restart   5/5    eval    37   this Q   1.393e-10   best Q    2.33e-11    81.6 min
+  restart   5/5    eval    38   this Q   7.004e-11   best Q    2.33e-11    81.7 min
+  restart   5/5    eval    39   this Q   6.018e-11   best Q    2.33e-11    81.8 min
+  restart   5/5    eval    40   this Q   1.184e-12   best Q   1.184e-12    81.8 min
+  restart   5/5    eval    41   this Q    2.32e-10   best Q   1.184e-12    81.9 min
+  restart   5/5    eval    42   this Q   2.168e-12   best Q   1.184e-12    82.0 min
+  restart   5/5    eval    43   this Q   3.062e-12   best Q   1.184e-12    82.1 min
+  restart   5/5    eval    44   this Q   5.594e-13   best Q   5.594e-13    82.2 min
+  restart   5/5    eval    45   this Q   6.797e-13   best Q   5.594e-13    82.3 min
+  restart   5/5    eval    46   this Q   3.464e-13   best Q   3.464e-13    82.3 min
+  restart   5/5    eval    47   this Q   1.521e-12   best Q   3.464e-13    82.4 min
+  restart   5/5    eval    48   this Q   9.041e-13   best Q   3.464e-13    82.5 min
+  restart   5/5    eval    49   this Q   2.709e-12   best Q   3.464e-13    82.6 min
+  restart   5/5    eval    50   this Q   1.701e-13   best Q   1.701e-13    82.7 min
+  restart   5/5    eval    51   this Q   3.536e-13   best Q   1.701e-13    82.8 min
+  restart   5/5    eval    52   this Q   6.204e-13   best Q   1.701e-13    82.8 min
+  restart   5/5    eval    53   this Q   8.142e-14   best Q   8.142e-14    82.9 min
+  restart   5/5    eval    54   this Q     4.1e-14   best Q     4.1e-14    83.0 min
+  restart   5/5    eval    55   this Q   5.907e-14   best Q     4.1e-14    83.1 min
+  restart   5/5    eval    56   this Q   1.925e-13   best Q     4.1e-14    83.2 min
+  restart   5/5    eval    57   this Q   4.973e-14   best Q     4.1e-14    83.3 min
+  restart   5/5    eval    58   this Q   5.153e-14   best Q     4.1e-14    83.3 min
+  restart   5/5    eval    59   this Q     5.2e-14   best Q     4.1e-14    83.4 min
+  restart   5/5    eval    60   this Q   5.301e-14   best Q     4.1e-14    83.5 min
+  restart   5/5    eval    61   this Q   3.695e-14   best Q   3.695e-14    83.6 min
+
+============================================================================
+Finished in 83.6 min -- 1375 evaluations
+============================================================================
+Q: sobol-best 0.0197767  ->  pre-polish 5.27571e-11  ->  final 3.69463e-14
+incumbent Q was 43.233  (improvement 100.0%)
+
+penalised evaluations: 9 of 1375 (0.7%)
+  ErrorException                6
+  infeasible_sigma_2            3
+(a penalised draw is a parameter vector the model cannot be solved at --
+ scored 1e6 rather than crashed on. A high rate means the SEARCH BOX is
+ too wide, not that the model is wrong.)
+
+============================================================================
+Estimated calibration
+============================================================================
+
+Parameters
+--------------------------------------------------------------
+  phi_1_0          0.8417   (was 1.0000)
+  phi_2_0          0.5256   (was 0.5000)
+  sigma_2_0       -3.3268   (was -1.8000)
+  sigma_2_1       -0.0229   (was 0.0200)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.1572     3.1577     -0.0%   cons_exhous_real_w99
+  mean_l_p       0.5287     0.5286      0.0%   (leis_mom + leis_dad)/2 / 112
+  mean_e_p_early     0.3498     0.3532     -1.0%   m_method2_final_w99, child ages 1-9
+  mean_e_p_late     0.4420     0.4414      0.1%   m_method2_final_w99, child ages 10-17
+
+  c_p        31572 USD/yr  vs data 31577
+  l_p        59.2 hrs/wk  vs data 59.2
+  e_p  1-9   3498 USD/yr  vs data 3532
+  e_p 10-17  4420 USD/yr  vs data 4414
+  e_p late/early  model 1.26x  vs data 1.25x
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        4.1487  (41487 USD/yr)
+  implied saving rate       25.2%
+  terminal assets        28.8720  (288720 USD)
+  work  h_p               0.2643  (29.6 hrs/wk)
+  child time t_p          0.2069  (23.2 hrs/wk)
+
+wrote output/smm_runs/2026-08-27_192305/estimates.toml
+wrote output/smm_runs/2026-08-27_192305/run.log
