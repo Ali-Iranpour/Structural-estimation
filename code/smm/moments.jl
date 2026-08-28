@@ -1,10 +1,10 @@
 # =============================================================================
-# moments.jl -- SMM on four parent-block moments.
+# moments.jl -- SMM on six parent-block moments.
 #
-# Estimates four parent parameters against four data means: household
-# consumption, parental leisure, and monetary investment in the child SPLIT BY
-# CHILD AGE (1-9 and 10-17). Baseline only; nothing here touches the child
-# lifecycle, the counterfactuals or the belief machinery.
+# Estimates six parent parameters against six data means: household consumption,
+# parental WORK hours, parent TIME with the child split by child age, and
+# monetary investment split by child age (1-9 and 10-17). Baseline only; nothing
+# here touches the child lifecycle, the counterfactuals or the belief machinery.
 #
 # WHAT SMM IS DOING HERE, IN ONE PARAGRAPH
 # ----------------------------------------
@@ -18,18 +18,38 @@
 # a likelihood; "simulated" because the model has no closed form, so the moments
 # come out of a simulation.
 #
-# FOUR MOMENTS, FOUR PARAMETERS: JUST-IDENTIFIED
-# ----------------------------------------------
-# One parameter per moment, so in principle all four can be matched exactly and
+# SIX MOMENTS, SIX PARAMETERS: JUST-IDENTIFIED
+# --------------------------------------------
+# One parameter per moment, so in principle all six can be matched exactly and
 # the objective can reach zero. That is deliberate for a first estimation: if the
 # fit is bad you know it is the MODEL failing, not a shortage of free parameters.
 # It also makes the weighting matrix irrelevant at the optimum, which removes one
 # thing to get wrong. Each parameter has a moment it moves most:
 #
-#   phi_1_0    weight on consumption      ->  mean c_p
-#   phi_2_0    weight on leisure          ->  mean l_p
+#   phi_1_0    weight on consumption       ->  mean c_p
+#   phi_2_0    weight on leisure           ->  mean h_p   (work; l = 1 - h - t)
+#   sigma_1_0  LEVEL of the t_p elasticity ->  mean t_p, ages 1-9
+#   sigma_1_1  SLOPE of the t_p elasticity ->  mean t_p, ages 10-17
 #   sigma_2_0  LEVEL of the e_p elasticity ->  mean e_p, ages 1-9
 #   sigma_2_1  SLOPE of the e_p elasticity ->  mean e_p, ages 10-17
+#
+# WHY h_p AND t_p RATHER THAN l_p
+# -------------------------------
+# l_p = 1 - h_p - t_p identically, so targeting leisure pins the SUM of work and
+# child time and says nothing about the split. The 2026-08-27 estimate matched
+# leisure exactly while working 29.6 hrs/wk against 34.4 in data and doing 23.2
+# hrs of childcare against 18.2 -- two errors that cancel inside l_p and are
+# invisible to it. Targeting h_p and t_p is strictly more information, and l_p
+# comes along for free as the residual.
+#
+# CAVEAT ON t_p, by instruction 2026-08-28: it is matched on `par_time_tot`, the
+# child-side union of active AND nearby parental presence. Nearby time overlaps
+# leisure and work, so the h_p and t_p targets jointly imply about 33 hrs/wk of
+# leisure against the 59.2 the same data measures. The identity forces the model
+# to that number, and the ~26-hour difference is absorbed by phi_2_0. Read the
+# estimated phi_2_0 as "whatever makes this time budget work", NOT as a taste for
+# leisure. tools/make_smm_targets.py carries the full accounting and the one-line
+# revert to per-parent active time.
 #
 # They are not independent -- the budget ties them together (see BUDGET below) --
 # but each has a clear first-order channel, which is what identification needs.
@@ -99,7 +119,9 @@ const SMM_AGE_SPLIT = 9
 # is the sum of the two age groups and would add no information while making the
 # system over-identified. To go back to the 3-moment design, put `mean_e_p` here
 # in place of the two `_early`/`_late` entries and drop sigma_2_1 from SMM_PARAMS.
-const SMM_MOMENTS = ("mean_c_p", "mean_l_p", "mean_e_p_early", "mean_e_p_late")
+const SMM_MOMENTS = ("mean_c_p", "mean_h_p",
+                     "mean_t_p_early", "mean_t_p_late",
+                     "mean_e_p_early", "mean_e_p_late")
 
 # A failed solve must return a large FINITE value, never Inf or an exception:
 # a derivative-free local search needs to be able to form a descent direction
@@ -119,6 +141,29 @@ function _penalize!(reason::Symbol)
 end
 
 """
+    _root_cause(e) -> Exception
+
+Unwrap the exception NLopt hands back so it can be classified by what actually
+went wrong.
+
+THIS IS LOAD-BEARING, and its absence cost two runs. `solve_model!` drives NLopt,
+and anything thrown inside an NLopt *callback* crosses a C boundary: NLopt catches
+it in `_catch_forced_stop`, stores `CapturedException(e, backtrace)`
+(NLopt.jl:568), forces a stop, and re-throws THAT wrapper from `optimize!`
+(NLopt.jl:807). So the objective never sees the `AssertionError` itself -- it sees
+a `CapturedException` around one, matches none of the types below, and re-throws
+out of `pmap`, killing every worker.
+
+Errors thrown by `solve_model!` OUTSIDE a callback -- the 95%-convergence
+`error()` -- arrive unwrapped, which is why `ErrorException` appeared to be
+handled correctly while `AssertionError` was not.
+"""
+_root_cause(e) =
+    e isa CapturedException   ? _root_cause(e.ex) :
+    e isa TaskFailedException ? _root_cause(e.task.exception) :
+    e
+
+"""
     smm_feasible(kw) -> Bool
 
 Is this parameter draw economically admissible, before any solving happens?
@@ -132,10 +177,14 @@ The maximum is at one end or the other since the exponent is monotone in `t`, so
 checking both endpoints is exact, not a sample.
 """
 function smm_feasible(kw)
-    s0 = hasproperty(kw, :sigma_2_0) ? kw.sigma_2_0 : PARENT_DEFAULTS.sigma_2_0
-    s1 = hasproperty(kw, :sigma_2_1) ? kw.sigma_2_1 : PARENT_DEFAULTS.sigma_2_1
     lo, hi = SMM_AGE_LO - 1, SMM_AGE_HI - 1          # the (t-1) actually used
-    return max(exp(s0 + s1 * lo), exp(s0 + s1 * hi)) < 1.0
+    _max_share(a, b) = max(exp(a + b * lo), exp(a + b * hi))
+    for (n0, n1) in ((:sigma_1_0, :sigma_1_1), (:sigma_2_0, :sigma_2_1))
+        a = hasproperty(kw, n0) ? getproperty(kw, n0) : getfield(PARENT_DEFAULTS, n0)
+        b = hasproperty(kw, n1) ? getproperty(kw, n1) : getfield(PARENT_DEFAULTS, n1)
+        _max_share(a, b) < 1.0 || return false
+    end
+    return true
 end
 
 # -----------------------------------------------------------------------------
@@ -203,6 +252,12 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
     l = nanmean(vec(1.0 .- p.sim_h[:, cols] .- p.sim_t[:, cols]))
 
     return (mean_c_p = c, mean_l_p = l, mean_e_p = e,
+            # h_p is flat in child age in the data, so it is pooled; t_p halves
+            # over the family stage, so it is split to identify sigma_1_1.
+            mean_h_p       = nanmean(vec(p.sim_h[:, cols])),
+            mean_t_p       = nanmean(vec(p.sim_t[:, cols])),
+            mean_t_p_early = nanmean(vec(p.sim_t[:, early])),
+            mean_t_p_late  = nanmean(vec(p.sim_t[:, late])),
             mean_e_p_early = nanmean(vec(p.sim_e[:, early])),
             mean_e_p_late  = nanmean(vec(p.sim_e[:, late])))
 end
@@ -266,9 +321,25 @@ end
 #                            because solve_model! throws there and smm_objective turns
 #                            it into SMM_PENALTY -- infeasible is a legitimate answer,
 #                            and the estimate sits at sigma_2_0 ~ -3.8, nowhere near it.
+#   sigma_1_0 [-4.0, -0.2]   LEVEL of the HC elasticity to parent TIME, incumbent
+#                            -0.90 (sigma_1 = 0.407). Spans sigma_1 in [0.018, 0.819].
+#                            This is the parameter that moves t_p: parent_family.jl's
+#                            own note records that tau_p is flat at 0.011-0.023 for
+#                            every phi_2 from 0.05 to 3.0 because the FOC scales with
+#                            phi_2 on both sides -- "tau_p is set by sigma_1 and the
+#                            value of the child's HC". So phi_2_0 identifies h_p and
+#                            sigma_1_0 identifies t_p, through separate channels.
+#   sigma_1_1 [-0.20, 0.05]  AGE SLOPE of that elasticity, incumbent -0.08. The data
+#                            supports this far better than its sigma_2 counterpart:
+#                            t_p HALVES over the family stage (30.3 -> 9.7 hrs/wk,
+#                            late/early 0.512x) and does so monotonically, which is
+#                            exactly the shape exp(sigma_1_0 + sigma_1_1*(t-1)) can
+#                            produce. Investment, by contrast, is U-shaped.
 const SMM_PARAMS = [
     SMMParam(:phi_1_0,   0.2,  5.0,  :log),
     SMMParam(:phi_2_0,   0.05, 20.0, :log),
+    SMMParam(:sigma_1_0, -4.0, -0.2,  :level),
+    SMMParam(:sigma_1_1, -0.20, 0.05, :level),
     SMMParam(:sigma_2_0, -5.0, -0.5, :level),
     SMMParam(:sigma_2_1, -0.05, 0.05, :level),
 ]
@@ -412,18 +483,23 @@ function smm_objective(z::AbstractVector{Float64}, targets, V_child;
         #   DomainError      log/^ of a non-positive quantity in the technology.
         #   AssertionError   HC_technology_full's `@assert t_p > 0 && e_p > 0`, which
         #                    fires when SLSQP hands it a NaN iterate (NaN > 0 is
-        #                    false). Killed the 2026-08-27 run at Sobol point 376/401,
-        #                    ~2 min into a projected 137 min -- an AssertionError is
-        #                    neither of the two types above, so it was re-thrown out
-        #                    of pmap and took every worker down with it.
+        #                    false). Killed the 2026-08-27 run at Sobol 376/401 and
+        #                    the 2026-08-28 run at Sobol 81/401.
         #   InexactError     a non-finite intermediate narrowed to an Int.
+        #
+        # CLASSIFY THE ROOT CAUSE, NOT `err`. Anything thrown inside an NLopt
+        # callback comes back wrapped in a CapturedException, so testing `err isa
+        # AssertionError` directly is always false and the run dies. That is
+        # exactly what happened on 2026-08-28 -- the type was in this list already.
+        # See _root_cause above.
         #
         # Anything NOT in this list is still re-thrown. A MethodError or an
         # UndefVarError is a coding error and must not be silently scored as a bad
         # parameter draw -- that would turn a broken objective into a converged run.
-        if err isa ErrorException || err isa DomainError ||
-           err isa AssertionError || err isa InexactError
-            _penalize!(nameof(typeof(err)))
+        cause = _root_cause(err)
+        if cause isa ErrorException || cause isa DomainError ||
+           cause isa AssertionError || cause isa InexactError
+            _penalize!(nameof(typeof(cause)))
             return SMM_PENALTY
         end
         rethrow()
@@ -470,18 +546,38 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
     end
     # Same numbers in the units the data was collected in, because "0.53" is
     # hard to sanity-check and "59 hours a week" is not.
-    @printf(out, "\n  c_p        %.0f USD/yr  vs data %.0f\n",
+    @printf(out, "\n  c_p        %8.0f USD/yr  vs data %.0f\n",
             m.mean_c_p*DOLLARS_PER_MODEL_UNIT, targets["mean_c_p"].mean*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  l_p        %.1f hrs/wk  vs data %.1f\n",
-            m.mean_l_p*HOURS_PER_WEEK, targets["mean_l_p"].mean*HOURS_PER_WEEK)
-    @printf(out, "  e_p  1-%-2d  %.0f USD/yr  vs data %.0f\n", SMM_AGE_SPLIT,
+    @printf(out, "  h_p        %8.1f hrs/wk  vs data %.1f\n",
+            m.mean_h_p*HOURS_PER_WEEK, targets["mean_h_p"].mean*HOURS_PER_WEEK)
+    @printf(out, "  t_p  1-%-2d  %8.1f hrs/wk  vs data %.1f\n", SMM_AGE_SPLIT,
+            m.mean_t_p_early*HOURS_PER_WEEK, targets["mean_t_p_early"].mean*HOURS_PER_WEEK)
+    @printf(out, "  t_p %2d-%-2d  %8.1f hrs/wk  vs data %.1f\n", SMM_AGE_SPLIT+1, SMM_AGE_HI,
+            m.mean_t_p_late*HOURS_PER_WEEK, targets["mean_t_p_late"].mean*HOURS_PER_WEEK)
+    @printf(out, "  e_p  1-%-2d  %8.0f USD/yr  vs data %.0f\n", SMM_AGE_SPLIT,
             m.mean_e_p_early*DOLLARS_PER_MODEL_UNIT, targets["mean_e_p_early"].mean*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  e_p %2d-%-2d  %.0f USD/yr  vs data %.0f\n", SMM_AGE_SPLIT+1, SMM_AGE_HI,
+    @printf(out, "  e_p %2d-%-2d  %8.0f USD/yr  vs data %.0f\n", SMM_AGE_SPLIT+1, SMM_AGE_HI,
             m.mean_e_p_late*DOLLARS_PER_MODEL_UNIT, targets["mean_e_p_late"].mean*DOLLARS_PER_MODEL_UNIT)
-    # The age slope the two groups are really about, in one number each side.
+    # The two age slopes the split moments exist to identify.
+    @printf(out, "\n  t_p late/early  model %.2fx  vs data %.2fx\n",
+            m.mean_t_p_late/m.mean_t_p_early,
+            targets["mean_t_p_late"].mean/targets["mean_t_p_early"].mean)
     @printf(out, "  e_p late/early  model %.2fx  vs data %.2fx\n",
             m.mean_e_p_late/m.mean_e_p_early,
             targets["mean_e_p_late"].mean/targets["mean_e_p_early"].mean)
+    # l_p is not targeted, but l = 1 - h - t identically, so the h_p and t_p
+    # targets IMPLY a leisure level. Compare against THAT, not against measured
+    # leisure: t_p is matched on par_time_tot, which overlaps leisure and work, so
+    # the implied figure sits ~26 hrs/wk below the 59.2 the data measures. That gap
+    # is a property of the target choice, not a failure of the fit -- see the
+    # header of tools/make_smm_targets.py.
+    n_e, n_l = SMM_AGE_SPLIT - SMM_AGE_LO + 1, SMM_AGE_HI - SMM_AGE_SPLIT
+    t_implied = (n_e*targets["mean_t_p_early"].mean + n_l*targets["mean_t_p_late"].mean) / (n_e + n_l)
+    l_implied = 1 - targets["mean_h_p"].mean - t_implied
+    @printf(out, "  l_p (residual)  model %.1f hrs/wk  vs %.1f implied by the h_p/t_p targets\n",
+            m.mean_l_p*HOURS_PER_WEEK, l_implied*HOURS_PER_WEEK)
+    @printf(out, "                  (measured leisure is %.1f hrs/wk -- par_time_tot overlaps it)\n",
+            0.5286*HOURS_PER_WEEK)
 
     println(out, "\nUntargeted -- does the fit stay believable?")
     println(out, "-"^62)
@@ -489,7 +585,7 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
     @printf(out, "  implied saving rate   %8.1f%%\n", 100*d.saving_rate)
     @printf(out, "  terminal assets       %8.4f  (%.0f USD)\n", d.terminal_assets,
             d.terminal_assets*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  work  h_p             %8.4f  (%.1f hrs/wk)\n", d.h_p, d.h_p*HOURS_PER_WEEK)
-    @printf(out, "  child time t_p        %8.4f  (%.1f hrs/wk)\n", d.t_p, d.t_p*HOURS_PER_WEEK)
+    @printf(out, "  leisure l_p           %8.4f  (%.1f hrs/wk)\n",
+            1 - d.h_p - d.t_p, (1 - d.h_p - d.t_p)*HOURS_PER_WEEK)
     return (moments = m, diagnostics = d, params = kw)
 end

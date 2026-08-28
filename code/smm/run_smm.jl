@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 # =============================================================================
-# run_smm.jl -- estimate four parent parameters on four data means.
+# run_smm.jl -- estimate six parent parameters on six data means.
 #
 #     cd code/smm && julia --project=../.. run_smm.jl --quick     # 2 min smoke test
 #     cd code/smm && julia --project=../.. run_smm.jl             # the real run
@@ -495,6 +495,30 @@ end
 
 banner("Estimated calibration")
 say_report(result.x)
+
+# ---- did anything land on a box edge? --------------------------------------
+# A parameter pinned to its bound is not a converged estimate -- it is the model
+# saying "I cannot reach this target from inside the admissible region". That is a
+# finding, and an easy one to miss in a table of six numbers, so it is called out.
+# Position is measured in SEARCH coordinates, because a log-linked parameter sits
+# somewhere quite different on the linear scale.
+let (lo_s, hi_s) = search_bounds(), est_ = unpack(result.x), pinned = String[]
+    for (i, q) in enumerate(SMM_PARAMS)
+        pos = (result.x[i] - lo_s[i]) / (hi_s[i] - lo_s[i])
+        (pos < 0.02 || pos > 0.98) && push!(pinned,
+            Printf.format(Printf.Format("  %-10s = %10.4f  pinned to its %s bound [%.3f, %.3f]\n"),
+                          String(q.name), getfield(est_, q.name),
+                          pos < 0.02 ? "LOWER" : "UPPER", q.lo, q.hi))
+    end
+    if isempty(pinned)
+        say("\nall parameters interior to their boxes")
+    else
+        say("\n!! PARAMETERS ON A BOUND -- these are not converged estimates:")
+        for l in pinned; sayf("%s", l); end
+        say("The model could not reach the target from inside the box. Either the box")
+        say("is too narrow, or the target is outside what this specification can produce.")
+    end
+end
 
 # -----------------------------------------------------------------------------
 # Persist

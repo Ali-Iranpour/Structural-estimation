@@ -1,0 +1,77 @@
+
+==========================================================================
+SMM: three parent moments   [QUICK]
+==========================================================================
+started    2026-08-27 15:19:42
+machine    4 CPU threads, 8.0 GB RAM
+workers    2 (--procs)
+budget     12 Sobol points, 2 restarts
+logging to output/smm_runs/2026-08-27_151942/
+3.0s
+running on 3 process(es): 1 master + 2 worker(s)
+7.4s
+11.3s (in parallel)
+
+==========================================================================
+Targets  (Input/smm_targets_baseline.toml)
+==========================================================================
+moment           mean         sd        N   source
+mean_c_p       3.1577     1.6993     6742   cons_exhous_real_w99
+mean_l_p       0.5286     0.1436     1046   (leis_mom + leis_dad)/2 / 112
+mean_e_p       0.3945     0.5747    15360   m_method2_final_w99
+
+SDs are shown but NOT targeted: the model's cross-sectional dispersion comes
+from a 5-node wage shock plus initial draws and cannot reach the data's
+(leisure SD is 7.4x too small). Targeting them would distort the means.
+3.1s
+
+estimated runtime: ~133 evaluations, 3 min wall clock at 2 worker(s)
+(the Sobol stage is parallel; the restarts are sequential by construction --
+ each one starts from the best point found so far, so they cannot be spread out)
+
+==========================================================================
+Incumbent calibration
+==========================================================================
+Q = 21.273375
+
+Parameters
+--------------------------------------------------------------
+  phi_1_0          1.0000   (was 1.0000)
+  phi_2_0          0.5000   (was 0.5000)
+  sigma_2_0       -1.8000   (was -1.8000)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.0525     3.1577     -3.3%   cons_exhous_real_w99
+  mean_l_p       0.4708     0.5286    -10.9%   (leis_mom + leis_dad)/2 / 112
+  mean_e_p       2.2133     0.3945    461.1%   m_method2_final_w99
+
+  c_p  30525 USD/yr  vs data 31577
+  l_p  52.7 hrs/wk  vs data 59.2
+  e_p  22133 USD/yr  vs data 3945
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        5.2716  (52716 USD/yr)
+  implied saving rate       10.3%
+  terminal assets        18.4228  (184228 USD)
+  work  h_p               0.3505  (39.3 hrs/wk)
+  child time t_p          0.1787  (20.0 hrs/wk)
+
+==========================================================================
+TikTak search
+==========================================================================
+  sobol      1/13     best Q    0.77519     0.2 min elapsed
+  sobol      2/13     best Q    0.77519     0.2 min elapsed
+  sobol      3/13     best Q    0.77519     0.2 min elapsed
+  sobol      4/13     best Q    0.77519     0.2 min elapsed
+  sobol      5/13     best Q    0.77519     0.2 min elapsed
+  sobol      6/13     best Q    0.64460     0.2 min elapsed
+  sobol      7/13     best Q    0.64460     0.2 min elapsed
+  sobol      8/13     best Q    0.64460     0.2 min elapsed
+  sobol      9/13     best Q    0.64460     0.2 min elapsed
+  sobol     10/13     best Q    0.38734     0.2 min elapsed
+  sobol     11/13     best Q    0.38734     0.2 min elapsed
+  sobol     12/13     best Q    0.38734     0.2 min elapsed
+  sobol     13/13     best Q    0.38734     0.2 min elapsed
