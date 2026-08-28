@@ -23,3 +23,8 @@ _nb_smoketest.jl
 
 # SMM search output — regenerate with `julia --project=.. smm.jl`
 output/data/smm_estimates.toml
+
+# Input: the Stata moment files are large and regenerable; the small
+# generated targets file IS tracked, because run_smm.jl needs it.
+Input/*.dta
+temp/
