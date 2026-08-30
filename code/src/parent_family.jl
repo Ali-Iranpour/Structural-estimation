@@ -112,14 +112,12 @@ HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
 const PARENT_DEFAULTS = (
-    phi_1_0 = 0.84172991,     phi_1_1 = 0.0,
-    phi_2_0 = 0.52555078,     phi_2_1 = 0.0,
+    phi_1_0 = 0.75417767,     phi_1_1 = 0.0,
+    phi_2_0 = 0.14183751,     phi_2_1 = 0.0,
     phi_3_0 = 1.0,     phi_3_1 = 0.0,
     R_0     = 1.6,     R_1     = 0.0,
-    # sigma_1_1 = -0.08 offsets the rising tau_p that the lower sigma_3 caused.
-    # Sweep table in docs/ERRORS.md, P12.
-    sigma_1_0 = -0.90, sigma_1_1 = -0.08,
-    sigma_2_0 = -3.32678034, sigma_2_1 =  -0.02287337,
+    sigma_1_0 = -0.45749712, sigma_1_1 = -0.06340019,
+    sigma_2_0 = -3.39554185, sigma_2_1 =  -0.02870211,
     # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
     # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
     sigma_3_0 = -0.90, sigma_3_1 =  0.0,
