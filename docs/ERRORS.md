@@ -515,7 +515,7 @@ altogether**: the psychic cost is now `kappa_0 + kappa_theta*log(theta)
 theta = 3.86** while mean theta is 3.44, so a good part of the sample receives a
 psychic *benefit* from college and the channel is doing little work. `kappa_0` is the
 natural lever and belongs in the SMM parameter set. See
-`docs/WAGE_PROCESS_IMPLEMENTED.md`.
+`docs/WAGE_PROCESS.md`.
 
 ## ✅ C8 — Unused `Nt` dimension — **fixed 2026-08-26 (in the LIVE file)**
 
@@ -682,7 +682,7 @@ Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
 | **6.0** | **Add `kappa_0` to `PARS`**, and extend the Tier-0 cache key when doing so. It is the only free lever on the college margin besides `college_cost`, and the psychic cost is currently near zero at mean theta. Do this *after* adding moments, not before. | open |
 | **5.0** | **Centre the shock grid** so `E[z] = 1`. `p_grid = exp.(mc.state_values)` gives `E[z] = 1.2235` by Jensen, a 22% level shift silently absorbed into `lnw0`. Harmless now, but it moves if `sigma_p` or `p_ar1` are ever changed. One line: `exp.(mc.state_values .- sigma_y^2/2)`, then re-derive `lnw0`. | open |
 | **4.5** | **Add timeouts** to the notebook and PDF validation commands. `run_all.jl` can wait indefinitely on `pdflatex`. | open |
-| ~~4.0~~ | **done 2026-08-26.** Replaced by a log-linear wage with education and childhood HC separated; see `docs/WAGE_PROCESS_IMPLEMENTED.md`. Original note: **Reconsider how the child's HC enters the wage.** It is `w(1 + αk)` with `α = 0.08`, so the *proportional* return to skill decays as `α/(1+αk)` — 7.3% at `k = 3`, 3.1% at `k = 20`. The estimated *parental* wage equation puts education in logs. If the child's skill is measured on a comparable scale, `w·exp(αk)` would hold the proportional return constant. This is a specification question, and it is the main reason the marginal value of HC falls away faster than the marginal value of a transfer. | **done** |
+| ~~4.0~~ | **done 2026-08-26.** Replaced by a log-linear wage with education and childhood HC separated; see `docs/WAGE_PROCESS.md`. Original note: **Reconsider how the child's HC enters the wage.** It is `w(1 + αk)` with `α = 0.08`, so the *proportional* return to skill decays as `α/(1+αk)` — 7.3% at `k = 3`, 3.1% at `k = 20`. The estimated *parental* wage equation puts education in logs. If the child's skill is measured on a comparable scale, `w·exp(αk)` would hold the proportional return constant. This is a specification question, and it is the main reason the marginal value of HC falls away faster than the marginal value of a transfer. | **done** |
 
 ---
 

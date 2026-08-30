@@ -37,7 +37,7 @@
 #     read post-graduation policies from sol_*_grad, not sol_*_work.
 #
 # Wage and psychic-cost provenance (Daruich & Fernandez 2023; Colas) is in
-# docs/WAGE_PROCESS_IMPLEMENTED.md. Numerical findings are in docs/ERRORS.md.
+# docs/WAGE_PROCESS.md. Numerical findings are in docs/ERRORS.md.
 # =============================================================================
 # ===========================================================================
 # Grid helpers
@@ -171,7 +171,7 @@ function ConSavLaborCollege_AR1(;
                 # childhood HC, from their Table B4: 0.654 high school, 0.976 college.
                 # NOT standardized per SD -- doing so made investment diverge. lnw0 and
                 # m_theta carry no behaviour (level normalisation and centring).
-                # All of it, with the divergence measurement: docs/WAGE_PROCESS_IMPLEMENTED.md
+                # All of it, with the divergence measurement: docs/WAGE_PROCESS.md
                 lnw0::Float64=log(w) - 0.4144,
                 beta_E::Float64=-0.294,
                 alpha_theta::Float64=0.654,
@@ -186,7 +186,7 @@ function ConSavLaborCollege_AR1(;
                 # kappa_0 + kappa_theta*log(theta) + kappa_ParEd*BothCollege. Signs and
                 # the ratio kappa_ParEd/kappa_theta = 0.205 are Colas Table 2; the LEVELS
                 # do not transport (different utility scale) and are set to reproduce the
-                # old kappa/(HC+1)^4 cost. docs/WAGE_PROCESS_IMPLEMENTED.md
+                # old kappa/(HC+1)^4 cost. docs/WAGE_PROCESS.md
                 kappa_0::Float64=0.0462,
                 kappa_theta::Float64=-0.0342,
                 kappa_ParEd::Float64=-0.0070,
