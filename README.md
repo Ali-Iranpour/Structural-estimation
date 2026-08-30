@@ -15,7 +15,7 @@ the child's birth to age 18; the child is then followed to age 68.
 | Read the model as written in the paper | [`docs/model.txt`](docs/model.txt) |
 | Find which code implements which equation | [`docs/MODEL.md`](docs/MODEL.md) |
 | Know what's currently broken | [`docs/ERRORS.md`](docs/ERRORS.md) — every error, severity, file and line |
-| Understand why the spec says what it says | [`docs/SPEC_DECISIONS.md`](docs/SPEC_DECISIONS.md) |
+| Understand why the spec says what it says | [`docs/MODEL.md`](docs/MODEL.md) — "Frozen specification decisions" |
 | Find an old version | [`archive/NOTES.md`](archive/NOTES.md) |
 
 ---

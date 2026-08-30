@@ -17,7 +17,7 @@ code that implements it is in [`MODEL.md`](MODEL.md).
 | `code/transfer_CRRA_wage.ipynb` | Interactive driver: counterfactuals and figures. |
 | `code/src/parent_family.jl` | **Parent problem.** Struct, constructor, backward-induction solver, objectives, constraints, simulators. Extracted from the notebook — edit the model *here*. |
 | `code/src/child_lifecycle.jl` | **Child lifecycle — CANONICAL.** No retirement, progressive tax. All child-side fixes go here. |
-| `code/src/child_lifecycle_ret.jl` | Superseded (had retirement). Reference only — do not fix. |
+| `code/src/child_lifecycle_ret.jl` | **Deleted.** Superseded by `child_lifecycle.jl`; retirement was removed per decision 0.4. |
 | `code/src/child_lifecycle_ar1.jl` | Superseded (flat tax). Reference only — do not fix. |
 | `code/src/diagnostics.jl` | Accuracy checks: Bellman residuals, domains, monotonicity, gradients. |
 | `code/src/tables.jl` | LaTeX tables (`threeparttable`) and the PDF build. |
@@ -137,7 +137,7 @@ write_manifest(figpath("Parameters"); experiment = "sigma counterfactuals",
   capital; it does not accumulate (`k_next = capital`). It enters only through the wage
   equation. The grid is `Nk = 2`.
 - `HC` — child's cognitive skill
-- `z` — AR(1) wage shock (**Rouwenhorst**, `Np = 7`). Rouwenhorst matches the unconditional
+- `z` — AR(1) wage shock (**Rouwenhorst**, `Np = 5`). Rouwenhorst matches the unconditional
   sd and the first-order autocorrelation exactly at any `Np`; Tauchen overstated the sd by
   21% at the parent's parameters and 31% at the child's.
 
