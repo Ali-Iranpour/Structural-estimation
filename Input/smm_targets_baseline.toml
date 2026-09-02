@@ -6,7 +6,7 @@
 # Child ages 1-17 only, matching the parent block's t = 1..17.
 
 generated  = "2026-08-30"
-git_commit = "0f3b57d"
+git_commit = "ac6757a"
 source     = "Input/SMM_Moments_Micro.dta"
 age_range  = [1, 17]
 age_split  = 9   # early = 1..9, late = 10..17
