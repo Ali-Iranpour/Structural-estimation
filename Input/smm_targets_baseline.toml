@@ -5,8 +5,8 @@
 # per parent (the model's single adult stands for two earners: wage_func x2).
 # Child ages 1-17 only, matching the parent block's t = 1..17.
 
-generated  = "2026-08-30"
-git_commit = "ac6757a"
+generated  = "2026-09-02"
+git_commit = "e25a848"
 source     = "Input/SMM_Moments_Micro.dta"
 age_range  = [1, 17]
 age_split  = 9   # early = 1..9, late = 10..17
@@ -84,3 +84,39 @@ n      = 7182
 mean   = 0.441408
 sd     = 0.663818
 median = 0.197651
+
+[mean_i_c_early]
+source = "study_hrs / 112, child ages 6-9"
+units  = "share of the 112h non-sleep week"
+model  = "mean of sim_i over t = 6..9"
+n      = 171
+mean   = 0.038650
+sd     = 0.035776
+median = 0.031250
+
+[mean_i_c_late]
+source = "study_hrs / 112, child ages 10-17"
+units  = "share of the 112h non-sleep week"
+model  = "mean of sim_i over t = 10..17"
+n      = 584
+mean   = 0.049986
+sd     = 0.059479
+median = 0.033482
+
+[mean_hc_early]
+source = "x_gach (log PCA composite), child ages 3-9"
+units  = "log W-score; the model's HC is in the SAME units after the rescaling"
+model  = "mean of log(sim_hc) over t = 1..9"
+n      = 253
+mean   = 6.080209
+sd     = 0.108293
+median = 6.084499
+
+[mean_hc_late]
+source = "x_gach (log PCA composite), child ages 10-17"
+units  = "log W-score; the model's HC is in the SAME units after the rescaling"
+model  = "mean of log(sim_hc) over t = 10..17"
+n      = 549
+mean   = 6.255804
+sd     = 0.032309
+median = 6.257028

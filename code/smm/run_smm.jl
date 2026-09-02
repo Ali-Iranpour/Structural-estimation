@@ -64,8 +64,11 @@ end
 const QUICK       = "--quick"       in ARGS
 const SERIAL      = "--serial"      in ARGS
 const REPORT_ONLY = "--report-only" in ARGS
-const N_SOBOL     = argval("--sobol",    QUICK ? 12 : 200)
-const N_RESTART   = argval("--restarts", QUICK ?  2 :  10)
+# Arnoud-Guvenen-Kleineberg use N* = 0.1N. N = 1000 / N* = 100 is that standard.
+# The Sobol stage is parallel (~8 min at 20 workers); the 100 restarts are SEQUENTIAL
+# and dominate -- budget roughly 25 h. Cut --restarts, not --sobol, if that is too long.
+const N_SOBOL     = argval("--sobol",    QUICK ? 12 : 1000)
+const N_RESTART   = argval("--restarts", QUICK ?  2 : 100)
 const EVERY_SEC   = float(argval("--every", 2))   # progress line throttle, seconds
 
 # -----------------------------------------------------------------------------
@@ -230,7 +233,7 @@ sayf("%.1fs\n", time() - t)
 # makes each evaluation cheap enough to run thousands of.
 @everywhere function build_child_value()
     ch = ConSavLaborCollege_AR1(; Na = CHILD_G_.Na, Nk = CHILD_G_.Nk, Nt = CHILD_G_.Nt,
-                                  rho = 1.5, psi_terminal = 4.0, kappa_terminal = 5.0,
+                                  rho = 1.5, psi_terminal = 0.0, kappa_terminal = 5.0,
                                   omega = 0.3, a_max = 100.0, w = 20.0,
                                   simN = 500, seed = 1234)
     # ProgressMeter writes its bar to STDERR, so redirect_stdout alone leaves a

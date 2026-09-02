@@ -59,7 +59,7 @@ banner("1. Child lifecycle")
 # 2.87% of simulated child assets above the grid. Verified at the current parameters: child
 # assets go off-grid 0.00% of the time at 100, and raising it to 200 buys nothing.
 child = ConSavLaborCollege_AR1(Na = C_NA, Nk = C_NK, Nt = C_NT, rho = 1.5,
-                               psi_terminal = 4.0, kappa_terminal = 5.0, omega = 0.3,
+                               psi_terminal = 0.0, kappa_terminal = 5.0, omega = 0.3,
                                a_max = 100.0, w = 20.0, simN = SIMN, seed = SEED)
 solve_model_work!(child)
 solve_model_college!(child)
