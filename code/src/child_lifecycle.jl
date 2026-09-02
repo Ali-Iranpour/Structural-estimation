@@ -161,7 +161,7 @@ function ConSavLaborCollege_AR1(;
                 r::Float64=0.03, a_max::Float64=100.0, Na::Int=30, y::Float64=0.6,
                 # k_max = 10 is MATCHED to the parent's hc_max -- the same object either
                 # side of the age-18 handoff. See the file header.
-                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=10.0, Nk::Int=30,
+                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=1500.0, Nk::Int=30,
                 w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0,
                 phi::Float64=18.0, seed::Int=1234, college_cost::Float64=1.2,
                 # --- Wage process ---------------------------------------------
@@ -181,13 +181,18 @@ function ConSavLaborCollege_AR1(;
                 gamma2::Float64=-0.000199,
                 gamma2E::Float64=-0.000314,
                 # Centring only; offset exactly by lnw0. See the wage-process doc.
-                m_theta::Float64=0.724,
+                # +log(M) = +6.6246 with the parent's HC rescaling to W-score units:
+                # the wage takes alpha_theta*(log theta - m_theta), so a scale factor on
+                # theta is exactly offset here. Behaviourally neutral. See parent_family.jl.
+                m_theta::Float64=7.3486,
                 # --- Psychic cost of college ----------------------------------
                 # kappa_0 + kappa_theta*log(theta) + kappa_ParEd*BothCollege. Signs and
                 # the ratio kappa_ParEd/kappa_theta = 0.205 are Colas Table 2; the LEVELS
                 # do not transport (different utility scale) and are set to reproduce the
                 # old kappa/(HC+1)^4 cost. docs/WAGE_PROCESS.md
-                kappa_0::Float64=0.0462,
+                # -kappa_theta*log(M) = +0.2266, offsetting the same rescaling: the
+                # psychic cost takes kappa_theta*log(theta). Behaviourally neutral.
+                kappa_0::Float64=0.2728,
                 kappa_theta::Float64=-0.0342,
                 kappa_ParEd::Float64=-0.0070,
                 # Shock parameters (AR1 only)
@@ -198,7 +203,14 @@ function ConSavLaborCollege_AR1(;
                 # college share 51.5 -> 52.1 and nothing else at all.
                 Nt=5, sigma_eps=0.5,
                 # --- Terminal value parameters ---
-                psi_terminal::Float64=4.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
+                # psi_terminal = 0.0 by instruction (2026-08-30). It is the weight on the CHILD'S HC
+# in the PARENT's terminal value at separation, terminal_value = psi*log(k) + kappa*log(a).
+# At 0 the parent values the child's skill only through the flow term phi_3*log(HC) and
+# through altruism omega, not through a separate terminal bonus.
+# WATCH tau_p AT t = 17: psi was raised 1.0 -> 4.0 precisely because a low terminal weight
+# made the last period value skill far less than every earlier one and tau_p collapsed
+# (0.059 against 0.155 once psi rose). Zero is a stronger version of that. See ERRORS.md P11.
+                psi_terminal::Float64=0.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
                     # --- Bargaining parameter ---
                 mu = 0.5,
                 tax_lambda::Float64=0.82,
@@ -219,7 +231,7 @@ function ConSavLaborCollege_AR1(;
 
     simT = T
     a_grid = create_focused_grid(a_min, 2.0, a_max, Na, 0.2, 1.3)
-    k_grid = nonlinspace(0.001, k_max, Nk, 1.5)
+    k_grid = nonlinspace(50.0, k_max, Nk, 1.5)   # W-score units, matching the parent
 
     # N13/C14: parental asset grid. Starting at delta_P removes the singular row; putting
     # an exact node at the college transfer threshold removes the dead band between that

@@ -121,7 +121,19 @@ const SMM_AGE_SPLIT = 9
 # in place of the two `_early`/`_late` entries and drop sigma_2_1 from SMM_PARAMS.
 const SMM_MOMENTS = ("mean_c_p", "mean_h_p",
                      "mean_t_p_early", "mean_t_p_late",
-                     "mean_e_p_early", "mean_e_p_late")
+                     "mean_e_p_early", "mean_e_p_late",
+                     "mean_i_c_early", "mean_i_c_late",
+                     "mean_hc_early",  "mean_hc_late")
+
+# Ten moments against nine parameters -- over-identified by one, deliberately.
+# The two HC moments are what make the set identified at all: phi_3 and lambda_2 (how
+# much parent and child VALUE skill) and R_0, sigma_1, sigma_2, sigma_4 (how efficiently
+# skill is PRODUCED) both raise investment, so investment moments alone cannot separate
+# them. Only the resulting HC level can. Before HC was put in the data's units there was
+# no such moment available.
+#
+# The child's own study time starts at t = T_CHILD_VOICE = 6; there is no child decision
+# before that, so mean_i_c_early averages t = 6..9, not 1..9.
 
 # A failed solve must return a large FINITE value, never Inf or an exception:
 # a derivative-free local search needs to be able to form a descent direction
@@ -243,7 +255,13 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
     # columns -- the same ages the generator selects on Child_Age in the data.
     early = SMM_AGE_LO:SMM_AGE_SPLIT
     late  = (SMM_AGE_SPLIT + 1):SMM_AGE_HI
+    # The child only chooses study time from T_CHILD_VOICE; before that sim_i is not a
+    # decision. Match the generator, which selects Child_Age >= 6 for the early group.
+    early_i = T_CHILD_VOICE:SMM_AGE_SPLIT
     nanmean(v) = (w = filter(isfinite, v); isempty(w) ? NaN : mean(w))
+    # log HC, and the mean of the agent-level LOGS -- the data's x_gach is a mean of logs,
+    # and log(mean) differs from mean(log) by a Jensen term that moves with age.
+    loghc(rng) = nanmean(vec(log.(max.(p.sim_hc[:, rng], 1e-12))))
 
     c = nanmean(vec(p.sim_c[:, cols]))
     e = nanmean(vec(p.sim_e[:, cols]))            # pooled: reported, not targeted
@@ -252,14 +270,15 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
     l = nanmean(vec(1.0 .- p.sim_h[:, cols] .- p.sim_t[:, cols]))
 
     return (mean_c_p = c, mean_l_p = l, mean_e_p = e,
-            # h_p is flat in child age in the data, so it is pooled; t_p halves
-            # over the family stage, so it is split to identify sigma_1_1.
-            mean_h_p       = nanmean(vec(p.sim_h[:, cols])),
-            mean_t_p       = nanmean(vec(p.sim_t[:, cols])),
+            mean_h_p = nanmean(vec(p.sim_h[:, cols])),
             mean_t_p_early = nanmean(vec(p.sim_t[:, early])),
             mean_t_p_late  = nanmean(vec(p.sim_t[:, late])),
             mean_e_p_early = nanmean(vec(p.sim_e[:, early])),
-            mean_e_p_late  = nanmean(vec(p.sim_e[:, late])))
+            mean_e_p_late  = nanmean(vec(p.sim_e[:, late])),
+            mean_i_c_early = nanmean(vec(p.sim_i[:, early_i])),
+            mean_i_c_late  = nanmean(vec(p.sim_i[:, late])),
+            mean_hc_early  = loghc(early),
+            mean_hc_late   = loghc(late))
 end
 
 """
@@ -336,12 +355,30 @@ end
 #                            exactly the shape exp(sigma_1_0 + sigma_1_1*(t-1)) can
 #                            produce. Investment, by contrast, is U-shaped.
 const SMM_PARAMS = [
-    SMMParam(:phi_1_0,   0.2,  5.0,  :log),
-    SMMParam(:phi_2_0,   0.05, 20.0, :log),
-    SMMParam(:sigma_1_0, -4.0, -0.2,  :level),
-    SMMParam(:sigma_1_1, -0.20, 0.05, :level),
-    SMMParam(:sigma_2_0, -5.0, -0.5, :level),
-    SMMParam(:sigma_2_1, -0.05, 0.05, :level),
+    # phi_1 and lambda_1 are NOT here: utility is defined only up to relative weights, so
+    # two of the five must be normalised. Both are pinned at 1.0 (instruction 2026-08-30).
+    SMMParam(:phi_2,     0.01, 20.0, :log),    # mean hours of work
+    SMMParam(:phi_3,     0.05, 20.0, :log),    # parental time + monetary investment
+    SMMParam(:lambda_2,  0.05, 20.0, :log),    # the child's own study time
+    # R_0 is the HC technology's TFP and therefore the natural parameter for the HC
+    # LEVEL, exactly as sigma_1_0 is for parental time. It became estimable only once HC
+    # was put in the data's units: before the rescaling there was no HC moment to
+    # identify it against. Searched in logs -- it is a strictly positive scale.
+    # Measured at the rescaled starting point R_0 = 81.55, the model overshoots the data
+    # by ~50% from age 5 (815 against 423), which is the level error this closes.
+    SMMParam(:R_0,       5.0, 300.0, :log),    # HC level, against the HC moments
+    SMMParam(:sigma_1_0, -4.0, -0.2,  :level), # HC elasticity to parental TIME, level
+    SMMParam(:sigma_1_1, -0.20, 0.05, :level), #   ... and its age slope
+    SMMParam(:sigma_2_0, -5.0, -0.5,  :level), # HC elasticity to MONEY, level
+    SMMParam(:sigma_2_1, -0.05, 0.05, :level), #   ... and its age slope
+    SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # HC elasticity to the CHILD'S own study
+    # sigma_4_1 is DELIBERATELY ABSENT. The child's study FOC is driven by the ratio
+    #     sigma_4_t / [(1 - mu_t) * lambda_1],     sigma_4_t = exp(sigma_4_0 + sigma_4_1(t-1))
+    # and with lambda_1 = 1 the denominator is just (1 - mu_t) = 1 - mu_0 - mu_1(t-5).
+    # So sigma_4_1 and mu_1 BOTH bend the same ratio with age: the study-time profile
+    # cannot identify both, and estimating the pair would put the optimizer on a ridge.
+    # mu_1 is a welfare weight fixed by the model's structure, so the TECHNOLOGY slope is
+    # the one dropped -- sigma_4 is held flat in t. Restore it only by fixing mu_1 first.
 ]
 
 # Just-identified: one parameter per targeted moment. Keep it that way, or decide

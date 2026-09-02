@@ -112,18 +112,44 @@ HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
 const PARENT_DEFAULTS = (
-    phi_1_0 = 0.75417767,     phi_1_1 = 0.0,
-    phi_2_0 = 0.14183751,     phi_2_1 = 0.0,
-    phi_3_0 = 1.0,     phi_3_1 = 0.0,
-    R_0     = 1.6,     R_1     = 0.0,
+    # phi and lambda are TIME-INVARIANT by instruction (2026-08-30): they are
+    # preference weights, not age profiles, so the _1 slopes and the per-period
+    # vectors are gone. phi_1 and lambda_1 are NORMALISED to 1 -- utility is only
+    # defined up to the relative weights, so two of the five must be pinned.
+    phi_1 = 1.0,              # NORMALISATION, not estimated
+    phi_2 = 0.14183751,       # estimated: mean hours of work
+    phi_3 = 1.0,              # estimated: parental time + monetary investment
+    # -----------------------------------------------------------------------------
+    # HUMAN CAPITAL IS IN THE DATA'S UNITS (PCA W-score), not model units
+    # -----------------------------------------------------------------------------
+    # Rescaled 2026-08-30 by instruction. HC now IS the Woodcock-Johnson PCA composite,
+    # so sim_hc can be compared with mu_g_ACH directly and HC is targetable in the SMM --
+    # which is what separates the VALUATION parameters (phi_3, lambda_2) from the
+    # TECHNOLOGY parameters (sigma_1, sigma_2, sigma_4). Without it they are collinear.
+#
+    # The change of units is EXACTLY NEUTRAL if the whole cascade moves together. With
+    # HC -> M*HC and the technology HC' = R * tau^s1 * e^s2 * HC^s3 * i^s4:
+#
+    #     R          -> R * M^(1 - sigma_3)      so HC' scales by M as well
+    #     hc grid    -> spans the W-score range instead of [0.001, 10]
+    #     m_theta    -> m_theta + log(M)         the child's wage takes log(theta)
+    #     kappa_0    -> kappa_0 - kappa_theta*log(M)   psychic cost takes log(theta)
+    #     child k_max -> matches hc_max          same object across the age-18 handoff
+#
+    # phi_3*log(HC) and lambda_2*log(HC) pick up an additive constant phi_3*log(M), which
+    # has no effect on any choice -- that is why utility needs no adjustment.
+#
+    # M = 753.4, the ratio of the new mean HC at age 0 (376.7, from the data) to the old
+    # Uniform(0,1) mean of 0.5.
+    R_0     = 81.55,   R_1     = 0.0,     # 1.6 * M^(1-sigma_3); see above
     sigma_1_0 = -0.45749712, sigma_1_1 = -0.06340019,
     sigma_2_0 = -3.39554185, sigma_2_1 =  -0.02870211,
     # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
     # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
     sigma_3_0 = -0.90, sigma_3_1 =  0.0,
     sigma_4_0 = -4.50, sigma_4_1 =  0.02,
-    lambda_1_0 = 0.7,  lambda_1_1 = 0.0,
-    lambda_2_0 = 1.0,  lambda_2_1 = 0.0,
+    lambda_1 = 1.0,           # NORMALISATION, not estimated
+    lambda_2 = 1.0,           # estimated: the child's own study time
     mu_0 = 1.0,        mu_1 = -0.04,
     tau = 0.18,        y = 0.6,
 )
@@ -156,6 +182,12 @@ boundary meant finding all of them.
 # and the honest cost -- the input elasticities sum to 1.29, i.e. increasing returns, against
 # ~1 in Cunha-Heckman-Schennach -- are in docs/ERRORS.md, P11.
 const T_CHILD_VOICE = 6
+
+# Initial child HC at age 0, in W-score units: log HC_0 ~ Normal(HC0_MEAN_LOG, HC0_SD_LOG).
+# Both fitted log-linearly on ages 3-17 of the PCA composite and extrapolated back to 0,
+# because the test is not administered before age 3. Derivation in the constructor.
+const HC0_MEAN_LOG = 5.9290
+const HC0_SD_LOG   = 0.0698
 
 """
     TIME_FLOOR
@@ -203,16 +235,16 @@ mutable struct Parent_child_interaction_age_specific_AR1
     # The three phi labels were ROTATED. Read them off util_total:
     #   u = phi_1*c^(1-rho)/(1-rho) + phi_2*crra_leisure(1-h_p-t_p, eta)
     #       + mu*phi_3*log(HC) + (1-mu)*(lambda_1*log(leisure_c) + lambda_2*log(HC))
-    phi_1_vector::Vector{Float64}                # Parent's weight on CONSUMPTION
-    phi_2_vector::Vector{Float64}                # Parent's weight on OWN LEISURE (CRRA, curvature eta)
-    phi_3_vector::Vector{Float64}                # Parent's weight on the CHILD'S HUMAN CAPITAL
+    phi_1::Float64                               # Parent's weight on CONSUMPTION (= 1, normalisation)
+    phi_2::Float64                               # Parent's weight on OWN LEISURE (CRRA, curvature eta)
+    phi_3::Float64                               # Parent's weight on the CHILD'S HUMAN CAPITAL
     R_vector::Vector{Float64}                    # Human capital technology parameter
     sigma_1_vector::Vector{Float64}              # Elasticity: HC w.r.t. child care time
     sigma_2_vector::Vector{Float64}              # Elasticity: HC w.r.t. investment
     sigma_3_vector::Vector{Float64}              # Elasticity: HC w.r.t. current human capital
     sigma_4_vector::Vector{Float64}              # Elasticity: HC w.r.t. child's own study time
-    lambda_1_vector::Vector{Float64}             # Child's weight on OWN LEISURE, 1 - t_p - i_c
-    lambda_2_vector::Vector{Float64}             # Child's weight on own human capital
+    lambda_1::Float64                            # Child's weight on OWN LEISURE (= 1, normalisation)
+    lambda_2::Float64                            # Child's weight on own human capital
     mu_vector::Vector{Float64}                   # Welfare weight on the parent in the family problem
     rho::Float64                  # risk aversion
     eta::Float64                  # curvature of the parent's leisure CRRA (was: Frisch)
@@ -306,7 +338,11 @@ function Parent_child_interaction_age_specific_AR1(;
         # hc_max = 10, MATCHED to the child's k_max (same object across the age-18
         # handoff). Sized to the SOLVER's domain, not the simulation's: raising it
         # further without raising Nhc collapses tail resolution. See docs/ERRORS.md, P12.
-        hc_max::Float64=10.0, hc_min::Float64=0.001, Nhc::Int=30 ,
+        # W-score units now. The data spans ~300-600, so the focused grid keeps 80% of
+        # its nodes in [hc_min, hc_focus] = [50, 700] and the sparse tail covers to 1500.
+        # hc_focus is a KWARG because it used to be hardcoded as hc_min + 3.0, which is a
+        # meaningless window once HC is measured in hundreds.
+        hc_max::Float64=1500.0, hc_min::Float64=50.0, hc_focus::Float64=700.0, Nhc::Int=30 ,
         # --- simulation details ----
         simN::Int=5000, simT::Int=T, seed::Int=1234,
 
@@ -325,19 +361,17 @@ function Parent_child_interaction_age_specific_AR1(;
         # the SMM, and note this changes the BASELINE for the notebook and
         # counterfactuals too, not only the estimation.
         beta_0 = 0.98,     beta_1 = 0.0,
-        phi_1_0 = PARENT_DEFAULTS.phi_1_0, phi_1_1 = PARENT_DEFAULTS.phi_1_1,
-        # phi_2 weights the parent's leisure CRRA (not the old Frisch disutility), so
-        # its scale changed with P10. tau_p is NOT pinned by it. docs/ERRORS.md, P10.
-        phi_2_0 = PARENT_DEFAULTS.phi_2_0, phi_2_1 = PARENT_DEFAULTS.phi_2_1,
+        phi_1 = PARENT_DEFAULTS.phi_1,
+        phi_2 = PARENT_DEFAULTS.phi_2,
         # ---- HC block, recalibrated together (see the note below) ----
-        phi_3_0 = PARENT_DEFAULTS.phi_3_0, phi_3_1 = PARENT_DEFAULTS.phi_3_1,
+        phi_3 = PARENT_DEFAULTS.phi_3,
         R_0 = PARENT_DEFAULTS.R_0, R_1 = PARENT_DEFAULTS.R_1,
         sigma_1_0 = PARENT_DEFAULTS.sigma_1_0, sigma_1_1 = PARENT_DEFAULTS.sigma_1_1,
         sigma_2_0 = PARENT_DEFAULTS.sigma_2_0, sigma_2_1 = PARENT_DEFAULTS.sigma_2_1,
         sigma_3_0 = PARENT_DEFAULTS.sigma_3_0, sigma_3_1 = PARENT_DEFAULTS.sigma_3_1,
         sigma_4_0 = PARENT_DEFAULTS.sigma_4_0, sigma_4_1 = PARENT_DEFAULTS.sigma_4_1,
-        lambda_1_0 = PARENT_DEFAULTS.lambda_1_0, lambda_1_1 = PARENT_DEFAULTS.lambda_1_1,
-        lambda_2_0 = PARENT_DEFAULTS.lambda_2_0, lambda_2_1 = PARENT_DEFAULTS.lambda_2_1,
+        lambda_1 = PARENT_DEFAULTS.lambda_1,
+        lambda_2 = PARENT_DEFAULTS.lambda_2,
         # --- Bargaining parameter ---
         mu_0 = PARENT_DEFAULTS.mu_0, mu_1 = PARENT_DEFAULTS.mu_1,
         # Np = 5. MEASURED: 7 -> 5 -> 3 leaves every moment flat to the third digit, so
@@ -355,7 +389,7 @@ function Parent_child_interaction_age_specific_AR1(;
     # Grids (custom grid functions)
     a_grid = create_focused_grid(a_min, a_min + 3.0, a_max, Na, 0.3, 1.2)
     k_grid = range(k_min, k_max, length=Nk)
-    hc_grid = create_focused_grid(hc_min, hc_min + 3.0, hc_max, Nhc, 0.8, 1.2)
+    hc_grid = create_focused_grid(hc_min, hc_focus, hc_max, Nhc, 0.8, 1.2)
 
     #a_grid  = range(a_min, a_max, length=Na)
     #k_grid  = range(k_min, k_max, length=Nk)
@@ -370,9 +404,6 @@ function Parent_child_interaction_age_specific_AR1(;
 
     # --- Age-specific parameter vectors ---
     beta_vector    = [beta_0 + beta_1 * (t-1) for t in 1:T]
-    phi_1_vector   = [phi_1_0 + phi_1_1 * (t-1) for t in 1:T]
-    phi_2_vector   = [phi_2_0 + phi_2_1 * (t-1) for t in 1:T]
-    phi_3_vector   = [phi_3_0 + phi_3_1 * (t-1) for t in 1:T]
     R_vector       = [R_0 + R_1 * (t-1) for t in 1:T]
     #R_vector       = [t < T_CHILD_VOICE ? 2.0 : 2.5 + 0.1 * (t-1) for t in 1:T]
     mu_vector      = [t < T_CHILD_VOICE ? 1.0 : mu_0 + mu_1 * (t - (T_CHILD_VOICE - 1))
@@ -403,9 +434,6 @@ function Parent_child_interaction_age_specific_AR1(;
               "$(round(exp(sigma_3_0 + sigma_3_1*(T-1)), digits=3)) at t = $T. " *
               "Reduce sigma_3_1 (or sigma_3_0) so that sigma_3_0 + sigma_3_1*(T-1) < 0.")
     end
-
-    lambda_1_vector = [lambda_1_0 + lambda_1_1 * (t-1) for t in 1:T]
-    lambda_2_vector = [lambda_2_0 + lambda_2_1 * (t-1) for t in 1:T]
     
 
     # Solution arrays (4D: [T, Na, Nk, Nhc])
@@ -448,7 +476,23 @@ function Parent_child_interaction_age_specific_AR1(;
     rng_p  = MersenneTwister(seed + 3)
     sim_a_init = rand(rng_a, LogNormal(0.2962227, 1.401793), simN)
     sim_k_init = Float64.(rand(rng_k, Bernoulli(0.3), simN))  # 70% zeros, 30% ones
-    sim_hc_init = rand(rng_hc, simN) .* 1;
+    # Initial child HC, from the DATA rather than an arbitrary Uniform(0,1).
+    #
+    # The PCA composite is only measured from age 3, so both the mean and the SD of
+    # log HC are fitted log-linearly on ages 3-17 and extrapolated back to age 0:
+    #
+    #     mean log HC = 5.9290 + 0.02392*age    (R2 0.835)  -> 5.9290 at age 0
+    #     sd   log HC = 0.0698 - 0.00310*age    (R2 0.638)  -> 0.0698 at age 0
+    #
+    # Log-linear because that is the form the production function itself uses, so the
+    # extrapolation is internally consistent -- and because a quadratic fit, which
+    # tracks ages 3-17 slightly better, bends to 303 at age 0 against the linear 376.
+    # Extrapolating a quadratic three years beyond its support is where that goes wrong.
+    #
+    # LOGNORMAL, not uniform. The old Uniform(0,1) was arbitrary and it was the source of
+    # a 0.32 log-point Jensen gap at t=1 (Var(log hc) is large for a uniform near zero).
+    # This gives a median of 376 and a 10-90 range of 344-411, matching the data.
+    sim_hc_init = exp.(HC0_MEAN_LOG .+ HC0_SD_LOG .* randn(rng_hc, simN))
     sim_p_init = fill(ceil(Int, Np/2), simN)
     # Pre-drawn uniforms for the AR(1) transition: reproducible, and identical across arms.
     # Previously `sample(...)` was called against the GLOBAL RNG.
@@ -460,9 +504,9 @@ function Parent_child_interaction_age_specific_AR1(;
 
     return Parent_child_interaction_age_specific_AR1(
     T,
-    beta_vector, phi_1_vector, phi_2_vector, phi_3_vector, R_vector,
+    beta_vector, phi_1, phi_2, phi_3, R_vector,
     sigma_1_vector, sigma_2_vector, sigma_3_vector, sigma_4_vector,
-    lambda_1_vector, lambda_2_vector, mu_vector,
+    lambda_1, lambda_2, mu_vector,
     rho, eta, tax_lambda, tau, r, y, a_max, a_min, Na,
     k_max, k_min, Nk,
     hc_max, hc_min, Nhc,
@@ -514,15 +558,15 @@ end
     @assert c > 0.0 && i_c > 0.0 "util_total: box bounds violated (c=$c, i_c=$i_c)"
     rho = model.rho
     eta = model.eta
-    u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
+    u_cons = model.phi_1 * (c ^ (1.0 - rho) / (1.0 - rho))
     # P10: the parent's own leisure, restored. It was replaced by a Frisch labor disutility
     # -phi_2*h^(1+eta)/(1+eta), which has no tau_p in it at all -- so parental time with the
     # child was free, and util_parent returned the identical value at tau_p = 0.05 and 0.90.
-    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)
+    u_leisure = model.phi_2 * crra_leisure(1.0 - h_p - t_p, eta)
     u_parent = u_cons + u_leisure
-    u_child  = model.mu_vector[t] * model.phi_3_vector[t] * log(HC) +
-            (1 - model.mu_vector[t]) * (model.lambda_1_vector[t] * log_leisure(leisure_c) +
-                                        model.lambda_2_vector[t] * log(HC))
+    u_child  = model.mu_vector[t] * model.phi_3 * log(HC) +
+            (1 - model.mu_vector[t]) * (model.lambda_1 * log_leisure(leisure_c) +
+                                        model.lambda_2 * log(HC))
     return u_parent + u_child
 end
 
@@ -530,9 +574,9 @@ end
     @assert c > 0.0 "util_parent: box bound violated (c=$c)"
     rho = model.rho
     eta = model.eta
-    u_cons = model.phi_1_vector[t] * (c ^ (1.0 - rho) / (1.0 - rho))
-    u_leisure = model.phi_2_vector[t] * crra_leisure(1.0 - h_p - t_p, eta)   # P10
-    return u_cons + u_leisure + model.phi_3_vector[t] * log(HC)
+    u_cons = model.phi_1 * (c ^ (1.0 - rho) / (1.0 - rho))
+    u_leisure = model.phi_2 * crra_leisure(1.0 - h_p - t_p, eta)   # P10
+    return u_cons + u_leisure + model.phi_3 * log(HC)
 end
 
 # ------------------------------------------------
@@ -947,12 +991,12 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
     if length(grad) > 0
 
         # Partial derivatives of utility
-        dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
+        dutil_dc_p = model.phi_1 * (c_p ^ (-model.rho))
+        dutil_di_c = -(1 - model.mu_vector[t]) * model.lambda_1 * d_log_leisure(leisure_c)
         dutil_de_p = 0.0
-        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
+        dutil_dl_p = - model.phi_2 * d_crra_leisure(leisure_p, model.eta)   # P10
         dutil_dh_p = dutil_dl_p
-        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c) + dutil_dl_p
+        dutil_dt_p = -(1 - model.mu_vector[t]) * model.lambda_1 * d_log_leisure(leisure_c) + dutil_dl_p
 
         # Partial derivatives of HC_next
         dHC_next_dt_p = HC_next * model.sigma_1_vector[t] / t_p
@@ -1023,9 +1067,9 @@ end
     f = util_now + model.beta_vector[t] * V_next
 
     if length(grad) > 0
-        dutil_dc_p = model.phi_1_vector[t] * (c_p ^ (-model.rho))
-        dutil_dl_p = - model.phi_2_vector[t] * d_crra_leisure(leisure_p, model.eta)   # P10
-        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1_vector[t] * d_log_leisure(leisure_c)
+        dutil_dc_p = model.phi_1 * (c_p ^ (-model.rho))
+        dutil_dl_p = - model.phi_2 * d_crra_leisure(leisure_p, model.eta)   # P10
+        term_leisure_c = -(1 - model.mu_vector[t]) * model.lambda_1 * d_log_leisure(leisure_c)
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
         grad[1] = dutil_dc_p + model.beta_vector[t] * dV_da_sum * (-1)
         grad[2] = term_leisure_c + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_4_vector[t] / i_c)
@@ -1075,10 +1119,10 @@ end
 
     if length(grad) > 0
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
-        grad[1] = model.phi_1_vector[t] * (c_p ^ (-model.rho)) - model.beta_vector[t] * dV_da_sum
+        grad[1] = model.phi_1 * (c_p ^ (-model.rho)) - model.beta_vector[t] * dV_da_sum
         grad[2] = model.beta_vector[t] * (-dV_da_sum + dV_dHC_sum * (HC_next * model.sigma_2_vector[t] / e_p))
         # P1: no dV_dk_sum -- see obj_work_period_full.
-        dutil_dl_p = -model.phi_2_vector[t] * d_crra_leisure(leisure, model.eta)   # P10
+        dutil_dl_p = -model.phi_2 * d_crra_leisure(leisure, model.eta)   # P10
         grad[3] = dutil_dl_p + model.beta_vector[t] * (marginal * dV_da_sum)
         grad[4] = dutil_dl_p + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
