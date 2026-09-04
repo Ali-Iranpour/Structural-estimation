@@ -16,7 +16,7 @@ The model starts with a 2-parents family at the birth of their child. It follows
   \qquad l_{p,t} = 1 - h_{p,t} - \tau_{p,t},  \label{eq:parent-util}
 \end{equation}
 
-Here, $c_{p,t}$ denotes parental consumption, $l_{p,t}$ parental leisure, and $HC_t$ the child’s cognitive skills (or “ability”) measured at the start of period $t$. The preference weights $(\phi_1,\phi_2,\phi_3)$ are strictly positive. They are \emph{not} normalized to sum to one: consumption, leisure and the child's skill enter in different units, so the three are not commensurable and their sum has no interpretation. The calibration uses $(\phi_1,\phi_2,\phi_3) = (0.754,\, 0.142,\, 1.0)$ with $\rho = 1.5$ and $\eta = 2$, where $\phi_1$ and $\phi_2$ are estimated by SMM and $\phi_3$ is normalised to one.
+Here, $c_{p,t}$ denotes parental consumption, $l_{p,t}$ parental leisure, and $HC_t$ the child’s cognitive skills (or “ability”) measured at the start of period $t$. The preference weights $(\phi_1,\phi_2,\phi_3)$ are strictly positive. They are \emph{not} normalized to sum to one: consumption, leisure and the child's skill enter in different units, so the three are not commensurable and their sum has no interpretation. The weights are time-invariant. $\phi_1$ is normalised to one, and $\phi_2$ and $\phi_3$ are estimated by SMM; $\rho = 1.5$ and $\eta = 2$.
 
 Note that parental leisure is $l_{p,t} = 1 - h_{p,t} - \tau_{p,t}$, so time spent with the child is priced at the same rate as time spent working. This matters: a specification that penalizes only $h_{p,t}$ makes $\tau_{p,t}$ a free good, and the parent then pushes it to the corner $h_{p,t} + \tau_{p,t} = 1$. The child’s period-$t$ utility is then specified as:
 
