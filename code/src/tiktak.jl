@@ -162,6 +162,11 @@ Keyword arguments
   extra_seeds         points forced into the pre-testing pool
   stop_tol            early stop on |Z* - Z*_prev|; 0.0 disables
   on_sobol/on_local   callbacks for progress reporting
+  on_improve          (j, x, fx) each time the incumbent best improves, so the
+                      caller can checkpoint the POINT and not just its value.
+                      j = 0 for the Sobol winner, the restart index during the
+                      local stage, -1 for the polish. Fires on improvements only,
+                      so it is cheap enough to write a file every time.
 """
 function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 N::Int = 1000, Nstar::Int = 50,
@@ -198,7 +203,8 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 # Default `map` is plain serial and changes nothing.
                 map_fn = map,
                 on_sobol = (i, N, fx, best) -> nothing,
-                on_local = (j, Nstar, theta, f_local, best) -> nothing)
+                on_local = (j, Nstar, theta, f_local, best) -> nothing,
+                on_improve = (j, x, fx) -> nothing)
 
     length(lo) == length(hi) || error("lo and hi must have the same length")
     all(lo .< hi) || error("every lo must be strictly below its hi")
@@ -247,6 +253,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
 
     # ---- local stage --------------------------------------------------------
     Z, fZ = copy(seeds[1]), f_sobol_best      # incumbent best minimiser and value
+    on_improve(0, Z, fZ)                      # the first point worth keeping
     trace = NamedTuple{(:j, :theta, :f_start, :f_local, :improved), Tuple{Int,Float64,Float64,Float64,Bool}}[]
     fZ_prev_distinct = Inf
 
@@ -296,6 +303,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             if improved
                 fZ_prev_distinct = fZ
                 Z, fZ = copy(res.xloc), res.floc
+                on_improve(res.jj, Z, fZ)
             end
             push!(trace, (j = res.jj, theta = res.theta, f_start = res.fstart,
                           f_local = res.floc, improved = improved))
@@ -319,6 +327,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
         (fp, xp, _) = optimize(opt, Z)
         if isfinite(fp) && fp < fZ
             Z, fZ = copy(xp), fp
+            on_improve(-1, Z, fZ)
         end
     catch
     end
