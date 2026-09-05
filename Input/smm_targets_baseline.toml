@@ -5,8 +5,8 @@
 # per parent (the model's single adult stands for two earners: wage_func x2).
 # Child ages 1-17 only, matching the parent block's t = 1..17.
 
-generated  = "2026-09-02"
-git_commit = "e25a848"
+generated  = "2026-09-06"
+git_commit = "ed60929"
 source     = "Input/SMM_Moments_Micro.dta"
 age_range  = [1, 17]
 age_split  = 9   # early = 1..9, late = 10..17
@@ -18,7 +18,9 @@ source = "cons_exhous_real_w99"
 units  = "model units (10k USD/yr, real 2015)"
 model  = "mean of sim_c over t = 1..17"
 n      = 6742
-mean   = 3.157748
+n_ages = 17
+mean   = 3.115533
+mean_pooled = 3.157748   # observation-weighted; NOT what is targeted
 sd     = 1.699293
 median = 2.785484
 
@@ -27,7 +29,9 @@ source = "(leis_mom + leis_dad)/2 / 112"
 units  = "share of the 112h non-sleep week, per parent"
 model  = "mean of 1 - sim_h - sim_t over t = 1..17"
 n      = 1046
-mean   = 0.528598
+n_ages = 17
+mean   = 0.519501
+mean_pooled = 0.528598   # observation-weighted; NOT what is targeted
 sd     = 0.143590
 median = 0.530520
 
@@ -36,7 +40,9 @@ source = "(wh_mom + wh_dad)/2 / 112"
 units  = "share of the 112h non-sleep week, per parent"
 model  = "mean of sim_h over t = 1..17"
 n      = 15665
-mean   = 0.307000
+n_ages = 17
+mean   = 0.307292
+mean_pooled = 0.307000   # observation-weighted; NOT what is targeted
 sd     = 0.099895
 median = 0.325249
 
@@ -45,7 +51,9 @@ source = "par_time_tot / 112, child ages 1-9"
 units  = "share of the 112h non-sleep week (active+nearby, child-side union)"
 model  = "mean of sim_t over t = 1..9"
 n      = 475
-mean   = 0.467206
+n_ages = 9
+mean   = 0.454449
+mean_pooled = 0.467206   # observation-weighted; NOT what is targeted
 sd     = 0.165585
 median = 0.439732
 
@@ -54,7 +62,9 @@ source = "par_time_tot / 112, child ages 10-17"
 units  = "share of the 112h non-sleep week (active+nearby, child-side union)"
 model  = "mean of sim_t over t = 10..17"
 n      = 590
-mean   = 0.323207
+n_ages = 8
+mean   = 0.333317
+mean_pooled = 0.323207   # observation-weighted; NOT what is targeted
 sd     = 0.166854
 median = 0.325446
 
@@ -63,7 +73,9 @@ source = "m_method2_final_w99"
 units  = "model units (10k USD/yr, real 2015)"
 model  = "mean of sim_e over t = 1..17"
 n      = 15360
-mean   = 0.394459
+n_ages = 17
+mean   = 0.365577
+mean_pooled = 0.394459   # observation-weighted; NOT what is targeted
 sd     = 0.574738
 median = 0.196954
 
@@ -72,7 +84,9 @@ source = "m_method2_final_w99, child ages 1-9"
 units  = "model units (10k USD/yr, real 2015)"
 model  = "mean of sim_e over t = 1..9"
 n      = 8178
-mean   = 0.353228
+n_ages = 9
+mean   = 0.342896
+mean_pooled = 0.353228   # observation-weighted; NOT what is targeted
 sd     = 0.479412
 median = 0.195398
 
@@ -81,7 +95,9 @@ source = "m_method2_final_w99, child ages 10-17"
 units  = "model units (10k USD/yr, real 2015)"
 model  = "mean of sim_e over t = 10..17"
 n      = 7182
-mean   = 0.441408
+n_ages = 8
+mean   = 0.391094
+mean_pooled = 0.441408   # observation-weighted; NOT what is targeted
 sd     = 0.663818
 median = 0.197651
 
@@ -90,7 +106,9 @@ source = "study_hrs / 112, child ages 6-9"
 units  = "share of the 112h non-sleep week"
 model  = "mean of sim_i over t = 6..9"
 n      = 171
-mean   = 0.038650
+n_ages = 4
+mean   = 0.039290
+mean_pooled = 0.038650   # observation-weighted; NOT what is targeted
 sd     = 0.035776
 median = 0.031250
 
@@ -99,24 +117,30 @@ source = "study_hrs / 112, child ages 10-17"
 units  = "share of the 112h non-sleep week"
 model  = "mean of sim_i over t = 10..17"
 n      = 584
-mean   = 0.049986
+n_ages = 8
+mean   = 0.049594
+mean_pooled = 0.049986   # observation-weighted; NOT what is targeted
 sd     = 0.059479
 median = 0.033482
 
 [mean_hc_early]
 source = "x_gach (log PCA composite), child ages 3-9"
 units  = "log W-score; the model's HC is in the SAME units after the rescaling"
-model  = "mean of log(sim_hc) over t = 1..9"
-n      = 253
-mean   = 6.080209
-sd     = 0.108293
-median = 6.084499
+model  = "mean of log(sim_hc) over t = 3..9"
+n      = 252
+n_ages = 7
+mean   = 6.073689
+mean_pooled = 6.080817   # observation-weighted; NOT what is targeted
+sd     = 0.108075
+median = 6.085069
 
 [mean_hc_late]
 source = "x_gach (log PCA composite), child ages 10-17"
 units  = "log W-score; the model's HC is in the SAME units after the rescaling"
 model  = "mean of log(sim_hc) over t = 10..17"
 n      = 549
-mean   = 6.255804
+n_ages = 8
+mean   = 6.250776
+mean_pooled = 6.255804   # observation-weighted; NOT what is targeted
 sd     = 0.032309
 median = 6.257028

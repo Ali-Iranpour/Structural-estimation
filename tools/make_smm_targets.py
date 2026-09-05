@@ -80,6 +80,14 @@ AGE_LO, AGE_HI = 1, 17              # the parent block's t = 1..17
 # read a good fit on these two as the model reproducing the age profile.
 AGE_SPLIT = 9
 
+# The Woodcock-Johnson composite is not administered before age 3: x_gach has 0
+# observations at age 1 and exactly 1 at age 2. Selecting `Child_Age <= AGE_SPLIT` for the
+# early HC moment therefore labelled the target "ages 3-9" while quietly including that
+# single age-2 observation -- and, under the equal-age weighting below, it would have
+# carried the same weight as age 5's 35 observations. Both sides now start at 3;
+# moments.jl has the matching SMM_AGE_HC_LO.
+AGE_HC_LO = 3
+
 
 def git_sha():
     try:
@@ -210,10 +218,10 @@ def main():
              units="share of the 112h non-sleep week",
              model=f"mean of sim_i over t = {AGE_SPLIT+1}..{AGE_HI}"),
         dict(name="mean_hc_early",
-             series=r[r.Child_Age <= AGE_SPLIT].x_gach,
-             source=f"x_gach (log PCA composite), child ages 3-{AGE_SPLIT}",
+             series=r[(r.Child_Age >= AGE_HC_LO) & (r.Child_Age <= AGE_SPLIT)].x_gach,
+             source=f"x_gach (log PCA composite), child ages {AGE_HC_LO}-{AGE_SPLIT}",
              units="log W-score; the model's HC is in the SAME units after the rescaling",
-             model=f"mean of log(sim_hc) over t = 1..{AGE_SPLIT}"),
+             model=f"mean of log(sim_hc) over t = {AGE_HC_LO}..{AGE_SPLIT}"),
         dict(name="mean_hc_late",
              series=r[r.Child_Age > AGE_SPLIT].x_gach,
              source=f"x_gach (log PCA composite), child ages {AGE_SPLIT+1}-{AGE_HI}",
@@ -239,17 +247,40 @@ def main():
         "",
     ]
 
-    print(f"{'moment':12s} {'N':>7s} {'mean':>10s} {'sd':>10s}   source")
-    print("-" * 72)
+    # EQUAL WEIGHT PER CHILD AGE, not per observation.
+    #
+    # The model's moment is a mean over (family, age) cells with every simulated family
+    # present at every age, so each age carries exactly 1/17 of the weight. Pooling the
+    # micro data instead weights each age by how many observations it happens to have,
+    # and the counts are far from uniform -- investment ranges 556 to 1754 observations
+    # per age, parental time 36 to 112. The two sides were therefore computing different
+    # statistics and the optimizer was asked to absorb the difference in the parameters.
+    #
+    # MEASURED cost of the mismatch (pooled -> equal-age):
+    #     parental time, early   0.4672 -> 0.4544   (-2.7%)
+    #     parental time, late    0.3232 -> 0.3333   (+3.1%)
+    #     investment,    early   0.3532 -> 0.3429   (-2.9%)
+    #     investment,    late    0.4414 -> 0.3911   (-11.4%)
+    #
+    # Equal-age is the side that moved, because it is the side the model fixes: the
+    # simulation has no age composition to match. `mean_pooled` is still written so the
+    # change stays auditable.
+    print(f"{'moment':12s} {'N':>7s} {'mean':>10s} {'pooled':>10s} {'sd':>10s}   source")
+    print("-" * 84)
     for mo in moments:
         s = mo["series"].dropna()
+        ages = r.loc[s.index, "Child_Age"]
+        mean_equal  = s.groupby(ages).mean().mean()
+        mean_pooled = s.mean()
         lines += [
             f"[{mo['name']}]",
             f'source = "{mo["source"]}"',
             f'units  = "{mo["units"]}"',
             f'model  = "{mo["model"]}"',
             f"n      = {len(s)}",
-            f"mean   = {s.mean():.6f}",
+            f"n_ages = {ages.nunique()}",
+            f"mean   = {mean_equal:.6f}",
+            f"mean_pooled = {mean_pooled:.6f}   # observation-weighted; NOT what is targeted",
             # SD is recorded but NOT targeted in the baseline run: the model's only
             # cross-sectional heterogeneity is a 5-node wage shock plus initial asset,
             # HC and college draws, and it cannot reach the data's dispersion (leisure
@@ -259,7 +290,8 @@ def main():
             f"median = {s.median():.6f}",
             "",
         ]
-        print(f"{mo['name']:12s} {len(s):7d} {s.mean():10.4f} {s.std():10.4f}   {mo['source']}")
+        print(f"{mo['name']:12s} {len(s):7d} {mean_equal:10.4f} {mean_pooled:10.4f} "
+              f"{s.std():10.4f}   {mo['source']}")
 
     OUT.write_text("\n".join(lines))
     print(f"\nwrote {OUT.relative_to(REPO)}")

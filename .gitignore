@@ -37,3 +37,6 @@ output/figures/
 
 # Server-local MCP config
 .mcp.json
+
+# SMM run outputs: logs, checkpoints and per-run estimates are reproducible artefacts
+output/smm_runs/

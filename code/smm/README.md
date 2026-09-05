@@ -1,8 +1,13 @@
-# SMM — six parent moments
+# SMM — ten parent moments
 
-Estimates six parent-block parameters so the simulated model reproduces six
-averages from PSID/CDS. Baseline only: nothing here touches the child lifecycle,
-the counterfactuals, or the belief machinery.
+Estimates **nine** parent-block parameters so the simulated model reproduces **ten**
+moments from PSID/CDS: consumption, work hours, parental time, monetary investment,
+the child's study time, and the level of child skill — the last four split by child
+age. Baseline only: nothing here touches the child lifecycle, the counterfactuals,
+or the belief machinery.
+
+The design is **over-identified by one**, not just-identified. `Q` cannot reach zero,
+the weighting is a real assumption, and a residual gap is not by itself a bug.
 
 If this is your first time running an SMM, read *What SMM is doing here* at the
 bottom first — it is four paragraphs and the rest of this file will make more
@@ -60,9 +65,12 @@ Use `--outdir <path>` to send a throwaway run somewhere else, e.g.
 | `--report-only` | Print the fit at the current calibration and stop. No search. |
 | `--quick` | Small grids and a tiny budget. Smoke test, **not** an estimate. |
 | `--procs N` | Worker processes. Default 20 — see below. |
-| `--sobol N` | Pre-testing points (default 200). Cheap: these run in parallel. |
-| `--restarts N` | Local searches (default 10). **Each one costs ~15 min.** |
-| `--grid N` | Parent `Na = Nhc` for the *search* (default 30). `20` is 2.5× faster. |
+| `--sobol N` | Pre-testing points (default 1000). Cheap: these run in parallel. |
+| `--restarts N` | Local searches (default 100). **Each one costs ~15 min.** |
+| `--grid N` | Parent `Na = Nhc` for the *search* (default 30). `20` is 2.4× faster, and the winner is then re-optimised at the full grid. |
+| `--refine N` | Evaluations for that full-grid re-optimisation (default 200). Only runs when `--grid` differs from the report grid. |
+| `--local-evals N` | Cap per local search (default 2000). |
+| `--polish-evals N` | Cap for the final polish (default 4000). |
 | `--every N` | Seconds between progress lines (default 2). |
 | `--outdir P` | Write the run folder to `P` instead of `output/smm_runs/<stamp>/`. |
 | `--serial` | Everything on one process. Slowest, but the easiest to debug. |
@@ -132,7 +140,7 @@ resolution the answer needs, so `--grid 20` searches cheap while the reported fi
 is still re-solved at 30. Below 20 the drift starts to show (`e_p` 1.3% at 15).
 
 **2. Fewer restarts — linear (`--restarts 5`).** Each restart costs ~15 min at
-full grid. This system is just-identified and well-behaved: in testing, restart 1
+full grid. In testing, restart 1
 alone drove `Q` from 0.081 to 1e-5. Ten restarts is insurance against local
 minima that this objective has not shown any sign of. Pair a cut here with a
 larger `--sobol`, which is free and buys back the same insurance.
@@ -250,10 +258,24 @@ the *average* of mother and father. Using `leis_hh` would double the target.
 
 ## What is being estimated
 
-Four parameters, one per moment — **just-identified**, so the objective can in
-principle reach zero. That is deliberate for a first estimation: if the fit is
-bad, you know it is the *model* failing, not a shortage of free parameters. It
-also makes the weighting matrix irrelevant at the optimum.
+**Nine parameters against ten moments — over-identified by one.** `Q` cannot reach
+zero and the weighting matrix is *not* irrelevant at the optimum, so equal weights
+are a real assumption. Counting nine against ten establishes nothing about
+identification on its own; what does is the residual Jacobian, which at the incumbent
+has full column rank, condition number 49 and smallest singular value 0.28. The
+weakest direction is `lambda_2` against `sigma_1_0 + sigma_4_0 + sigma_2_0`
+(valuation against technology) and the second weakest is `sigma_2_1`. Both are
+identified; neither sharply.
+
+**Two scales, deliberately.** Level moments are scaled by their own target so every
+residual is a proportional error. The two HC moments are means of *logs*, where the
+residual is already proportional, so they are scaled by 1 — dividing them by a log
+W-score of ~6.1 shrank them 6.1× and made a 60% error in the level of human capital
+score like a 7.7% miss. See `moment_scale` in `moments.jl`.
+
+**Ages are matched on both sides.** The data is weighted equally per child age, as
+the simulation is, and the HC moments start at child age 3 because the composite is
+not administered earlier. See `SMM_AGE_HC_LO` and `AGE_HC_LO`.
 
 | Parameter | Moves | Bounds | Incumbent |
 |---|---|---|---|
