@@ -183,11 +183,17 @@ boundary meant finding all of them.
 # ~1 in Cunha-Heckman-Schennach -- are in docs/ERRORS.md, P11.
 const T_CHILD_VOICE = 6
 
-# Initial child HC at age 0, in W-score units: log HC_0 ~ Normal(HC0_MEAN_LOG, HC0_SD_LOG).
-# Both fitted log-linearly on ages 3-17 of the PCA composite and extrapolated back to 0,
-# because the test is not administered before age 3. Derivation in the constructor.
-const HC0_MEAN_LOG = 5.9290
-const HC0_SD_LOG   = 0.0698
+# Initial child HC at CHILD AGE 1, in W-score units: log HC_1 ~ N(HC0_MEAN_LOG, HC0_SD_LOG).
+# Fitted log-linearly on ages 3-17 of the PCA composite and extrapolated back, because the
+# test is not administered before age 3. Derivation in the constructor.
+#
+# AGE 1, NOT AGE 0. These constants previously held the age-0 extrapolation while
+# `sim_hc_init` is written into `sim_hc[:, 1]`, and column 1 is child age 1 -- the family
+# stage runs t = 1..17 over child ages 1..17, with no age-0 period. The age-0 intercept was
+# therefore being used as the age-1 state, understating initial skill by 0.0239 log points
+# (2.4% in levels). Evaluated at age 1 on the same fit.
+const HC0_MEAN_LOG = 5.9529
+const HC0_SD_LOG   = 0.0667
 
 """
     TIME_FLOOR
@@ -481,8 +487,10 @@ function Parent_child_interaction_age_specific_AR1(;
     # The PCA composite is only measured from age 3, so both the mean and the SD of
     # log HC are fitted log-linearly on ages 3-17 and extrapolated back to age 0:
     #
-    #     mean log HC = 5.9290 + 0.02392*age    (R2 0.835)  -> 5.9290 at age 0
-    #     sd   log HC = 0.0698 - 0.00310*age    (R2 0.638)  -> 0.0698 at age 0
+    #     mean log HC = 5.92898 + 0.02392*age   (R2 0.835)  -> 5.9529 at age 1
+    #     sd   log HC = 0.06976 - 0.00310*age   (R2 0.638)  -> 0.0667 at age 1
+    #
+    # Evaluated at AGE 1, the child age of column 1. See HC0_MEAN_LOG.
     #
     # Log-linear because that is the form the production function itself uses, so the
     # extrapolation is internally consistent -- and because a quadratic fit, which
@@ -491,7 +499,7 @@ function Parent_child_interaction_age_specific_AR1(;
     #
     # LOGNORMAL, not uniform. The old Uniform(0,1) was arbitrary and it was the source of
     # a 0.32 log-point Jensen gap at t=1 (Var(log hc) is large for a uniform near zero).
-    # This gives a median of 376 and a 10-90 range of 344-411, matching the data.
+    # This gives a median of 385 and a 10-90 range of 353-419, matching the data at age 1.
     sim_hc_init = exp.(HC0_MEAN_LOG .+ HC0_SD_LOG .* randn(rng_hc, simN))
     sim_p_init = fill(ceil(Int, Np/2), simN)
     # Pre-drawn uniforms for the AR(1) transition: reproducible, and identical across arms.

@@ -1,5 +1,23 @@
 #!/usr/bin/env julia
 # =============================================================================
+# !! SUPERSEDED AND NON-FUNCTIONAL. DO NOT RUN. !!
+#
+# The live estimator is code/smm/run_smm.jl + code/smm/moments.jl. This file is kept
+# only because its 12-moment / 14-parameter design and its child-parameter caching are
+# the record of an earlier approach.
+#
+# It cannot run against the current model:
+#   * simulate_moments passes phi_2_0 / phi_3_0 / lambda_2_0, which no longer exist --
+#     the preference weights became time-invariant scalars (phi_2, phi_3, lambda_2).
+#   * its on_local callback takes 5 arguments; tiktak now passes 6 (the incumbent
+#     minimiser was added so callers can checkpoint).
+#   * it is 14 parameters against 12 moments, i.e. UNDER-identified, against the live
+#     estimator's 9 against 10.
+#
+# Retire or migrate it deliberately -- do not repair it incidentally.
+# =============================================================================
+
+# =============================================================================
 # smm.jl — simulated method of moments for the parent-child block.
 #
 #     cd code && julia --project=.. smm.jl [--quick] [--starts N] [--evals N]

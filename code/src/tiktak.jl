@@ -125,7 +125,9 @@ struct TikTakResult
     n_eval::Int
     f_sobol_best::Float64        # best of the pre-testing stage, before any local search
     f_prepolish::Float64         # best after the local stage, before polishing
-    trace::Vector{NamedTuple{(:j, :theta, :f_start, :f_local, :improved), Tuple{Int,Float64,Float64,Float64,Bool}}}
+    trace::Vector{NamedTuple{(:j, :theta, :f_start, :f_local, :improved, :ret),
+                             Tuple{Int,Float64,Float64,Float64,Bool,Symbol}}}
+    n_exception::Int             # local searches that threw -- always a bug in `f`
 end
 
 """
@@ -139,6 +141,45 @@ function sobol_points(lo::Vector{Float64}, hi::Vector{Float64}, N::Int; skip_fir
     s = SobolSeq(lo, hi)
     skip_first && Sobol.next!(s)
     return [copy(Sobol.next!(s)) for _ in 1:N]
+end
+
+"""
+    _local_search(f, x0, lo, hi, alg, tol, maxeval, ftol_abs, xtol_rel, fstart)
+
+One local search, with an `Opt` THAT BELONGS TO IT.
+
+This is a free function, not a closure inside `tiktak`, and that is the whole point.
+Julia's scoping rule is that assigning a name inside a nested function refers to the
+enclosing local of the same name if one exists. `tiktak` assigns `opt` again for the
+polishing search, so an `opt` created inside a closure there is not a fresh local at
+all -- it is the enclosing binding, captured in a `Core.Box` and SHARED by every
+concurrent restart. Verified in lowered code. With `batch > 1` the restarts then
+configure and drive one another's optimizer, which is a data race in NLopt's C state
+and a sufficient explanation for the silent exit-0 crash recorded in the header.
+
+Returns the return code and any exception rather than discarding them: an exception
+reaching here is a bug in `f` (the SMM objective already converts genuine model
+failures into a finite penalty), so it is reported, not swallowed.
+"""
+function _local_search(f, x0::Vector{Float64}, lo::Vector{Float64}, hi::Vector{Float64},
+                       alg::Symbol, tol::Float64, maxeval::Int,
+                       ftol_abs_::Float64, xtol_rel_::Float64, fstart::Float64)
+    opt = Opt(alg, length(lo))
+    lower_bounds!(opt, lo); upper_bounds!(opt, hi)
+    ftol_rel!(opt, tol); maxeval!(opt, maxeval)
+    # See the note on local_ftol_abs in the tiktak signature: without these two a
+    # search whose optimum is 0 can never satisfy ftol_rel and always runs the full
+    # maxeval.
+    ftol_abs!(opt, ftol_abs_); xtol_rel!(opt, xtol_rel_)
+    nev = Ref(0)
+    min_objective!(opt, (x, g) -> (nev[] += 1; f(x)))
+    try
+        (floc, xloc, ret) = optimize(opt, x0)
+        return (floc, xloc, nev[], ret, nothing)
+    catch e
+        # Information, not a fatal error -- but not invisible either.
+        return (fstart, x0, nev[], :EXCEPTION, e)
+    end
 end
 
 """
@@ -161,7 +202,8 @@ Keyword arguments
   polish_ftol_abs          same, for the polish
   extra_seeds         points forced into the pre-testing pool
   stop_tol            early stop on |Z* - Z*_prev|; 0.0 disables
-  on_sobol/on_local   callbacks for progress reporting
+  on_sobol/on_local   callbacks for progress reporting. on_local also receives the
+                      incumbent minimiser, so a caller can checkpoint after every restart.
 """
 function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 N::Int = 1000, Nstar::Int = 50,
@@ -188,7 +230,13 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 extra_seeds::Vector{Vector{Float64}} = Vector{Vector{Float64}}(),
                 stop_tol::Float64 = 0.0,
                 parallel::Bool = false,     # see the NLopt warning in the header
-                batch::Int = max(1, min(Threads.nthreads(), floor(Int, sqrt(Nstar)))),
+                # BATCH IS GATED ON `parallel`. It used to default off Threads.nthreads()
+                # regardless, so `parallel = false` silently still ran the local stage on
+                # Threads.@threads whenever Julia had more than one thread -- reproduced:
+                # `julia -t 4` with parallel = false evaluated the objective on threads
+                # 1..4. That is the one place this project must never be threaded.
+                batch::Int = parallel ?
+                             max(1, min(Threads.nthreads(), floor(Int, sqrt(Nstar)))) : 1,
                 # PROCESS-level parallelism for the pre-testing stage. Pass `pmap`
                 # (with workers added and the objective defined @everywhere) to spread
                 # the N Sobol evaluations across worker PROCESSES. This is the safe way
@@ -198,11 +246,18 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 # Default `map` is plain serial and changes nothing.
                 map_fn = map,
                 on_sobol = (i, N, fx, best) -> nothing,
-                on_local = (j, Nstar, theta, f_local, best) -> nothing)
+                # `best_x` is the incumbent MINIMISER, not just its value: without it a
+                # caller cannot checkpoint, and a 20-hour run that dies has nothing to
+                # resume from.
+                on_local = (j, Nstar, theta, f_local, best, best_x) -> nothing)
 
     length(lo) == length(hi) || error("lo and hi must have the same length")
     all(lo .< hi) || error("every lo must be strictly below its hi")
     1 <= Nstar <= N + length(extra_seeds) || error("need 1 <= Nstar <= N + #extra_seeds")
+    parallel || batch <= 1 || error("""
+        batch = $batch was requested with parallel = false. The local stage would run on
+        Threads.@threads while the caller believes threading is off. Pass parallel = true
+        if that is what you want, or leave batch at 1.""")
     n_eval = 0
 
     # ---- global stage: pre-testing ------------------------------------------
@@ -247,8 +302,10 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
 
     # ---- local stage --------------------------------------------------------
     Z, fZ = copy(seeds[1]), f_sobol_best      # incumbent best minimiser and value
-    trace = NamedTuple{(:j, :theta, :f_start, :f_local, :improved), Tuple{Int,Float64,Float64,Float64,Bool}}[]
+    trace = NamedTuple{(:j, :theta, :f_start, :f_local, :improved, :ret),
+                       Tuple{Int,Float64,Float64,Float64,Bool,Symbol}}[]
     fZ_prev_distinct = Inf
+    n_exception = 0
 
     # Batched: within a batch every restart reads the same Z*, so they can run
     # concurrently. batch == 1 is the sequential published algorithm.
@@ -264,27 +321,27 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             jj = idx[m]
             theta = jj == 1 ? 0.0 : clamp((jj / Nstar)^theta_p, theta_lo, theta_hi)
             x0 = clamp.((1 - theta) .* seeds[jj] .+ theta .* Zsnap, lo, hi)
-            fstart = f(x0)
-            opt = Opt(local_alg, length(lo))
-            lower_bounds!(opt, lo); upper_bounds!(opt, hi)
-            ftol_rel!(opt, local_tol); maxeval!(opt, local_maxeval)
-            # See the note on local_ftol_abs in the signature: without these two a
-            # search whose optimum is 0 can never satisfy ftol_rel and always runs
-            # the full maxeval.
-            ftol_abs!(opt, local_ftol_abs); xtol_rel!(opt, local_xtol_rel)
-            nev = Ref(0)
-            min_objective!(opt, (x, g) -> (nev[] += 1; f(x)))
-            floc, xloc = fstart, x0
-            try
-                (floc, xloc, _) = optimize(opt, x0)
-            catch
-                # a local search that blows up is information, not a fatal error
+            # The seed evaluation is guarded too. It was not before, so one throw here
+            # killed the whole run at whichever restart hit it -- on a 20-hour estimation
+            # that is the entire budget lost to one bad point.
+            fstart, seed_err = try
+                (f(x0), nothing)
+            catch e
+                (Inf, e)
             end
+            if seed_err !== nothing
+                results[m] = (jj = jj, theta = theta, fstart = Inf, floc = Inf,
+                              xloc = x0, nev = 1, ret = :SEED_EXCEPTION, err = seed_err)
+                return
+            end
+            floc, xloc, nev, ret, err = _local_search(f, x0, lo, hi, local_alg, local_tol,
+                                                      local_maxeval, local_ftol_abs,
+                                                      local_xtol_rel, fstart)
             results[m] = (jj = jj, theta = theta, fstart = fstart, floc = floc,
-                          xloc = xloc, nev = nev[] + 1)
+                          xloc = xloc, nev = nev + 1, ret = ret, err = err)
         end
 
-        if nb > 1 && length(idx) > 1
+        if parallel && nb > 1 && length(idx) > 1
             Threads.@threads for m in eachindex(idx); run_one(m); end
         else
             for m in eachindex(idx); run_one(m); end
@@ -297,9 +354,17 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 fZ_prev_distinct = fZ
                 Z, fZ = copy(res.xloc), res.floc
             end
+            if res.err !== nothing
+                # Reaching here means `f` threw something it did not classify. The SMM
+                # objective already turns genuine model failures into a finite penalty and
+                # re-throws real bugs, so this is a bug -- report it the moment it happens
+                # rather than letting a 20-hour run finish and look converged.
+                n_exception += 1
+                @warn "local search $(res.jj) threw; the point was discarded" exception = res.err
+            end
             push!(trace, (j = res.jj, theta = res.theta, f_start = res.fstart,
-                          f_local = res.floc, improved = improved))
-            on_local(res.jj, Nstar, res.theta, res.floc, fZ)
+                          f_local = res.floc, improved = improved, ret = res.ret))
+            on_local(res.jj, Nstar, res.theta, res.floc, fZ, Z)
             if stop_tol > 0 && improved && isfinite(fZ_prev_distinct) &&
                abs(fZ - fZ_prev_distinct) < stop_tol
                 stop = true
@@ -310,20 +375,25 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     f_prepolish = fZ
 
     # ---- polishing ----------------------------------------------------------
-    opt = Opt(polish_alg, length(lo))
-    lower_bounds!(opt, lo); upper_bounds!(opt, hi)
-    ftol_rel!(opt, polish_tol); xtol_rel!(opt, polish_tol); maxeval!(opt, polish_maxeval)
-    ftol_abs!(opt, polish_ftol_abs)      # same reason as the local stage, one order tighter
-    min_objective!(opt, (x, g) -> (n_eval += 1; f(x)))
+    # `polish_opt`, not `opt`: a bare `opt` here is what boxed the local stage's
+    # optimizer for years. Keep these names distinct.
+    polish_opt = Opt(polish_alg, length(lo))
+    lower_bounds!(polish_opt, lo); upper_bounds!(polish_opt, hi)
+    ftol_rel!(polish_opt, polish_tol); xtol_rel!(polish_opt, polish_tol)
+    maxeval!(polish_opt, polish_maxeval)
+    ftol_abs!(polish_opt, polish_ftol_abs)   # as the local stage, one order tighter
+    min_objective!(polish_opt, (x, g) -> (n_eval += 1; f(x)))
     try
-        (fp, xp, _) = optimize(opt, Z)
+        (fp, xp, _) = optimize(polish_opt, Z)
         if isfinite(fp) && fp < fZ
             Z, fZ = copy(xp), fp
         end
-    catch
+    catch e
+        n_exception += 1
+        @warn "polishing search threw; the pre-polish point was kept" exception = e
     end
 
-    return TikTakResult(Z, fZ, n_eval, f_sobol_best, f_prepolish, trace)
+    return TikTakResult(Z, fZ, n_eval, f_sobol_best, f_prepolish, trace, n_exception)
 end
 
 """

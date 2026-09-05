@@ -70,6 +70,17 @@ const REPORT_ONLY = "--report-only" in ARGS
 const N_SOBOL     = argval("--sobol",    QUICK ? 12 : 1000)
 const N_RESTART   = argval("--restarts", QUICK ?  2 : 100)
 const EVERY_SEC   = float(argval("--every", 2))   # progress line throttle, seconds
+# Evaluations for the full-grid refinement that follows a coarse search. Small on purpose:
+# it starts from the coarse argmin, which is already close, so this is a polish and not a
+# second search. At ~12 s per full-grid evaluation, 200 is about 40 minutes.
+const REFINE_MAXEVAL = argval("--refine", QUICK ? 10 : 200)
+
+# Evaluation caps for the local searches and the final polish. `--quick` used to leave
+# these at their full 2000/4000, so a "2 minute smoke test" could sit in a single restart
+# for a quarter of an hour -- the flag reduced the NUMBER of restarts and not their
+# length. Exposed so a budget can be set from measured restart traces rather than assumed.
+const LOCAL_MAXEVAL  = argval("--local-evals",  QUICK ?  60 : 2000)
+const POLISH_MAXEVAL = argval("--polish-evals", QUICK ? 120 : 4000)
 
 # -----------------------------------------------------------------------------
 # Search grid vs report grid
@@ -172,7 +183,8 @@ else
     sayf("workers    %d of %d cores (%.0f%%) -- capped by %s\n",
          NPROC, N_CORES, 100 * NPROC / N_CORES, bound_by())
 end
-sayf("budget     %d Sobol points, %d restarts\n", N_SOBOL, N_RESTART)
+sayf("budget     %d Sobol points, %d restarts (<= %d evals each, polish %d)\n",
+     N_SOBOL, N_RESTART, LOCAL_MAXEVAL, POLISH_MAXEVAL)
 if GRID_SEARCH != GRID_FULL
     sayf("grids      search at Na=Nhc=%d, fit REPORTED at Na=Nhc=%d\n", GRID_SEARCH, GRID_FULL)
 else
@@ -418,6 +430,44 @@ end
 # -----------------------------------------------------------------------------
 # Estimate
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Checkpointing
+# -----------------------------------------------------------------------------
+# Written after EVERY restart, not once at the end. The local stage is ~99% of the wall
+# clock and runs for the better part of a day; before this, a tmux disconnect, a
+# wall-clock limit or a pre-emption lost the entire run, because parameters were only
+# persisted after the final report -- which itself can fail.
+#
+# The file is rewritten in full each time (it is a few hundred bytes) via a temporary
+# file and an atomic rename, so a crash midway through a write cannot leave a truncated
+# checkpoint behind. It is deliberately readable by the same TOML parser as
+# estimates.toml, so a killed run's best point can be fed straight back in.
+const CKPT = joinpath(RUN_DIR, "checkpoint.toml")
+
+function checkpoint!(j::Int, best::Float64, best_x::Vector{Float64})
+    est = unpack(best_x)
+    tmp = CKPT * ".tmp"
+    open(tmp, "w") do io
+        println(io, "# Written after each restart by code/smm/run_smm.jl. Safe to read")
+        println(io, "# while the run is going; rewritten atomically.")
+        println(io, "restarts_done = ", j)
+        println(io, "restarts_total= ", N_RESTART)
+        println(io, "Q_best        = ", best)
+        println(io, "Q_incumbent   = ", q0)
+        println(io, "grid_search   = ", GRID_SEARCH)
+        println(io, "minutes       = ", round(elapsed(), digits = 1))
+        println(io, "updated       = \"", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"), "\"")
+        println(io, "\n[search_vector]")
+        println(io, "z = [", join((@sprintf("%.10g", v) for v in best_x), ", "), "]")
+        println(io, "\n[parameters]")
+        for q in SMM_PARAMS
+            @printf(io, "%-10s = %.8f\n", q.name, getfield(est, q.name))
+        end
+    end
+    mv(tmp, CKPT; force = true)
+    return nothing
+end
+
 banner("TikTak search")
 lo, hi = search_bounds()
 t_start = time()
@@ -432,6 +482,7 @@ result = tiktak(objective_tracked, lo, hi;
                 N = N_SOBOL, Nstar = N_RESTART,
                 extra_seeds = [x0],             # the incumbent competes like any Sobol point
                 map_fn = USE_PMAP ? pmap : map,
+                local_maxeval = LOCAL_MAXEVAL, polish_maxeval = POLISH_MAXEVAL,
                 # tick! does the per-evaluation reporting, so on_sobol would only
                 # double-print. It is used for one thing: i == n is the moment the
                 # Sobol stage ends and the local stage begins, which is where the
@@ -455,7 +506,8 @@ result = tiktak(objective_tracked, lo, hi;
                          n, best, elapsed())
                     stage!(:local)
                 end,
-                on_local = function (j, ns, th, fl, best)
+                on_local = function (j, ns, th, fl, best, best_x)
+                    checkpoint!(j, best, best_x)
                     eta = elapsed() / max(j, 1) * (ns - j)
                     sayf("  restart %3d/%-3d DONE   this %11.4g   best Q %11.4g   %5.1f min, ~%.0f min left\n",
                          j, ns, fl, best, elapsed(), eta)
@@ -467,6 +519,65 @@ banner(@sprintf("Finished in %.1f min -- %d evaluations", elapsed(), result.n_ev
 sayf("Q: sobol-best %.6g  ->  pre-polish %.6g  ->  final %.6g\n",
      result.f_sobol_best, result.f_prepolish, result.f)
 sayf("incumbent Q was %.6g  (improvement %.1f%%)\n", q0, 100 * (q0 - result.f) / q0)
+
+# -----------------------------------------------------------------------------
+# Full-grid refinement
+# -----------------------------------------------------------------------------
+# The search minimises Q on GRID_SEARCH. Re-EVALUATING that winner at the full grid is
+# not the same as OPTIMISING at the full grid: the coarse and fine objectives have
+# slightly different minimisers, so the coarse argmin is a good starting point and not an
+# answer. Q(20) = 2.5273 against Q(30) = 2.5485 at the incumbent, so the surfaces differ
+# by ~1% -- small, but the whole point of the estimate is where the minimum SITS.
+#
+# So: a short BOBYQA polish on the full-grid objective, started from the coarse winner.
+# Skipped entirely when the search already ran at the full grid, which is the default.
+const Z_SEARCH = copy(result.x)
+const Q_SEARCH = result.f
+
+# IN A FUNCTION, DELIBERATELY. `try` is a soft scope at top level, so assigning Z_FINAL /
+# Q_FINAL inside one binds a LOCAL and silently leaves the global at its old value -- the
+# same rule that bites top-level `for` loops (see CLAUDE.md). The first version of this
+# block did exactly that and reported the UNREFINED point while printing the refined one.
+# Returning the pair makes the data flow explicit and the trap unreachable.
+function refine_at_full_grid(z_search::Vector{Float64}, lo, hi)
+    banner(@sprintf("Full-grid refinement (grid %d -> %d)", GRID_SEARCH, GRID_FULL))
+    q_coarse_winner = objective_full(z_search)
+    sayf("Q at the coarse winner, re-evaluated at grid %d: %.6g\n", GRID_FULL, q_coarse_winner)
+    t_ref = time()
+    ropt = Opt(:LN_BOBYQA, length(lo))
+    lower_bounds!(ropt, lo); upper_bounds!(ropt, hi)
+    ftol_rel!(ropt, 1e-6); ftol_abs!(ropt, 1e-10); xtol_rel!(ropt, 1e-6)
+    maxeval!(ropt, REFINE_MAXEVAL)
+    n_ref = Ref(0)
+    min_objective!(ropt, (z, g) -> (n_ref[] += 1; objective_full(z)))
+    try
+        (qr, zr, retr) = optimize(ropt, z_search)
+        sayf("refined: %d evaluations, %.1f min, ret %s\n", n_ref[], (time()-t_ref)/60, retr)
+        if isfinite(qr) && qr < q_coarse_winner
+            sayf("Q(grid %d): %.6g at the coarse winner  ->  %.6g refined  (%.2f%% better)\n",
+                 GRID_FULL, q_coarse_winner, qr,
+                 100*(q_coarse_winner - qr)/max(abs(q_coarse_winner), eps()))
+            return (copy(zr), qr)
+        end
+        sayf("Q(grid %d): %.6g at the coarse winner; refinement did not improve on it\n",
+             GRID_FULL, q_coarse_winner)
+        return (copy(z_search), q_coarse_winner)
+    catch e
+        @warn "full-grid refinement failed; keeping the coarse winner" exception = e
+        return (copy(z_search), q_coarse_winner)
+    end
+end
+
+@everywhere objective_full(z) = smm_objective(z, TARGETS, V_CHILD;
+                                              Na = G_FULL_.Na, Nk = G_FULL_.Nk,
+                                              Nhc = G_FULL_.Nhc, simN = G_FULL_.simN)
+const (Z_FINAL, Q_FINAL) = if GRID_SEARCH != GRID_FULL
+    refine_at_full_grid(Z_SEARCH, lo, hi)
+else
+    say("\nsearch ran at the full grid -- no refinement stage needed")
+    (copy(Z_SEARCH), Q_SEARCH)
+end
+GRID_SEARCH == GRID_FULL || checkpoint!(N_RESTART, Q_FINAL, Z_FINAL)
 
 # ---- how much of the box the model could not live in -----------------------
 # A penalised draw is a real answer, but the RATE is diagnostic: a few percent is
@@ -497,7 +608,7 @@ else
 end
 
 banner("Estimated calibration")
-say_report(result.x)
+say_report(Z_FINAL)
 
 # ---- did anything land on a box edge? --------------------------------------
 # A parameter pinned to its bound is not a converged estimate -- it is the model
@@ -505,9 +616,9 @@ say_report(result.x)
 # finding, and an easy one to miss in a table of six numbers, so it is called out.
 # Position is measured in SEARCH coordinates, because a log-linked parameter sits
 # somewhere quite different on the linear scale.
-let (lo_s, hi_s) = search_bounds(), est_ = unpack(result.x), pinned = String[]
+let (lo_s, hi_s) = search_bounds(), est_ = unpack(Z_FINAL), pinned = String[]
     for (i, q) in enumerate(SMM_PARAMS)
-        pos = (result.x[i] - lo_s[i]) / (hi_s[i] - lo_s[i])
+        pos = (Z_FINAL[i] - lo_s[i]) / (hi_s[i] - lo_s[i])
         (pos < 0.02 || pos > 0.98) && push!(pinned,
             Printf.format(Printf.Format("  %-10s = %10.4f  pinned to its %s bound [%.3f, %.3f]\n"),
                           String(q.name), getfield(est_, q.name),
@@ -526,7 +637,7 @@ end
 # -----------------------------------------------------------------------------
 # Persist
 # -----------------------------------------------------------------------------
-est = unpack(result.x)
+est = unpack(Z_FINAL)
 open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "# SMM, three parent moments. GENERATED by code/smm/run_smm.jl.")
     println(io, "generated  = \"", Dates.format(now(), "yyyy-mm-dd HH:MM"), "\"")
@@ -541,8 +652,13 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "workers    = ", max(0, nprocs() - 1))
     println(io, "n_penalized= ", N_PENALIZED, "   # draws the model could not be solved at")
     println(io, "minutes    = ", round(elapsed(), digits = 1))
-    println(io, "Q_final    = ", result.f)
-    println(io, "Q_incumbent= ", q0)
+    # BOTH objectives, on the grids they were computed at. Storing only the search-grid
+    # value under the name "Q_final" was how a coarse-grid number ended up being quoted
+    # next to a full-grid fit table.
+    println(io, "Q_final    = ", Q_FINAL, "   # at grid_report, after refinement")
+    println(io, "Q_search   = ", Q_SEARCH, "   # at grid_search, what the search minimised")
+    println(io, "Q_incumbent= ", q0, "   # at grid_search")
+    println(io, "refined    = ", GRID_SEARCH != GRID_FULL)
     println(io, "\n[parameters]")
     for q in SMM_PARAMS
         @printf(io, "%-10s = %.8f   # was %.8f\n", q.name, getfield(est, q.name),

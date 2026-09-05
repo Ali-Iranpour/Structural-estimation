@@ -1,10 +1,11 @@
 # =============================================================================
-# moments.jl -- SMM on six parent-block moments.
+# moments.jl -- SMM on ten parent-block moments.
 #
-# Estimates six parent parameters against six data means: household consumption,
-# parental WORK hours, parent TIME with the child split by child age, and
-# monetary investment split by child age (1-9 and 10-17). Baseline only; nothing
-# here touches the child lifecycle, the counterfactuals or the belief machinery.
+# Estimates NINE parent parameters against TEN data moments: household consumption,
+# parental WORK hours, parent TIME with the child, monetary investment, the child's own
+# study time, and the LEVEL OF CHILD SKILL -- the last four split by child age. Baseline
+# only; nothing here touches the child lifecycle, the counterfactuals or the belief
+# machinery.
 #
 # WHAT SMM IS DOING HERE, IN ONE PARAGRAPH
 # ----------------------------------------
@@ -18,20 +19,30 @@
 # a likelihood; "simulated" because the model has no closed form, so the moments
 # come out of a simulation.
 #
-# SIX MOMENTS, SIX PARAMETERS: JUST-IDENTIFIED
-# --------------------------------------------
-# One parameter per moment, so in principle all six can be matched exactly and
-# the objective can reach zero. That is deliberate for a first estimation: if the
-# fit is bad you know it is the MODEL failing, not a shortage of free parameters.
-# It also makes the weighting matrix irrelevant at the optimum, which removes one
-# thing to get wrong. Each parameter has a moment it moves most:
+# TEN MOMENTS, NINE PARAMETERS: OVER-IDENTIFIED BY ONE
+# ----------------------------------------------------
+# This is NOT the earlier just-identified design and must not be read as one. Q cannot
+# reach zero, the weighting is no longer irrelevant at the optimum, and a residual gap is
+# not by itself evidence of a bug. Counting nine against ten also establishes nothing
+# about identification -- see the residual-Jacobian note below. Each parameter still has
+# a moment it moves most:
 #
-#   phi_1_0    weight on consumption       ->  mean c_p
-#   phi_2_0    weight on leisure           ->  mean h_p   (work; l = 1 - h - t)
+#   phi_2      weight on leisure           ->  mean h_p   (work; l = 1 - h - t)
+#   phi_3      parents' weight on skill    ->  mean t_p and mean e_p
+#   lambda_2   child's weight on skill     ->  mean i_c   (study time)
+#   R_0        HC technology TFP           ->  mean log HC
 #   sigma_1_0  LEVEL of the t_p elasticity ->  mean t_p, ages 1-9
 #   sigma_1_1  SLOPE of the t_p elasticity ->  mean t_p, ages 10-17
 #   sigma_2_0  LEVEL of the e_p elasticity ->  mean e_p, ages 1-9
 #   sigma_2_1  SLOPE of the e_p elasticity ->  mean e_p, ages 10-17
+#   sigma_4_0  LEVEL of the i_c elasticity ->  mean i_c
+#
+# MEASURED at the incumbent (central differences, columns scaled to a full-box move):
+# the residual Jacobian has full column rank with condition number 49 and smallest
+# singular value 0.271. The weakest direction is lambda_2 against
+# sigma_1_0 + sigma_4_0 + sigma_2_0 -- valuation against technology -- and the second
+# weakest is sigma_2_1, whose whole-box effect on the investment moments is ~10x smaller
+# than sigma_2_0's. Both are identified; neither is sharply identified.
 #
 # WHY h_p AND t_p RATHER THAN l_p
 # -------------------------------
@@ -114,6 +125,14 @@ const SMM_AGE_LO, SMM_AGE_HI = 1, 17
 # model failure.
 const SMM_AGE_SPLIT = 9
 
+# The HC moments start at child age 3, not 1. The Woodcock-Johnson composite is not
+# administered before age 3, so `x_gach` has 0 observations at age 1 and 1 at age 2 --
+# the data's "early" HC group is really ages 3-9. The model was averaging log(sim_hc)
+# over 1..9 against it. MEASURED at the incumbent: ages 1-9 gives 6.5492 and ages 3-9
+# gives 6.6588, so the coverage mismatch alone was worth 0.110 log points, i.e. 23% of
+# the entire HC gap the estimation is trying to close. It has to match on both sides.
+const SMM_AGE_HC_LO = 3
+
 # The moments actually targeted, in report order. `mean_e_p` (the pooled
 # investment mean) is still computed and printed, but it is NOT in this tuple: it
 # is the sum of the two age groups and would add no information while making the
@@ -134,6 +153,33 @@ const SMM_MOMENTS = ("mean_c_p", "mean_h_p",
 #
 # The child's own study time starts at t = T_CHILD_VOICE = 6; there is no child decision
 # before that, so mean_i_c_early averages t = 6..9, not 1..9.
+
+# Moments that are MEANS OF LOGS. Their residual is already a proportional error -- a
+# log difference of 0.05 IS a 5% error in the level -- so it must NOT be divided by the
+# target the way a level moment is.
+#
+# WHY THIS MATTERS. Dividing by the target puts level moments on a proportional footing,
+# which is right for them. For a log moment it divides by the arbitrary level of the log:
+# `x_gach` is a log W-score, so the target is ~6.1, and the residual gets shrunk 6.1x
+# before squaring. MEASURED at the incumbent: the model's human capital was +60.2% in
+# LEVELS and the objective scored it as a 7.7% miss. The HC moments carried 13.9% of
+# R_0's identifying leverage -- and R_0 is in the estimated set precisely to fix the HC
+# level. On the units-free scale below that becomes 86.1%, the residual Jacobian's
+# condition number falls 162 -> 49, and its smallest singular value is 3.4x stronger.
+#
+# The scaling was also arbitrary in the literal sense: index HC to 1 instead of W-scores
+# and log HC ~ 0, the 0.05 floor binds, and these two moments get ~150x MORE weight than
+# they had. A moment's weight must not depend on the units its log happens to be in.
+const SMM_LOG_MOMENTS = ("mean_hc_early", "mean_hc_late")
+
+"""
+    moment_scale(k, mhat) -> Float64
+
+Denominator of moment `k`'s residual. Level moments are scaled by their own target so
+every moment is measured in proportional error; log moments are already proportional and
+are scaled by 1. The 0.05 floor stops a near-zero level target from exploding the ratio.
+"""
+moment_scale(k, mhat) = k in SMM_LOG_MOMENTS ? 1.0 : max(abs(mhat), 0.05)
 
 # A failed solve must return a large FINITE value, never Inf or an exception:
 # a derivative-free local search needs to be able to form a descent direction
@@ -258,10 +304,29 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
     # The child only chooses study time from T_CHILD_VOICE; before that sim_i is not a
     # decision. Match the generator, which selects Child_Age >= 6 for the early group.
     early_i = T_CHILD_VOICE:SMM_AGE_SPLIT
-    nanmean(v) = (w = filter(isfinite, v); isempty(w) ? NaN : mean(w))
+    # HC is observed from age 3 only -- see SMM_AGE_HC_LO.
+    early_hc = SMM_AGE_HC_LO:SMM_AGE_SPLIT
+
+    # Non-finite entries are COUNTED, not silently dropped. Filtering them was the more
+    # dangerous half of a NaN: a single bad cell used to vanish into a perfectly finite
+    # mean, so a simulation that had partly failed reported an ordinary-looking fit.
+    # VERIFIED: injecting one NaN into sim_c still returned mean_c_p = 3.703901. The
+    # count travels with the moments and smm_objective refuses the draw if it is non-zero.
+    n_bad = Ref(0)
+    function nanmean(v)
+        w = filter(isfinite, v)
+        n_bad[] += length(v) - length(w)
+        isempty(w) ? NaN : mean(w)
+    end
     # log HC, and the mean of the agent-level LOGS -- the data's x_gach is a mean of logs,
     # and log(mean) differs from mean(log) by a Jensen term that moves with age.
-    loghc(rng) = nanmean(vec(log.(max.(p.sim_hc[:, rng], 1e-12))))
+    # Non-positive HC is a failure, not something to floor away, so it is counted here too.
+    function loghc(rng)
+        v = vec(p.sim_hc[:, rng])
+        n_bad[] += count(x -> !(isfinite(x) && x > 0), v)
+        w = filter(x -> isfinite(x) && x > 0, v)
+        isempty(w) ? NaN : mean(log.(w))
+    end
 
     c = nanmean(vec(p.sim_c[:, cols]))
     e = nanmean(vec(p.sim_e[:, cols]))            # pooled: reported, not targeted
@@ -277,8 +342,9 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
             mean_e_p_late  = nanmean(vec(p.sim_e[:, late])),
             mean_i_c_early = nanmean(vec(p.sim_i[:, early_i])),
             mean_i_c_late  = nanmean(vec(p.sim_i[:, late])),
-            mean_hc_early  = loghc(early),
-            mean_hc_late   = loghc(late))
+            mean_hc_early  = loghc(early_hc),
+            mean_hc_late   = loghc(late),
+            n_nonfinite    = n_bad[])
 end
 
 """
@@ -294,11 +360,24 @@ function moment_diagnostics(p::Parent_child_interaction_age_specific_AR1)
     c   = nanmean(vec(p.sim_c[:, cols]))
     e   = nanmean(vec(p.sim_e[:, cols]))
     res = inc + p.y
+
+    # GRID COVERAGE. Policies are interpolated with Flat() extrapolation, so a simulated
+    # state above the solved grid silently reuses the policy at the top node. That is
+    # defensible for a thin tail and indefensible if the mass moves out there, so it is
+    # measured rather than assumed -- and split by WHERE it comes from, which is the part
+    # that decides what to do about it.
+    a_hi = maximum(p.a_grid)
+    A    = p.sim_a[:, cols]
+    frac_hi   = mean(A .> a_hi)
+    frac_hi_1 = mean(p.sim_a[:, 1] .> a_hi) * (1 / length(cols))   # t = 1's share of all cells
     return (income = inc, resources = res,
             saving_rate = (res - c - e) / res,
             terminal_assets = nanmean(p.sim_a[:, p.T + 1]),
             h_p = nanmean(vec(p.sim_h[:, cols])),
-            t_p = nanmean(vec(p.sim_t[:, cols])))
+            t_p = nanmean(vec(p.sim_t[:, cols])),
+            a_above_grid = frac_hi,
+            a_above_grid_t1 = frac_hi_1,
+            a_max_sim = maximum(A), a_grid_max = a_hi)
 end
 
 # -----------------------------------------------------------------------------
@@ -372,22 +451,32 @@ const SMM_PARAMS = [
     SMMParam(:sigma_2_0, -5.0, -0.5,  :level), # HC elasticity to MONEY, level
     SMMParam(:sigma_2_1, -0.05, 0.05, :level), #   ... and its age slope
     SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # HC elasticity to the CHILD'S own study
-    # sigma_4_1 is DELIBERATELY ABSENT. The child's study FOC is driven by the ratio
-    #     sigma_4_t / [(1 - mu_t) * lambda_1],     sigma_4_t = exp(sigma_4_0 + sigma_4_1(t-1))
-    # and with lambda_1 = 1 the denominator is just (1 - mu_t) = 1 - mu_0 - mu_1(t-5).
-    # So sigma_4_1 and mu_1 BOTH bend the same ratio with age: the study-time profile
-    # cannot identify both, and estimating the pair would put the optimizer on a ridge.
-    # mu_1 is a welfare weight fixed by the model's structure, so the TECHNOLOGY slope is
-    # the one dropped -- sigma_4 is held flat in t. Restore it only by fixing mu_1 first.
+    # sigma_4_1 IS NOT ESTIMATED -- and note it is NOT ZERO either. It keeps its
+    # PARENT_DEFAULTS value of 0.02, so sigma_4 RISES 24.6% over ages 6-17
+    # (0.01133 -> 0.01412, measured). An earlier version of this comment claimed
+    # "sigma_4 is held flat in t"; that was false, and it had reached the advisor memo
+    # before it was caught. State what the code does.
+    #
+    # Why it is not estimated. The child's study FOC is driven by the ratio
+    #     sigma_4_t / [(1 - mu_t) * lambda_1],   sigma_4_t = exp(sigma_4_0 + sigma_4_1(t-5))
+    # and with mu_0 = 1 and lambda_1 = 1 the denominator is exactly -mu_1*(t-5). Both
+    # parameters therefore scale the SAME (t-5) term, one inside the numerator's exponent
+    # and one in the denominator, so the study-time age profile cannot identify both --
+    # an optimizer given the pair sits on a ridge.
+    #
+    # mu_1 is not estimated either (it holds at -0.04), so the age profile of study time
+    # is at present an assumption on BOTH sides rather than an estimate. Which of the two
+    # to free is an open question with the advisor; do not resolve it here.
 ]
 
-# Just-identified: one parameter per targeted moment. Keep it that way, or decide
-# deliberately not to -- an over-identified system needs a weighting matrix, and
-# Q can no longer reach 0, which changes how every number below is read.
-length(SMM_PARAMS) == length(SMM_MOMENTS) || @warn """
-    SMM is no longer just-identified: $(length(SMM_PARAMS)) parameters against \
-    $(length(SMM_MOMENTS)) moments. Equal weights are then a real assumption, \
-    not a harmless one."""
+# Over-identification is now DELIBERATE (ten moments, nine parameters) and is explained
+# in the header, so it is no longer warned about on every worker at every startup. What
+# would be a real error is the other direction: fewer moments than parameters cannot be
+# estimated at all, so that fails loudly.
+length(SMM_MOMENTS) >= length(SMM_PARAMS) || error("""
+    SMM is UNDER-identified: $(length(SMM_PARAMS)) parameters against \
+    $(length(SMM_MOMENTS)) moments. Add moments or drop parameters -- the search would
+    otherwise wander along a flat direction and return whichever point it started at.""")
 
 # INVARIANT -- the single assumption that makes this estimation affordable.
 #
@@ -445,17 +534,19 @@ incumbent() = [to_search(getfield(PARENT_DEFAULTS, q.name), q) for q in SMM_PARA
 
 Weighted relative distance between simulated and data means:
 
-    Q = sum_j w_j * ((m_j - mhat_j) / s_j)^2,     s_j = max(|mhat_j|, 0.05)
+    Q = sum_j ((m_j - mhat_j) / s_j)^2,     s_j = moment_scale(j, mhat_j)
 
-Scaling by the target puts every moment on a comparable footing regardless of
-units -- without it, consumption (~3) would dominate leisure (~0.5) purely
-because of its size. The 0.05 floor stops a near-zero target from exploding the
-ratio.
+`s_j` is the target for a LEVEL moment and 1 for a LOG moment, so every residual is a
+proportional error in the underlying quantity -- see moment_scale. Without the level
+scaling, consumption (~3) would dominate leisure (~0.5) purely because of its size;
+without the log exception, the two HC moments were shrunk 6.1x by the arbitrary level
+of a log W-score.
 
-Weights are EQUAL. With three moments and three parameters the system is
-just-identified, so at the optimum the weights do not change the answer; equal
-weights are then the choice that adds no unexamined assumption. (They would
-matter for over-identified runs, e.g. once SDs are added.)
+Weights are otherwise EQUAL, and that is now a real assumption rather than a harmless
+one: the estimator is OVER-IDENTIFIED, ten moments against nine parameters, so Q cannot
+reach zero and the weighting does change the answer at the optimum. Equal weights are
+the choice that adds nothing unexamined, not a choice that is free. A covariance-based
+weighting matrix is the principled successor and is not implemented.
 
 Common random numbers: every model is built with the same `seed`, so the initial
 draws and shock paths are identical across evaluations. Without this the
@@ -502,13 +593,20 @@ function smm_objective(z::AbstractVector{Float64}, targets, V_child;
         end
         m = model_moments(p)
 
+        # A simulation with non-finite or non-positive cells is not a bad parameter draw,
+        # it is an invalid evaluation. Scoring it would let a partly-failed simulation
+        # compete on the strength of the cells that happened to survive.
+        if m.n_nonfinite > 0
+            _penalize!(:nonfinite_sim)
+            return SMM_PENALTY
+        end
+
         q = 0.0
         for k in SMM_MOMENTS
             mhat = targets[k].mean
             mj   = getfield(m, Symbol(k))
             isfinite(mj) || return SMM_PENALTY
-            s = max(abs(mhat), 0.05)
-            q += ((mj - mhat) / s)^2
+            q += ((mj - mhat) / moment_scale(k, mhat))^2
         end
         return q
     catch err
@@ -576,11 +674,19 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
     println(out, "\nTargeted moments")
     println(out, "-"^76)
     @printf(out, "  %-10s %10s %10s %9s   %s\n", "moment", "model", "data", "gap %", "source")
+    q_tot = 0.0
     for k in SMM_MOMENTS
         mj, mhat = getfield(m, Symbol(k)), targets[k].mean
+        q_tot += ((mj - mhat) / moment_scale(k, mhat))^2
+        # For a log moment the "gap %" is the LEVEL gap, exp(dlog) - 1, not the gap in
+        # the log -- reporting the latter is what made a 60% error in human capital look
+        # like a 7.7% miss.
+        gap = k in SMM_LOG_MOMENTS ? 100*(exp(mj - mhat) - 1) : 100*(mj - mhat)/abs(mhat)
         @printf(out, "  %-10s %10.4f %10.4f %8.1f%%   %s\n",
-                k, mj, mhat, 100*(mj - mhat)/abs(mhat), targets[k].source)
+                k, mj, mhat, gap, targets[k].source)
     end
+    @printf(out, "  %-10s %10s %10s %8.4f    (gap %% is in LEVELS for log moments)\n",
+            "Q", "", "", q_tot)
     # Same numbers in the units the data was collected in, because "0.53" is
     # hard to sanity-check and "59 hours a week" is not.
     @printf(out, "\n  c_p        %8.0f USD/yr  vs data %.0f\n",
@@ -624,5 +730,15 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
             d.terminal_assets*DOLLARS_PER_MODEL_UNIT)
     @printf(out, "  leisure l_p           %8.4f  (%.1f hrs/wk)\n",
             1 - d.h_p - d.t_p, (1 - d.h_p - d.t_p)*HOURS_PER_WEEK)
+    @printf(out, "  non-finite sim cells  %8d\n", m.n_nonfinite)
+    # Reported, NOT clamped. sim_a_init is LogNormal(0.296, 1.402); its upper tail simply
+    # runs past a_max, so clamping the draw would distort the initial wealth distribution
+    # to flatter a grid. The choice is between widening a_max (which, under the <= 30 node
+    # cap, coarsens the region where the mass actually sits) and accepting flat
+    # extrapolation for a thin tail. Left open deliberately -- see docs/REVIEW_TRIAGE.md.
+    @printf(out, "  assets above a_max    %8.3f%% of cells (max %.1f vs grid %.0f)\n",
+            100*d.a_above_grid, d.a_max_sim, d.a_grid_max)
+    @printf(out, "     of which from t=1  %8.3f%%  (initial-wealth tail, not a transition)\n",
+            100*d.a_above_grid_t1)
     return (moments = m, diagnostics = d, params = kw)
 end
