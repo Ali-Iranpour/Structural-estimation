@@ -11,6 +11,10 @@
 # Everything this run produces goes to output/smm_runs/<timestamp>/ :
 #     run.log         the full console transcript, exactly as it appeared
 #     estimates.toml  the estimated parameters, the fit, and the budget that made it
+#     checkpoint.toml the best point SO FAR, rewritten on every improvement, and
+#                     deleted once estimates.toml lands. If you see one without an
+#                     estimates.toml beside it, that run was killed or died -- the
+#                     parameters in it are still usable.
 #
 # -----------------------------------------------------------------------------
 # PARALLELISM, AND WHY ONLY HALF THE RUN IS PARALLEL
@@ -423,6 +427,58 @@ lo, hi = search_bounds()
 t_start = time()
 elapsed() = (time() - t_start) / 60
 
+# -----------------------------------------------------------------------------
+# Checkpointing the incumbent best
+# -----------------------------------------------------------------------------
+# estimates.toml is written once, at the very end. run.log carries Q on every line
+# but NEVER the point that achieved it, so a run killed at hour 60 of 80 used to
+# lose the parameters outright -- you knew the score and not the answer. tiktak's
+# `on_improve` hands us the point each time the incumbent improves; this writes it
+# out, so stopping early (or crashing) costs at most the restart in progress.
+#
+# Improvements are rare -- tens of them across a full run -- so writing a whole
+# file each time is free next to a ~12 s objective evaluation.
+#
+# Written to .tmp and RENAMED into place: rename is atomic on POSIX, so a crash
+# mid-write can never replace a good checkpoint with a truncated one. Reading the
+# file while a write is in flight gets the old checkpoint, never a partial line.
+#
+# Failures here are swallowed. A full disk must not be able to kill an 80-hour
+# estimation -- same rule the progress channel follows above.
+const CKPT = joinpath(RUN_DIR, "checkpoint.toml")
+function write_checkpoint(j::Int, z::Vector{Float64}, q::Float64)
+    try
+        stage = j == 0 ? "sobol" : j < 0 ? "polish" : "restart $j of $N_RESTART"
+        est_  = unpack(z)
+        tmp   = CKPT * ".tmp"
+        open(tmp, "w") do io
+            println(io, "# INCUMBENT BEST SO FAR -- rewritten by code/smm/run_smm.jl on")
+            println(io, "# every improvement. The run had NOT finished when this was")
+            println(io, "# written; estimates.toml supersedes it and this file is then")
+            println(io, "# removed. Q_best is pre-polish unless stage = \"polish\".")
+            println(io, "status     = \"in-progress\"")
+            println(io, "stage      = \"", stage, "\"")
+            println(io, "updated    = \"", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"), "\"")
+            println(io, "git_commit = \"", git_sha(), "\"")
+            println(io, "targets    = \"Input/smm_targets_baseline.toml\"")
+            println(io, "n_sobol    = ", N_SOBOL)
+            println(io, "n_restarts = ", N_RESTART)
+            println(io, "minutes    = ", round(elapsed(), digits = 1))
+            println(io, "Q_best     = ", q)
+            println(io, "Q_incumbent= ", q0)
+            println(io, "\n[parameters]")
+            for qp in SMM_PARAMS
+                @printf(io, "%-10s = %.8f   # was %.8f\n", qp.name,
+                        getfield(est_, qp.name), getfield(PARENT_DEFAULTS, qp.name))
+            end
+        end
+        mv(tmp, CKPT; force = true)
+    catch err
+        say("  (checkpoint not written: $err)")
+    end
+    return
+end
+
 const USE_PMAP = !(SERIAL || nprocs() == 1)
 TRACKER.trun = time()
 stage!(:sobol, N_SOBOL_EVAL)
@@ -461,7 +517,8 @@ result = tiktak(objective_tracked, lo, hi;
                          j, ns, fl, best, elapsed(), eta)
                     TRACKER.restart = min(j + 1, ns)
                     TRACKER.done = 0                 # eval counter restarts with the search
-                end)
+                end,
+                on_improve = write_checkpoint)
 
 banner(@sprintf("Finished in %.1f min -- %d evaluations", elapsed(), result.n_eval))
 sayf("Q: sobol-best %.6g  ->  pre-polish %.6g  ->  final %.6g\n",
@@ -552,4 +609,7 @@ end
 say("")
 sayf("wrote %s\n", short(joinpath(RUN_DIR, "estimates.toml")))
 sayf("wrote %s\n", short(joinpath(RUN_DIR, "run.log")))
+# The checkpoint existed only to survive an interrupted run. Now that estimates.toml
+# is on disk, leaving it would be a second, staler answer next to the real one.
+isfile(CKPT) && rm(CKPT; force = true)
 close(LOG)
