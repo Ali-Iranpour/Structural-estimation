@@ -454,10 +454,16 @@ def write_by_age():
     # is what the estimation reads. They were previously written in the same pass with no
     # guard, so when Input/ carried a .dta that lacked a column the script crashed AFTER
     # writing the targets -- leaving a non-zero exit on a run that had in fact succeeded at
-    # its main job. Measured 2026-09-06: SMM_Moments_ByAge.dta has no `mu_assets_real`
-    # column and SMM_Moments_ByAge_Cohort.dta is not in Input/ at all, so BOTH by-age
-    # outputs are stale relative to the .dta files actually present. The committed CSVs
-    # were generated from a newer extract that is not in the repository.
+    # its main job.
+    #
+    # The guard stays; the diagnosis that motivated it was WRONG and is corrected here so
+    # nobody acts on it again. Re-checked 2026-09-06 against the .dta files in this
+    # repository: SMM_Moments_ByAge.dta DOES have `mu_assets_real` (both by-age files
+    # carry the full mu_/sd_/md_/wmu_ asset set), SMM_Moments_ByAge_Cohort.dta IS in
+    # Input/, and regenerating both CSVs reproduces the committed ones byte for byte --
+    # they are current, not stale. The crash came from an environment that did not have
+    # the .dta files, because `Input/*.dta` was gitignored until this commit; a fresh
+    # clone had no by-age inputs at all.
     #
     # Skipping loudly is the honest behaviour: the CSVs on disk are left untouched and
     # named as stale, rather than half-rewritten or silently accepted.

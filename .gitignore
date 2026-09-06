@@ -29,9 +29,15 @@ output/data/smm_estimates.toml
 # Jacobians, standard errors and sensitivity curves the review asked to be reproducible
 # artefacts rather than recollections. They are small text and CSV.
 
-# Input: the Stata moment files are large and regenerable; the small
-# generated targets file IS tracked, because run_smm.jl needs it.
-Input/*.dta
+# Input: the Stata moment files are TRACKED (instruction 2026-09-06) so that a fresh
+# clone -- the server in particular -- can regenerate the by-age CSVs without a separate
+# file transfer. ~6.3 MB in total. The generated targets file is tracked too, because
+# run_smm.jl needs it and must not require Stata.
+#
+# NOTE: this repository is PUBLIC, and these are PSID/CDS microdata --
+# SMM_Moments_Micro.dta is individual-level (16,043 rows). Check the redistribution terms
+# of the data agreement before pushing them. Git history is permanent: deleting a file in
+# a later commit does not remove it from history, from existing clones, or from forks.
 temp/
 output/tables/
 output/figures/
