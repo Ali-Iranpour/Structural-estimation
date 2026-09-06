@@ -421,11 +421,6 @@ function Parent_child_interaction_age_specific_AR1(;
     sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 :
                       exp(sigma_4_0 + sigma_4_1 * (t - (T_CHILD_VOICE - 1))) for t in 1:T]
 
-    
-    #sigma_1_vector = [0.10 for t in 1:T]  # very small, but constant
-    #sigma_2_vector = [0.10 + 0.01*(t-1) for t in 1:T] # slowly rising
-    #sigma_3_vector = [0.30 for t in 1:T]  # moderate persistence
-    #sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 : 0.10 + 0.01*(t-T_CHILD_VOICE) for t in 1:T]
 
     # Self-productivity must stay BELOW ONE. HC_{t+1} = R * inputs * HC_t^sigma_3, so
     # sigma_3 >= 1 makes the recursion explosive and the model has no bounded solution --

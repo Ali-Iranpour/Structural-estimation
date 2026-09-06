@@ -137,6 +137,16 @@ struct TikTakResult
     polish_ret::Symbol           # :FTOL_REACHED, :MAXEVAL_REACHED, :EXCEPTION, :SKIPPED...
     polish_improved::Bool        # did the polish actually move the incumbent?
     n_eval_polish::Int           # evaluations spent in the polish alone
+    # WHICH SEARCH PRODUCED THE POINT IN `x`, and how THAT search ended.
+    #
+    # Acceptance is a statement about the RETAINED WINNER, not about the population of
+    # restarts. "Some restart converged" says nothing about the point actually returned:
+    # the winner may have come from a restart that exhausted `maxeval`, or from the polish,
+    # or -- if every local search failed to improve -- straight from the Sobol stage with
+    # no local refinement at all. Reporting `winner_ret` makes that checkable.
+    winner_stage::Symbol         # :sobol, :local or :polish
+    winner_j::Int                # which restart, when winner_stage === :local; else 0
+    winner_ret::Symbol           # the return code of THAT search
 end
 
 """
@@ -199,7 +209,8 @@ failures into a finite penalty), so it is reported, not swallowed.
 """
 function _local_search(f, x0::Vector{Float64}, lo::Vector{Float64}, hi::Vector{Float64},
                        alg::Symbol, tol::Float64, maxeval::Int,
-                       ftol_abs_::Float64, xtol_rel_::Float64, fstart::Float64)
+                       ftol_abs_::Float64, xtol_rel_::Float64, fstart::Float64,
+                       on_error::Symbol = :rethrow)
     opt = Opt(alg, length(lo))
     lower_bounds!(opt, lo); upper_bounds!(opt, hi)
     ftol_rel!(opt, tol); maxeval!(opt, maxeval)
@@ -213,6 +224,7 @@ function _local_search(f, x0::Vector{Float64}, lo::Vector{Float64}, hi::Vector{F
         (floc, xloc, ret) = optimize(opt, x0)
         return (floc, xloc, nev[], ret, nothing)
     catch e
+        on_error === :rethrow && rethrow()
         # Information, not a fatal error -- but not invisible either.
         return (fstart, x0, nev[], :EXCEPTION, e)
     end
@@ -265,6 +277,17 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 polish_maxeval::Int = 4000, polish_ftol_abs::Float64 = 1e-14,
                 extra_seeds::Vector{Vector{Float64}} = Vector{Vector{Float64}}(),
                 stop_tol::Float64 = 0.0,
+                # A4. What to do when `f` THROWS.
+                #
+                # `:rethrow` (the default) stops the run and shows the error. That is right
+                # for this project: smm_objective already converts every EXPECTED model
+                # failure into a finite penalty and re-throws only genuine bugs, so an
+                # exception arriving here is a coding error, and continuing past it would
+                # silently discard restarts and finish looking converged.
+                #
+                # `:discard` restores the old behaviour -- count it, warn, drop the point
+                # and carry on -- for a caller whose objective cannot make that guarantee.
+                on_error::Symbol = :rethrow,
                 # RESUME. Pass `(seeds, f_sobol_best, Z, fZ, j_start)` to skip the global
                 # stage entirely and re-enter the local stage at restart `j_start` with
                 # `Z`/`fZ` as the incumbent. This is exact continuation, not a warm start:
@@ -295,13 +318,18 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 on_sobol = (i, N, fx, best) -> nothing,
                 # `best_x` is the incumbent MINIMISER, not just its value: without it a
                 # caller cannot checkpoint, and a 20-hour run that dies has nothing to
-                # resume from.
-                on_local = (j, Nstar, theta, f_local, best, best_x) -> nothing)
+                # resume from. `row` is this restart's full trace entry -- start value,
+                # local value, whether it improved, and ITS OWN return code -- so a caller
+                # can write a per-restart record as the run goes rather than only at the
+                # end, which is the half that a killed run loses.
+                on_local = (j, Nstar, theta, f_local, best, best_x, row) -> nothing)
 
     length(lo) == length(hi) || error("lo and hi must have the same length")
     all(lo .< hi) || error("every lo must be strictly below its hi")
     resume !== nothing || 1 <= Nstar <= N + length(extra_seeds) ||
         error("need 1 <= Nstar <= N + #extra_seeds")
+    on_error in (:rethrow, :discard) ||
+        error("on_error must be :rethrow or :discard, got :$on_error")
     parallel || batch <= 1 || error("""
         batch = $batch was requested with parallel = false. The local stage would run on
         Threads.@threads while the caller believes threading is off. Pass parallel = true
@@ -320,6 +348,14 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     cands = resume === nothing ? sobol_points(lo, hi, N) : Vector{Vector{Float64}}()
     resume === nothing && append!(cands, [clamp.(s, lo, hi) for s in extra_seeds])
     fs = Vector{Float64}(undef, length(cands))
+    # `on_error` has to mean the same thing at EVERY stage. The pre-testing loop called
+    # `f` bare, so with `:discard` a throw there still killed the run while the same throw
+    # in a local search was discarded -- caught by code/smm/selftest.jl. Under `:rethrow`
+    # (the default, and what this project uses) `f_pre` IS `f` and a coding error still
+    # stops the run, which is the point.
+    n_pre_discarded = Ref(0)
+    f_pre = on_error === :rethrow ? f :
+            (x -> try f(x) catch; n_pre_discarded[] += 1; Inf end)
     if resume !== nothing
         # nothing to do: the seeds already are the surviving pre-tested points
     elseif parallel
@@ -327,7 +363,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
         plock = ReentrantLock()
         best_so_far = Ref(Inf)
         Threads.@threads for i in eachindex(cands)
-            v = f(cands[i]); fs[i] = v
+            v = f_pre(cands[i]); fs[i] = v
             k = Threads.atomic_add!(done, 1) + 1
             lock(plock) do
                 v < best_so_far[] && (best_so_far[] = v)
@@ -339,7 +375,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
         # Distributed (or any user-supplied map). Evaluated as one batch, so the
         # progress callback fires afterwards rather than during -- a worker process
         # cannot write into this process's closure.
-        fs .= map_fn(f, cands)
+        fs .= map_fn(f_pre, cands)
         n_eval += length(cands)
         best_so_far = Inf
         for (i, v) in pairs(fs)
@@ -349,7 +385,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     else
         best_so_far = Inf
         for (i, x) in pairs(cands)
-            fs[i] = f(x); n_eval += 1
+            fs[i] = f_pre(x); n_eval += 1
             fs[i] < best_so_far && (best_so_far = fs[i])
             on_sobol(i, length(cands), fs[i], best_so_far)
         end
@@ -357,6 +393,12 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     local seeds::Vector{Vector{Float64}}, f_sobol_best::Float64
     if resume === nothing
         order = sortperm(fs)                  # ascending: f(s_1) <= ... <= f(s_N*)
+        n_finite = count(isfinite, fs)
+        n_finite >= 1 || error(
+            "every one of the $(length(cands)) pre-testing points failed to evaluate" *
+            (n_pre_discarded[] > 0 ? " ($(n_pre_discarded[]) threw and were discarded)" : "") *
+            ". There is nothing to seed the local stage with.")
+        n_finite >= Nstar || @warn "fewer finite pre-testing values than restarts" n_finite Nstar
         seeds = [cands[k] for k in order[1:Nstar]]
         f_sobol_best = fs[order[1]]
         on_seeds(seeds, f_sobol_best)
@@ -368,6 +410,12 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     # ---- local stage --------------------------------------------------------
     Z, fZ = resume === nothing ? (copy(seeds[1]), f_sobol_best) :
                                  (copy(resume.Z), resume.fZ)
+    # Provenance of the incumbent. Before any local search runs the incumbent IS the best
+    # Sobol point, which has no return code of its own -- :SOBOL_ONLY says exactly that,
+    # and it survives to the end if no local search ever improves on it.
+    winner_stage = resume === nothing ? :sobol : :resumed
+    winner_j     = 0
+    winner_ret   = resume === nothing ? :SOBOL_ONLY : :RESUMED
     trace = NamedTuple{(:j, :theta, :f_start, :f_local, :improved, :ret),
                        Tuple{Int,Float64,Float64,Float64,Bool,Symbol}}[]
     fZ_prev_distinct = Inf
@@ -393,6 +441,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             fstart, seed_err = try
                 (f(x0), nothing)
             catch e
+                on_error === :rethrow && rethrow()
                 (Inf, e)
             end
             if seed_err !== nothing
@@ -402,7 +451,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             end
             floc, xloc, nev, ret, err = _local_search(f, x0, lo, hi, local_alg, local_tol,
                                                       local_maxeval, local_ftol_abs,
-                                                      local_xtol_rel, fstart)
+                                                      local_xtol_rel, fstart, on_error)
             results[m] = (jj = jj, theta = theta, fstart = fstart, floc = floc,
                           xloc = xloc, nev = nev + 1, ret = ret, err = err)
         end
@@ -419,6 +468,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             if improved
                 fZ_prev_distinct = fZ
                 Z, fZ = copy(res.xloc), res.floc
+                winner_stage, winner_j, winner_ret = :local, res.jj, res.ret
             end
             if res.err !== nothing
                 # Reaching here means `f` threw something it did not classify. The SMM
@@ -428,9 +478,10 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 n_exception += 1
                 @warn "local search $(res.jj) threw; the point was discarded" exception = res.err
             end
-            push!(trace, (j = res.jj, theta = res.theta, f_start = res.fstart,
-                          f_local = res.floc, improved = improved, ret = res.ret))
-            on_local(res.jj, Nstar, res.theta, res.floc, fZ, Z)
+            row = (j = res.jj, theta = res.theta, f_start = res.fstart,
+                   f_local = res.floc, improved = improved, ret = res.ret)
+            push!(trace, row)
+            on_local(res.jj, Nstar, res.theta, res.floc, fZ, Z, row)
             if stop_tol > 0 && improved && isfinite(fZ_prev_distinct) &&
                abs(fZ - fZ_prev_distinct) < stop_tol
                 stop = true
@@ -458,15 +509,18 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
         if isfinite(fp) && fp < fZ
             Z, fZ = copy(xp), fp
             polish_improved = true
+            winner_stage, winner_j, winner_ret = :polish, 0, retp
         end
     catch e
+        on_error === :rethrow && rethrow()
         n_exception += 1
         polish_ret = :EXCEPTION
         @warn "polishing search threw; the pre-polish point was kept" exception = e
     end
 
     return TikTakResult(Z, fZ, n_eval, f_sobol_best, f_prepolish, trace, n_exception,
-                        polish_ret, polish_improved, n_polish[])
+                        polish_ret, polish_improved, n_polish[],
+                        winner_stage, winner_j, winner_ret)
 end
 
 """

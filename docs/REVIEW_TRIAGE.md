@@ -1,11 +1,250 @@
 # Estimation review — current status and remaining work
 
-## Current assessment — 6 September 2026, code at `dca7980` + this pass
+## Launch-readiness audit — 6 September 2026
 
-Everything in Tiers 0, 1 and 2 has now been worked. **Tier 3 was deliberately left
-untouched** (instruction, 2026-09-06). This section is the record of what changed, what was
-measured, and what is still genuinely open; the historical review below is retained
-unchanged as a record and is **not** a launch checklist.
+**No: the comments through Tier 2 are not all fully resolved.** The previous assessment
+below overstates completion. Several fixes reproduce, but there are still executable bugs
+in validity checking, acceptance, resume, derivatives, inference and the notebook. A
+completed pilot or a delivered script is not equivalent to a validated fitted result.
+
+This audit covers `HEAD = 1b0211a` **plus the existing working-tree edits**, notably the
+new `R_0` search box `[0.5, 100]`. It updates this document only; it does not implement the
+newly identified fixes or launch the requested estimation. Existing code edits are retained.
+The previous pass's measurements remain evidence for their stated calibration and settings,
+not certification of every point in the current search box.
+
+**Recommended order:** close A1–A5 before the unattended production run; obtain a fitted
+baseline; close A6–A10 before using the relevant inference, sensitivity or notebook outputs.
+The Tier 2 analyses that require a fitted baseline necessarily follow that baseline run.
+Tier 3 performance work is not a prerequisite. The historical tier numbering differs from
+the previous implementation summary, so the audit checks both sets of items.
+
+### What was verified in this audit
+
+| Item | Current evidence and verdict |
+|---|---|
+| HC residual scaling and age coverage | `moment_scale` gives log-HC residuals scale 1; both sides use ages 3–9 for early HC. Equal-age target means regenerated from the local microdata match all ten saved means exactly. |
+| Clustered data-moment covariance | Regenerated all entries of `[moment_cov].cov`; maximum absolute difference from the saved target file is **0**, with **1,633 families**. This verifies reproducibility, not every assumption needed for inference. |
+| Parent calibration and grid diagnostics | Fresh solve with parent `Na=Nhc=30`, `Nk=2`, child `Na=Nk=30`, `Nt=5`, `simN=2000`, seed 1234: **0 reported domain violations**. `mean_c_p=3.702105983`, mean parental time `0.358540878`, `mean_e_p=0.334351662`. Assets: 2 households above the ceiling initially, 7 at handoff, maximum **259.0383** against 100. HC range **297.6691–1103.7585**, within `[50,1500]`. |
+| Expected continuation and combined value/gradient | `continuation_selftest()` passes at 2,000 random points: combined-call difference **0**, expected-continuation difference **1.332e-15**. Performance timings below were not re-benchmarked in this audit. |
+| Parental-education continuation | Family coefficient and offset-before-max are present; parent type selects the corresponding surface. At the full child grid, finite `V(bc=1)-V(bc=0)` differences take **19 distinct values** after rounding to 10 decimals. The earlier six-value measurement used a smaller grid. |
+| TikTak optimizer ownership and threading guard | Separate local `Opt` objects and the `parallel=false`/`batch>1` rejection remain implemented. |
+| Full-grid result storage and legacy script | Runner stores `Q_search` and `Q_final` separately and checkpoints the final point. Legacy `code/smm.jl` is archived. Resume of that final checkpoint and the notebook repairs remain incomplete; see A3 and A10. |
+
+Checks used Julia 1.11.9, one Julia/BLAS thread per diagnostic process, and the existing
+Python environment. The registered Julia MCP tool was unavailable in this session, so
+bounded CLI diagnostics were used. Synthetic checks below execute the actual source
+functions/acceptance expression with controlled inputs; they are not estimation results.
+The full sensitivity exercise, production search and complete notebook were not executed.
+
+### Before the production rerun
+
+**A1 — OPEN, validity: terminal human capital escapes the acceptance check.**
+[`moments.jl`, `simulation_violations`](../code/smm/moments.jl#L381) checks assets over
+`1:T+1`, but checks HC only over `1:17`. On the freshly solved calibration, injecting
+`sim_hc[1,18] = -1.0` or `NaN` gives **zero violations**. The same negative value at
+column 1 is caught. Consumption NaN/negative values, invalid hours and negative handoff
+assets were also caught as expected. The omitted HC column is the state passed to the
+child. **Required:** validate finite, strictly positive HC over all `T+1` state columns;
+keep flow checks over `1:T`. Add handoff-specific regression cases and require final
+objective/report agreement. Off-grid coverage diagnostics do not substitute for validity.
+
+**A2 — OPEN, acceptance: convergence is not tied to the returned winner.**
+[`run_smm.jl`, `ACCEPTED`](../code/smm/run_smm.jl#L783) only requires *some* local restart
+to converge, no TikTak exceptions, and no reported final violations. A worse restart can
+converge while the winning restart and improving polish both stop at `MAXEVAL_REACHED`.
+Refinement failure/return status does not enter the gate, and a refinement exception is
+not added to `result.n_exception`. Executing the current acceptance expression on that
+controlled case, including `REFINE.status=:failed`, returns **true**.
+**Required:** preserve which stage/restart produced the winner and its termination status;
+verify convergence at the retained final point on the report grid, finite non-penalty Q,
+full validity, and all-stage exception status. A converged final polish should also be
+recognized even when no earlier restart converged. Test both false acceptance and false
+rejection cases. More Sobol points or restarts alone do not repair this gate.
+
+**A3 — OPEN, resume: continuation is only conditionally exact, and history is lost.**
+[`run_smm.jl`, `checkpoint!` / `load_resume`](../code/smm/run_smm.jl#L492) saves `stage`
+and `objective_grid` but does not read either when resuming. A final/refined checkpoint is
+always fed back into the search-grid TikTak/polish path. A synthetic saved grid-30
+objective was accepted into a grid-20 resume; the resulting `f` remained **−10** while
+re-evaluating its saved point on the test objective gave **0.25**. This is a controlled
+illustration of comparing objectives from different grids, not an observed model Q.
+
+Additionally, [`tiktak.jl`](../code/src/tiktak.jl#L369) resets the trace, evaluation count
+and exception count on resume. Resuming after the last restart produces an empty restart
+trace, hence zero converged restarts, even if the original run converged. Earlier errors
+can disappear from the verdict and cost totals. The loader checks seed dimension, restart
+count and search grid, but not parameter names/order, boxes/links, targets, simulation
+settings, child grid, solver settings or code identity. The changed `R_0` box has the same
+parameter count and would pass those checks.
+
+**Required:** implement stage-aware resume, retain distinct search/final checkpoints and
+cumulative history, and validate a complete run configuration and input/code fingerprints.
+Save restart-0 state as soon as Sobol survivors are saved: currently an interruption before
+the first restart checkpoint still loses a usable resume. Test interrupted versus uninterrupted
+runs, final-stage resume, changed-target/box rejection, and preservation of exceptions and
+convergence counts. **Do not resume an old run into the new `R_0` box.**
+
+**A4 — OPEN, error handling: generic coding errors can be scored as infeasible draws.**
+[`moments.jl`, `smm_objective`](../code/smm/moments.jl) and
+[`sensitivity.jl`, `sens_objective`](../code/smm/sensitivity.jl) catch every
+`ErrorException`, `AssertionError`, `DomainError` and `InexactError` of those types.
+Consequently the earlier claim that unexpected bugs are always rethrown is too strong.
+Replacing the solve with `error("injected unexpected programming bug")` makes the actual
+SMM objective return **1e6** and increment only `:ErrorException`; TikTak cannot count an
+exception that never reaches it. **Required:** distinguish expected model/solver failures
+with explicit failure types or narrowly classified conditions; preserve representative
+messages and stages; rethrow unexpected errors. Regression checks must cover both expected
+infeasibility and injected programming errors, including wrapped NLopt exceptions.
+
+**A5 — OPEN, run evidence: the saved result is not enough to reconstruct or assess the run.**
+[`run_smm.jl`](../code/smm/run_smm.jl) writes aggregate return-code counts, but does not
+persist the per-restart trace, per-restart evaluation counts, full solver budgets/tolerances,
+parameter boxes/links, target snapshot/hash or working-tree patch. A commit marked `-dirty`
+is not a recoverable copy of the code. `n_eval_total` includes optimizer refinement calls
+but omits its initial full-grid evaluation; startup/report solves are also outside the
+reported optimization count, while the penalty counters span a broader set of calls.
+
+**Required before spending the long-run budget:** save an immutable configuration and
+input/source snapshot or hashes with a recoverable code revision; persist each restart's
+start/result, Q, return code, cost and winner provenance. Define optimization-only versus
+all-solve costs explicitly, use matching penalty denominators, and preserve cumulative
+values on resume. For the planned run, record **1,000 Sobol points, 30 restarts and the
+actual local/polish budgets**, rather than relying on defaults remembered later.
+
+### Complete before using the corresponding Tier 2 outputs
+
+**A6 — OPEN, Jacobian: clipping a perturbation changes the denominator.**
+[`jacobian.jl`, `jacobian_at`](../code/smm/jacobian.jl#L197) clamps proposed parameters to
+the box but still divides by `2h`, and writes `difference="central"` unconditionally.
+For the actual function with the linear residual `r(x)=x`, box `[0,1]`, centre `x=1`, and
+step 0.01, the returned derivative is **0.5000000000000004**, although the exact derivative
+is **1**. This matters particularly because the pilot already landed near a bound.
+**Required:** divide by the actual separation in search coordinates, or implement explicit
+one-sided formulas; save effective points/steps and difference type per column. Reject
+invalid/non-finite perturbations instead of merely saving an `invalid_cells` warning and
+continuing inference. Test level and log links at both bounds and in the interior.
+
+**A7 — OPEN, inference: `--at` is ignored, the J-test is absent, and rank is not guarded.**
+[`standard_errors.jl`](../code/smm/standard_errors.jl#L65) parses `ATFILE` but never uses it.
+An invocation with a **nonexistent** `--at` file completes successfully and still reports
+`PARENT_DEFAULTS` from the supplied Jacobian. Passing `--at` neither recentres the Jacobian
+nor enables a J-test; the J-test section only prints explanatory text. To centre SEs on a
+fit, first generate a **new Jacobian with `jacobian.jl --at <fit>`**, then supply that
+Jacobian directory to the SE script. The current script also reads covariance from the
+current targets without checking it against the Jacobian's original target provenance.
+
+The sandwich directly inverts `G'WG` without a parameter-rank guard. Running it on the
+saved **10-moment/11-parameter** Jacobian completed and wrote invalid inference: e.g.
+`se_equal(phi_3)=0`, `se_equal(R_0)≈1.06e7`, and reported correlations far outside `[-1,1]`.
+Clipping negative variance diagonals to zero hides numerical failure.
+**Required:** reject underidentified/rank-deficient or materially non-PSD calculations;
+use stable factorizations; validate fitted-point, grid, target and acceptance provenance.
+Either implement the advertised `--at` validation/J-test correctly or remove the unsupported
+claims. Retain explicit limitations on simulation error and bound-constrained inference.
+The efficient-weight comparison is not evidence that an efficient-weight estimate was run.
+
+**A8 — OPEN, sensitivity: resume and point-status evidence are incomplete.**
+Static inspection of [`sensitivity.jl`](../code/smm/sensitivity.jl#L231) establishes:
+
+- Completed CSV rows are skipped without restoring their parameter vector to `z_prev`.
+  After interruption between +1 and +2 SE, +2 restarts from `Z0`, not the completed +1
+  neighbour. That changes the warm-start path, and also the seed passed to the alternative
+  search. Rows therefore are not independent of the restart history as the comment claims.
+- Resume does not validate the baseline, boxes, targets/scales, grids, seed or budgets;
+  `meta.toml` is written only at the end and overwritten after resume. A partial CSV row
+  is not checked for completeness before being marked done.
+- If the alternative wins, `ret` records `alt.polish_ret`, even when that polish did not
+  produce the retained point. Alternative restart failures/exception counts are discarded.
+  `MAXEVAL_REACHED` and on-bound rows are still saved and skipped on future resume.
+- `--report-grid` is parsed into `GRID_RPT` and never used. At `--grid 20`, the reported
+  curves remain grid-20 results; there is no full-grid reporting/refinement stage.
+
+**Required before the full exercise:** restore neighbour vectors; validate immutable metadata
+at startup; recover incomplete rows; preserve winner provenance, all return codes and
+exceptions; explicitly mark incomplete/nonconverged points and support retrying them.
+Implement the report-grid option or reject unsupported differing grids. Include a solved
+zero-offset baseline/check so optimizer variation can be assessed against perturbation effects.
+The four-point pilot remains a useful machinery test, not validated response curves.
+
+**A9 — OPEN, comparable fitted results: there is no complete comparison command.**
+The previous phrase “`--at` everywhere” is incorrect: `run_smm.jl --report-only` always
+reports `incumbent()` and has no `--at` parser; unknown flags are not rejected. Low-level
+`report_fit(z, ...)` can re-evaluate a supplied vector, but no saved old/new comparison has
+been demonstrated. **Required:** add a checked report/comparison path that loads complete
+parameter vectors, holds corrected targets/grids/seeds fixed, saves moment residuals and
+Q, and detects parameters outside the current box. `unpack` clamps to that box, so naively
+feeding an old out-of-box estimate through it would evaluate a different parameter vector.
+Reject unsupported CLI flags rather than silently ignoring them.
+
+**A10 — OPEN, original Tier 2.4: notebook counterfactual calls still use removed keywords.**
+[`transfer_CRRA_wage.ipynb`](../code/transfer_CRRA_wage.ipynb), code cell ID `5fb821e6`
+(zero-based cell 29), still constructs `model_phi_high_1`, `model_phi_high_2` and
+`model_phi_high_3` with `phi_1_0`, `phi_2_0`, `phi_3_0`. The current constructor accepts
+`phi_1`, `phi_2`, `phi_3`. These are three live calls, not Markdown or commented code;
+the historical “14 call sites” is not the current remaining count. The hardcoded
+“unchanged” values also disagree with `PARENT_DEFAULTS`. **Required:** use current keywords
+and current baseline values for unchanged parameters; check that each intended
+counterfactual actually increases/decreases the named quantity. Then validate those cells
+and update the stale notebook parameter table. This does not block `run_smm.jl`, but it
+prevents declaring all original Tier 2 work complete.
+
+### Numerical choices and the planned 1,000 / 30 run
+
+- **Keep the current nine-parameter baseline explicit.** Choosing not to add a tenth
+  parameter is a recorded baseline decision; evidence for freeing one is still conditional.
+- **The `R_0` box changed.** All four saved identification directories used `[5,300]`,
+  whereas the working code uses `[0.5,100]`. Their box-scaled condition numbers are not
+  measurements under the new box. Recompute at the fitted point with the new bounds and
+  consistent steps. Do not describe the old artifacts as a current-box audit.
+- **Asset-tail accuracy remains unvalidated.** The correct diagnostics reproduce; that
+  does not prove extrapolation harmless. Historical Tier 2.2's initial-wealth clamp was
+  deliberately rejected because it changes the draw. Record a numerical grid-range/node
+  placement sensitivity check within the 30-node cap, including the handoff. Merely
+  widening a numerical grid is not automatically advisor-gated: `CLAUDE.md` explicitly
+  permits numerical grid-bound/interpolation changes. Changes to the economic distribution
+  or specification, and interpretation of results, are separate decisions.
+- **Bounds are diagnostics, not automatic proof of nonconvergence.** The runner's 2%-of-box
+  flag means “near a bound”; it does not establish that a constrained optimum failed to
+  converge or that the box must be widened. Assess constrained optimality and numerical
+  stability, and use inference appropriate to a binding constraint. Likewise `ftol_abs`
+  is in objective units, not scale-free as claimed below.
+- **After fitting:** repeat identification/step stability and grid coverage at the actual
+  estimate, calculate validated uncertainty, run the full sensitivity exercise, compare
+  fitted vectors under identical definitions, and retain the parental-time/leisure and
+  parental-education interpretation caveats before results circulate.
+
+Once the pre-run items above are closed, the requested fresh baseline command is:
+
+```bash
+cd /srv/project/speech/apps/Structural-estimation/code/smm
+julia +1.11 --threads=1 --project=../.. run_smm.jl \
+    --sobol 1000 --restarts 30 --grid 30 --procs 20 \
+    --local-evals 2000 --polish-evals 4000
+```
+
+This selects the full search/report grid, the existing production simulation size of
+2,000, and process-based Sobol parallelism. There are **1,000 Sobol evaluations plus one
+incumbent seed**; the 30 local restarts are sequential. No `--quick` or old-run `--resume`
+is intended. The 20-worker setting is the existing shared-server budget.
+
+**Runtime is not certified by the old pilot.** At the earlier 8.79 seconds/evaluation and
+165 evaluations/restart heuristic, this is about **12.2 hours** with 20 Sobol workers.
+At the stated local/polish caps it could approach **156 hours** at that same evaluation
+speed, before startup/report overhead. These are budget illustrations, not a fresh timing
+measurement or guarantees; inspect actual termination traces and budget the job accordingly.
+Increasing restarts does not establish winner convergence, identification or Tier 2 completion.
+
+---
+
+## Prior implementation assessment — 6 September 2026, code at `dca7980` + that pass
+
+**The launch-readiness audit above supersedes this assessment wherever completion is
+claimed.** This earlier pass implemented substantial portions of Tiers 0, 1 and 2, but
+several claims of complete validity, resume and inference were not sustained by the later
+audit. Tier 3 was deliberately left untouched in that pass (instruction, 2026-09-06).
+The measurements and implementation account below are retained as a record, not a launch
+checklist.
 
 Three things to read before anything else:
 

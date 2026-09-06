@@ -221,6 +221,37 @@ _root_cause(e) =
     e isa TaskFailedException ? _root_cause(e.task.exception) :
     e
 
+# The ONE ErrorException message that is a model failure rather than a bug. `error()` is
+# Julia's generic throw, and this project uses it for a genuine economic refusal -- the
+# solver declining to return a solution built on failed optimizations -- but also, like any
+# code, for programming mistakes. Matching the message is what separates them.
+#
+# A4 (2026-09-06): before this, EVERY ErrorException became SMM_PENALTY = 1e6. A typo that
+# threw `error("...")` anywhere under solve_model! or simulate_model! was scored as "the
+# model cannot live at this parameter draw", so a broken objective could return a converged
+# run with a plausible-looking penalty rate.
+const MODEL_FAILURE_PATTERNS = ("converged (floor", "Refusing to return a solution")
+
+"""
+    is_model_failure(e) -> Bool
+
+Is this exception an EXPECTED model failure (score it) or a programming error (re-throw)?
+
+Expected: a domain error in the technology, an assertion tripped by a NaN iterate from
+SLSQP, a non-finite value narrowed to an Int, and the solver's own convergence refusal.
+Everything else -- MethodError, UndefVarError, BoundsError, and any other `error()` -- is a
+bug and must stay visible.
+"""
+function is_model_failure(e)
+    e isa DomainError    && return true
+    e isa AssertionError && return true
+    e isa InexactError   && return true
+    if e isa ErrorException
+        return any(p -> occursin(p, e.msg), MODEL_FAILURE_PATTERNS)
+    end
+    return false
+end
+
 """
     smm_feasible(kw) -> Bool
 
@@ -374,18 +405,29 @@ Everything finite was accepted, so a simulation could report an ordinary-looking
 economically impossible paths. A negative consumption is not a bad parameter draw with a
 large objective -- it is a solve that failed, and it must be refused, not scored.
 
-Assets are checked over ALL T+1 columns. Column T+1 is the terminal state that becomes
-the child's initial assets at the handoff, so excluding it hides exactly the column that
-propagates into the next block.
+Assets AND human capital are checked over ALL T+1 columns. Column T+1 is the terminal
+state at the age-18 handoff: `sim_a[:, T+1]` becomes the child's initial assets and
+`sim_hc[:, T+1]` becomes its initial `k`. Excluding it hides exactly the column that
+propagates into the next block -- and HC was excluded until 2026-09-06 (A1).
 """
 function simulation_violations(p::Parent_child_interaction_age_specific_AR1)
     cols = SMM_AGE_LO:SMM_AGE_HI
     tol  = SIM_FEAS_TOL
     C, E, H, Tp = p.sim_c[:, cols], p.sim_e[:, cols], p.sim_h[:, cols], p.sim_t[:, cols]
-    I, HC       = p.sim_i[:, cols], p.sim_hc[:, cols]
+    I           = p.sim_i[:, cols]
+    # A1: HUMAN CAPITAL IS CHECKED OVER ALL T+1 COLUMNS, ASSETS TOO.
+    #
+    # Columns 1..T are the family stage; column T+1 is the state at the age-18 handoff.
+    # `sim_hc[:, T+1]` BECOMES the child's `sim_k_init` and `sim_a[:, T+1]` its initial
+    # assets, so a non-finite or non-positive value there propagates straight into the
+    # child block -- and it was the one column the HC check did not look at. The child's
+    # wage and psychic cost both take `log(theta)`, so a non-positive handoff is a domain
+    # error there, not merely a bad fit here.
+    HC          = p.sim_hc[:, 1:(p.T + 1)]
     A           = p.sim_a[:, 1:(p.T + 1)]
 
-    nf = sum(M -> count(!isfinite, M), (C, E, H, Tp, I, HC)) + count(!isfinite, A)
+    nf = sum(M -> count(!isfinite, M), (C, E, H, Tp, I)) +
+         count(!isfinite, HC) + count(!isfinite, A)
     fin(f) = x -> isfinite(x) && f(x)
     unit   = x -> x < -tol || x > 1 + tol
 
@@ -547,10 +589,51 @@ const SMM_PARAMS = [
     # R_0 is the HC technology's TFP and therefore the natural parameter for the HC
     # LEVEL, exactly as sigma_1_0 is for parental time. It became estimable only once HC
     # was put in the data's units: before the rescaling there was no HC moment to
-    # identify it against. Searched in logs -- it is a strictly positive scale.
-    # Measured at the rescaled starting point R_0 = 81.55, the model overshoots the data
-    # by ~50% from age 5 (815 against 423), which is the level error this closes.
-    SMMParam(:R_0,       5.0, 300.0, :log),    # HC level, against the HC moments
+    # identify it against.
+    #
+    # BOX [0.5, 100], widened downward and narrowed upward (instruction 2026-09-06). It
+    # was [5, 300]. The direction follows the fit: at the incumbent R_0 = 81.55 the model
+    # OVERSHOOTS human capital by +79.7% early and +42.6% late in levels, so the estimate
+    # has to move DOWN and the room it needs is on the left. Three hundred was room in the
+    # direction the data says is already wrong; half is room in the direction it has to go.
+    #
+    # SEARCHED IN LOGS, which is what puts the search's attention on the left. A Sobol
+    # sequence uniform in log(R_0) is NOT uniform in R_0 -- its density in levels falls
+    # like 1/R. Over this box the quartiles of the level sit at
+    #
+    #     25%  R_0 <  1.9        50%  R_0 <  7.1        75%  R_0 < 26.6
+    #
+    # so half the pre-testing points land below 7.1 and only a quarter above 26.6. Under
+    # the old [5, 300] box the median was 38.7. The link does the concentrating; no extra
+    # transform is needed and none is applied.
+    #
+    # NOTE THE CEILING against the incumbent. R_0 = 81.55 sits at 96% of this box in
+    # SEARCH coordinates -- interior, but only just, and just under the 98% line
+    # run_smm.jl would flag it as pinned. If an estimate comes back near 100 the box is
+    # wrong, not the model: raise `hi` rather than reporting a bound as an estimate.
+    #
+    # MEASURED across the new box, grid 20, every OTHER parameter held at the incumbent
+    # (so this is a univariate slice, see the caveat below). Nothing is penalised -- the
+    # model solves at every one of these -- but Q is U-shaped and its minimum is NOT on
+    # the left:
+    #
+    #     R_0     0.50    1.0    2.0    5.0   10.0   20.0   40.0  81.55  100.0
+    #     Q      305.9  236.5  158.8   76.1   32.5   11.0    4.2    2.92    3.75
+    #     HC gap -100%  -100%  -100% -99.8% -97.6% -82.6% -45.8% +80.2% +151.3%
+    #
+    # So the univariate optimum sits around R_0 ~ 55-70: below 81.55, because the model
+    # overshoots HC there, but far above the left half of the box, where HC collapses to
+    # essentially zero and Q is 10-100x worse than at the incumbent. Half the Sobol points
+    # land below 7.07, i.e. in the region where Q >= 32.
+    #
+    # CAVEAT, and it is not a small one: this slice holds the other eight parameters
+    # fixed, and R_0 is the most strongly correlated parameter in the set -- the estimate
+    # correlations are phi_3/R_0 -0.998, R_0/sigma_4_0 +0.987, R_0/sigma_1_0 +0.986
+    # (output/identification/jac_9col/standard_errors.toml). A JOINT optimum can sit at a
+    # much lower R_0 with compensating moves in the valuation parameters, which is
+    # precisely what the left-hand room is for. The slice says where the objective is bad
+    # holding everything else still; it does not say where the joint minimum is.
+    SMMParam(:R_0,       0.5, 100.0, :log),    # HC level, against the HC moments
     SMMParam(:sigma_1_0, -4.0, -0.2,  :level), # HC elasticity to parental TIME, level
     SMMParam(:sigma_1_1, -0.20, 0.05, :level), #   ... and its age slope
     SMMParam(:sigma_2_0, -5.0, -0.5,  :level), # HC elasticity to MONEY, level
@@ -745,7 +828,8 @@ function smm_objective(z::AbstractVector{Float64}, targets, V_child;
         # region is infeasible" -- not a bug, so it becomes a large finite penalty.
         # The list is EMPIRICAL; each entry is a failure actually observed:
         #
-        #   ErrorException   solve_model! throws below a 95% converged share.
+        #   ErrorException   solve_model! throws below a 95% converged share -- AND ONLY
+        #                    that one message. Any other `error()` is a bug and re-throws.
         #   DomainError      log/^ of a non-positive quantity in the technology.
         #   AssertionError   HC_technology_full's `@assert t_p > 0 && e_p > 0`, which
         #                    fires when SLSQP hands it a NaN iterate (NaN > 0 is
@@ -762,9 +846,12 @@ function smm_objective(z::AbstractVector{Float64}, targets, V_child;
         # Anything NOT in this list is still re-thrown. A MethodError or an
         # UndefVarError is a coding error and must not be silently scored as a bad
         # parameter draw -- that would turn a broken objective into a converged run.
+        #
+        # A4 (2026-09-06): the ErrorException arm is now NARROW. `error()` is Julia's
+        # generic throw; catching every ErrorException scored a coding mistake as a bad
+        # parameter draw. See is_model_failure.
         cause = _root_cause(err)
-        if cause isa ErrorException || cause isa DomainError ||
-           cause isa AssertionError || cause isa InexactError
+        if is_model_failure(cause)
             _penalize!(nameof(typeof(cause)))
             return SMM_PENALTY
         end
