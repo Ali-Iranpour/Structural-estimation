@@ -255,10 +255,41 @@ offset ladder, and **every point also gets an independent multistart check**, wi
 recorded as `alt_gap`. `curves.csv` *is* the checkpoint — rows are independent estimations,
 so `--resume` simply skips what is already there.
 
-The pilot validated all of that end to end and immediately earned its keep: at
-`mean_h_p +1 se` the warm start returned `Q = 0.7886` and the independent multistart found
-`0.6416`. Without the alternative-start check that point would have entered the curve as a
-parameter response when it was a warm start stuck in the wrong basin.
+**The pilot ran to completion — 4 points, 88.2 min — and its result is a finding about the
+method, not a set of curves.** Two moments (`mean_h_p`, `mean_hc_early`) at ±1 se, grid 20,
+40 Sobol + 2 restarts, 80-evaluation caps:
+
+| moment | offset | Q | Q warm | Q alt | `alt_gap` | ret | on bound |
+|---|---:|---:|---:|---:|---:|---|---|
+| `mean_h_p` | +1 se | 0.3064 | 0.4078 | 0.3064 | 0.1014 | MAXEVAL_REACHED | yes |
+| `mean_h_p` | −1 se | 0.3109 | 0.4107 | 0.3109 | 0.0998 | MAXEVAL_REACHED | yes |
+| `mean_hc_early` | +1 se | 0.3027 | 0.4090 | 0.3027 | 0.1062 | MAXEVAL_REACHED | yes |
+| `mean_hc_early` | −1 se | 0.3089 | 0.4096 | 0.3089 | 0.1007 | MAXEVAL_REACHED | yes |
+
+**Read the last two columns before the first three.** Every point stopped on its evaluation
+budget rather than a convergence test, and every point has a parameter on a box edge
+(`sigma_1_0` sits at or against its upper bound of −0.2 in all four). These are not
+converged optima, so **the parameter differences across points cannot be attributed to the
+target perturbation** — the perturbations are tiny (±1 se on `mean_hc_early` is ±0.0038 on a
+target of 6.07, a 0.06% move) while the parameters moved by up to 3.4% of their boxes.
+Optimizer noise at a 363-evaluation budget is by far the more likely explanation. The pilot
+produced no interpretable curve and was never going to; that is what a pilot is for.
+
+Three things it did establish:
+
+1. **The machinery works end to end** — frozen scales, ladder warm starts, the independent
+   check, `curves.csv` as its own checkpoint, and the on-bound and return-code flags that
+   are the reason the paragraph above can be written at all.
+2. **The alternative-start check is not optional.** The warm start lost at **every single
+   point**, by a consistent ~0.10 in `Q` (0.408–0.411 against 0.303–0.311). Warm-starting
+   from the calibration walks into a worse basin systematically, not occasionally. Without
+   the check, all four rows would have entered the curve as parameter responses.
+3. **The full run needs far larger per-point budgets than the pilot's.** `MAXEVAL_REACHED`
+   at every point means 80-evaluation caps are nowhere near enough; the main estimation
+   needs ~165 evaluations per restart to converge. The documented full-run command below
+   uses the non-pilot defaults (600 per local search, 8 restarts, 200 Sobol) — budget from
+   the traces it produces, and treat any point that still reports `MAXEVAL_REACHED` or
+   `on_bound` as censored rather than as a slope.
 
 **The full run was not launched, by instruction**, and should be centred on the eventual
 fitted baseline:
