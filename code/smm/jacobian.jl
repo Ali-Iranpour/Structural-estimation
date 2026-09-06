@@ -32,6 +32,7 @@
 # =============================================================================
 
 using Distributed, Printf, Dates, LinearAlgebra, TOML
+include(joinpath(@__DIR__, "finite_differences.jl"))
 
 const REPO = normpath(joinpath(@__DIR__, "..", ".."))
 
@@ -109,9 +110,11 @@ let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n",
 # A candidate column needs a BOX to be scaled by, exactly as an estimated one does -- the
 # "full-box move" scaling is what makes columns comparable at all. These are the boxes that
 # would be used if the parameter were freed, stated here rather than improvised.
+# Diagnostic candidates only, not extra estimated parameters. The mu_1 box
+# keeps mu_t = 1 + mu_1*(t-5) in (0,1) for ages 6..17.
 const CANDIDATES = Dict(
-    :sigma_4_1 => (lo = -0.05, hi = 0.05, link = :level),
-    :mu_1      => (lo = -0.20, hi = -0.005, link = :level),
+    :sigma_4_1 => (lo = -0.05, hi = 0.15, link = :level),
+    :mu_1      => (lo = -0.08, hi = -0.005, link = :level),
     :phi_1     => (lo = 0.2,  hi = 5.0,  link = :log),
     :lambda_1  => (lo = 0.2,  hi = 5.0,  link = :log),
 )
@@ -183,7 +186,7 @@ sayf("columns  %d  (%d estimated%s)\n", NP_, count(c -> c.estimated, COLUMNS),
      isempty(EXTEND) ? "" : ", extended by " * join(EXTEND, ", "))
 sayf("moments  %d\n", NM_)
 sayf("grids    Na = Nhc = %d, simN = %d, seed = %d (common random numbers)\n", GRID, SIM_N, SEED)
-sayf("steps    %s  (fraction of each parameter's box width, central differences)\n",
+sayf("steps    %s  (fraction of each parameter's box width; one-sided near bounds)\n",
      join(STEPS, ", "))
 
 # -----------------------------------------------------------------------------
@@ -196,41 +199,32 @@ sayf("steps    %s  (fraction of each parameter's box width, central differences)
 # scaling is written into the output.
 function jacobian_at(step::Float64)
     zs = [to_s(THETA0[c.name], c) for c in COLUMNS]
-    widths = [to_s(c.hi, c) - to_s(c.lo, c) for c in COLUMNS]
+    stencils = [bounded_stencil(zs[j], to_s(c.lo,c), to_s(c.hi,c), step)
+                for (j,c) in enumerate(COLUMNS)]
     jobs = NamedTuple[]
-    for j in 1:NP_
-        h = step * widths[j]
-        for sgn in (+1, -1)
-            zj = copy(zs); zj[j] += sgn * h
-            vals = copy(THETA0)
-            # clamp back into the box: a step must not propose a parameter the model is not
-            # defined at, and the resulting one-sided difference is recorded as such.
-            vals[COLUMNS[j].name] = clamp(from_s(zj[j], COLUMNS[j]), COLUMNS[j].lo, COLUMNS[j].hi)
-            push!(jobs, (j = j, sgn = sgn, h = h, vals = vals))
-        end
+    for (j,stencil) in enumerate(stencils), (z,weight) in zip(stencil.points,stencil.weights)
+        vals = copy(THETA0)
+        vals[COLUMNS[j].name] = from_s(z, COLUMNS[j])
+        push!(jobs, (j=j, weight=weight, vals=vals))
     end
-    out = pmap(jb -> residuals_at(jb.vals; Na = GRID, Nhc = GRID, simN = SIM_N, seed = SEED), jobs)
+    out = pmap(jb -> residuals_at(jb.vals; Na=GRID, Nhc=GRID, simN=SIM_N, seed=SEED), jobs)
     J = zeros(NM_, NP_)
-    nbad = 0
-    for j in 1:NP_
-        ip = findfirst(x -> x.j == j && x.sgn == +1, jobs)
-        im = findfirst(x -> x.j == j && x.sgn == -1, jobs)
-        rp, rm = out[ip], out[im]
-        nbad += rp.nviol + rm.nviol + rp.nbad + rm.nbad
-        # central difference, then scaled to a full-box move: (r+ - r-)/(2h) * width
-        J[:, j] = (rp.r .- rm.r) ./ (2 * jobs[ip].h) .* (to_s(COLUMNS[j].hi, COLUMNS[j]) -
-                                                          to_s(COLUMNS[j].lo, COLUMNS[j]))
+    for (job,r) in zip(jobs,out)
+        r.nviol == 0 && r.nbad == 0 && all(isfinite,r.r) || error(
+            "Invalid finite-difference evaluation for $(COLUMNS[job.j].name); refusing Jacobian")
+        c = COLUMNS[job.j]
+        J[:,job.j] .+= job.weight .* r.r .* (to_s(c.hi,c)-to_s(c.lo,c))
     end
-    return J, nbad
+    return J, 0, stencils, length(jobs)
 end
 
 const RESULTS = Dict{Float64,Any}()
 for step in STEPS
     t = time()
-    J, nbad = jacobian_at(step)
+    J, nbad, stencils, n_evaluations = jacobian_at(step)
     F = svd(J)
     cond_ = F.S[1] / F.S[end]
-    RESULTS[step] = (J = J, S = F.S, V = F.V, cond = cond_, nbad = nbad)
+    RESULTS[step] = (J=J, S=F.S, V=F.V, cond=cond_, nbad=nbad, stencils=stencils, n_evaluations=n_evaluations)
     # MORE COLUMNS THAN MOMENTS is a guaranteed null direction, and a thin SVD does not
     # show it: for a 10x11 matrix `svd` returns 10 singular values, all of which can be
     # positive, while the parameter space still has a direction the moments cannot see.
@@ -241,7 +235,7 @@ for step in STEPS
         say("     UNIDENTIFIED by construction. The singular values below are the thin SVD's")
         say("     and do not include them; equal counts would not fix identification either.")
     end
-    sayf("\nstep %.4f  (%d evaluations, %.1f min)%s\n", step, 2*NP_, (time()-t)/60,
+    sayf("\nstep %.4f  (%d evaluations, %.1f min)%s\n", step, n_evaluations, (time()-t)/60,
          nbad > 0 ? @sprintf("  !! %d invalid/non-finite cells at perturbed points", nbad) : "")
     sayf("  singular values: %s\n", join((@sprintf("%.4g", s) for s in F.S), "  "))
     sayf("  condition number %.1f   smallest singular value %.4g\n", cond_, F.S[end])
@@ -314,7 +308,8 @@ open(joinpath(OUTDIR, "jacobian.toml"), "w") do io
     println(io, "simN        = ", SIM_N)
     println(io, "seed        = ", SEED, "   # common random numbers across every evaluation")
     println(io, "steps       = [", join(STEPS, ", "), "]   # fraction of each box width")
-    println(io, "difference  = \"central\"")
+
+    println(io, "difference  = \"central or second-order one-sided in search coordinates\"")
     println(io, "column_scale= \"d r / d z_j, times the box width in SEARCH coordinates\"")
     println(io, "moments     = [", join(("\"$m\"" for m in SMM_MOMENTS), ", "), "]")
     println(io, "\n[point]")
@@ -339,6 +334,11 @@ open(joinpath(OUTDIR, "jacobian.toml"), "w") do io
         println(io, "rank_tol           = ", maximum(size(r.J)) * eps() * r.S[1])
         println(io, "numerical_rank     = ", count(>(maximum(size(r.J)) * eps() * r.S[1]), r.S))
         println(io, "invalid_cells      = ", r.nbad)
+        println(io, "n_evaluations      = ", r.n_evaluations)
+        TOML.print(io, Dict(
+            "stencil_schemes" => [st.scheme for st in r.stencils],
+            "stencil_search_points" => [st.points for st in r.stencils],
+            "stencil_weights" => [st.weights for st in r.stencils]))
         println(io, "weakest_direction  = [", join((@sprintf("%.10g", v) for v in r.V[:, end]), ", "),
                 "]   # right singular vector of the smallest singular value")
     end
@@ -354,8 +354,9 @@ open(joinpath(OUTDIR, "README.txt"), "w") do io
     J_h<step>.csv   rows = the $(NM_) targeted moments, in SMM_MOMENTS order.
                     cols = $(join((String(c.name) for c in COLUMNS), ", ")).
                     Entry (i,j) is the change in residual i -- (model - data)/scale --
-                    from moving parameter j across its ENTIRE box, estimated by a central
-                    difference of width 2*step*boxwidth in search coordinates.
+                    from moving parameter j across its ENTIRE box, estimated by central differences
+                    or second-order one-sided differences near bounds. Actual search
+                    points, weights and schemes are recorded in jacobian.toml.
 
     jacobian.toml   singular values, condition numbers, weakest directions, pairwise
                     cosines, and the full metadata: evaluation point, boxes, links,

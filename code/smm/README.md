@@ -13,6 +13,14 @@ If this is your first time running an SMM, read *What SMM is doing here* at the
 bottom first — it is four paragraphs and the rest of this file will make more
 sense afterwards.
 
+## Fitted baseline
+
+`PARENT_DEFAULTS` and the incumbent seed now use the full-precision estimates from
+`2026-09-06_183119` (Q = 0.2500261422642604). The original run is preserved in Git;
+three search limits were expanded for future runs. See
+[`BASELINE_9PARAM.md`](../../docs/BASELINE_9PARAM.md) for the snapshot, bounds and checks.
+The estimated set remains nine parameters.
+
 ## Run it
 
 Julia 1.11 is installed for this account under `juliaup`. If `julia --version`
@@ -348,15 +356,15 @@ not administered earlier. See `SMM_AGE_HC_LO` and `AGE_HC_LO`.
 
 | Parameter | Moves | Bounds | Link | Incumbent |
 |---|---|---|---|---|
-| `phi_2` | leisure weight → `h_p` | [0.01, 20.0] | log | 0.1418 |
-| `phi_3` | parents' weight on child skill → `t_p`, `e_p` | [0.05, 20.0] | log | 1.0 |
-| `lambda_2` | child's weight on skill → `i_c` | [0.05, 20.0] | log | 1.0 |
-| `R_0` | HC technology TFP → the **level** of log HC | [0.5, 100.0] | log | 81.55 |
-| `sigma_1_0` | **level** of HC elasticity to parent *time* → early `t_p` | [−4.0, −0.2] | level | −0.4575 |
-| `sigma_1_1` | **age slope** of that elasticity → late `t_p` | [−0.20, 0.05] | level | −0.0634 |
-| `sigma_2_0` | **level** of HC elasticity to *money* → early `e_p` | [−5.0, −0.5] | level | −3.3955 |
-| `sigma_2_1` | **age slope** of that elasticity → late `e_p` | [−0.05, 0.05] | level | −0.0287 |
-| `sigma_4_0` | HC elasticity to the child's *own study* → `i_c` | [−6.0, −1.0] | level | −4.50 |
+| `phi_2` | leisure weight → `h_p` | [0.01, 20.0] | log | 0.14372194 |
+| `phi_3` | parents' weight on child skill → `t_p`, `e_p` | [0.05, 20.0] | log | 1.02014337 |
+| `lambda_2` | child's weight on skill → `i_c` | [0.05, 20.0] | log | 8.67925673 |
+| `R_0` | HC technology TFP → the **level** of log HC | [0.5, 100.0] | log | 50.60319558 |
+| `sigma_1_0` | **level** of HC elasticity to parent *time* → early `t_p` | [−4.0, −0.1] | level | -0.22324257 |
+| `sigma_1_1` | **age slope** of that elasticity → late `t_p` | [−0.20, 0.05] | level | -0.14134183 |
+| `sigma_2_0` | **level** of HC elasticity to *money* → early `e_p` | [−5.0, −0.5] | level | -3.75506167 |
+| `sigma_2_1` | **age slope** of that elasticity → late `e_p` | [−0.10, 0.05] | level | -0.04998108 |
+| `sigma_4_0` | HC elasticity to the child's *own study* → `i_c` | [−8.0, −1.0] | level | -5.98521880 |
 
 `phi_1` and `lambda_1` are **normalised to 1** — utility is defined only up to relative
 weights, so two of the five must be pinned. `sigma_4_1 = 0.02` and `mu_1 = −0.04` are held

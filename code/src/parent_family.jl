@@ -111,14 +111,17 @@ sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity abo
 HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
+# Promoted 2026-09-07 from run 2026-09-06_183119, full-precision checkpoint.
+# Frozen values and original search bounds: Input/parent_baseline_9param.toml.
+# This is the fitted nine-parameter baseline; R_1, sigma_4_1 and mu_1 remain fixed.
 const PARENT_DEFAULTS = (
     # phi and lambda are TIME-INVARIANT by instruction (2026-08-30): they are
     # preference weights, not age profiles, so the _1 slopes and the per-period
     # vectors are gone. phi_1 and lambda_1 are NORMALISED to 1 -- utility is only
     # defined up to the relative weights, so two of the five must be pinned.
     phi_1 = 1.0,              # NORMALISATION, not estimated
-    phi_2 = 0.14183751,       # estimated: mean hours of work
-    phi_3 = 1.0,              # estimated: parental time + monetary investment
+    phi_2 = 0.14372193830057325, # estimated: mean hours of work
+    phi_3 = 1.020143373142503,  # estimated: parental time + monetary investment
     # -----------------------------------------------------------------------------
     # HUMAN CAPITAL IS IN THE DATA'S UNITS (PCA W-score), not model units
     # -----------------------------------------------------------------------------
@@ -141,15 +144,15 @@ const PARENT_DEFAULTS = (
 #
     # M = 753.4, the ratio of the new mean HC at age 0 (376.7, from the data) to the old
     # Uniform(0,1) mean of 0.5.
-    R_0     = 81.55,   R_1     = 0.0,     # 1.6 * M^(1-sigma_3); see above
-    sigma_1_0 = -0.45749712, sigma_1_1 = -0.06340019,
-    sigma_2_0 = -3.39554185, sigma_2_1 =  -0.02870211,
+    R_0 = 50.60319557962827,   R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
+    sigma_1_0 = -0.2232425708968751, sigma_1_1 = -0.14134183068950082,
+    sigma_2_0 = -3.755061670055589, sigma_2_1 = -0.049981076507371304,
     # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
     # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
     sigma_3_0 = -0.90, sigma_3_1 =  0.0,
-    sigma_4_0 = -4.50, sigma_4_1 =  0.02,
+    sigma_4_0 = -5.985218799082873, sigma_4_1 =  0.02,
     lambda_1 = 1.0,           # NORMALISATION, not estimated
-    lambda_2 = 1.0,           # estimated: the child's own study time
+    lambda_2 = 8.679256726534701, # estimated: the child's own study time
     mu_0 = 1.0,        mu_1 = -0.04,
     tau = 0.18,        y = 0.6,
 )

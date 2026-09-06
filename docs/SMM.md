@@ -15,19 +15,13 @@ julia +1.11 --project=../.. run_smm.jl                  # the real run
 Flags, runtimes and the parallelism story are in
 [`code/smm/README.md`](../code/smm/README.md). This file is the method.
 
-> **Status, 6 September 2026 (`dca7980` + the review pass).** The specification below —
-> nine parameters against ten moments — is what the code estimates. **No completed run of
-> it exists yet.** The calibration in `PARENT_DEFAULTS` is an *incumbent*, assembled from an
-> older six-parameter run plus set values; see
-> [Part 3](#part-3--where-the-calibration-actually-stands). Open items and closed ones are
-> tracked in [`REVIEW_TRIAGE.md`](REVIEW_TRIAGE.md), which is the launch checklist.
->
-> **The parental-education correction landed in this pass and moves the baseline.** The
-> parent's terminal continuation was evaluated as if `BothCollege = 0`; it now carries one
-> surface per parental-education state, with the offset applied *inside* the enrolment max
-> and multiplied by the family coefficient. Every number in Part 3 is measured after that
-> fix, and all of it is a **preliminary calibration check, not an estimate** — flagged for
-> Sahber before results built on it circulate.
+> **Status, 7 September 2026.** The completed nine-parameter run
+> `2026-09-06_183119` is now the baseline in `PARENT_DEFAULTS`, with
+> Q = 0.2500261422642604. Its outputs and original bounds are preserved; three
+> limits were expanded for future searches. See [BASELINE_9PARAM.md](BASELINE_9PARAM.md)
+> and the [run inspection](../output/smm_diagnostics/2026-09-06_183119/inspection_notes.md).
+> Older calibration measurements below are explicitly historical. Remaining work is
+> tracked in [REVIEW_TRIAGE.md](REVIEW_TRIAGE.md).
 
 ---
 
@@ -150,11 +144,11 @@ Preference weights are **time-invariant**: the `_1` slopes and per-period vector
 | `phi_3` | parents' weight on child skill → `t_p` and `e_p` | `[0.05, 20.0]` | log |
 | `lambda_2` | the child's own weight on skill → `i_c` (study time) | `[0.05, 20.0]` | log |
 | `R_0` | HC technology TFP → the **level** of `log HC` | `[0.5, 100.0]` | log |
-| `sigma_1_0` | elasticity of HC to parental **time** → `t_p` level | `[−4.0, −0.2]` | level |
+| `sigma_1_0` | elasticity of HC to parental **time** → `t_p` level | `[−4.0, −0.1]` | level |
 | `sigma_1_1` | its age slope → `t_p` early vs late | `[−0.20, 0.05]` | level |
 | `sigma_2_0` | elasticity of HC to **money** → `e_p` level | `[−5.0, −0.5]` | level |
-| `sigma_2_1` | its age slope → `e_p` early vs late | `[−0.05, 0.05]` | level |
-| `sigma_4_0` | elasticity of HC to the child's **own study** → `i_c` | `[−6.0, −1.0]` | level |
+| `sigma_2_1` | its age slope → `e_p` early vs late | `[−0.10, 0.05]` | level |
+| `sigma_4_0` | elasticity of HC to the child's **own study** → `i_c` | `[−8.0, −1.0]` | level |
 
 Source of truth: [`moments.jl:506`](../code/smm/moments.jl#L506). Strictly-positive weights
 are searched **in logs**, so a step can never propose a negative weight — and the log link
@@ -162,20 +156,10 @@ is also what concentrates the search. A Sobol sequence uniform in `log θ` is no
 `θ`: its density in levels falls like `1/θ`. Over `R_0`'s box that puts 25% of pre-testing
 points below 1.9, half below 7.1 and only a quarter above 26.6.
 
-**`R_0`'s box was changed to `[0.5, 100.0]` on 2026-09-06** (was `[5, 300]`), widening it
-downward and narrowing it upward. The direction follows the fit — the model overshoots HC
-by +79.7% early at the incumbent, so the estimate has to move down. Two things to carry
-with it: the incumbent `R_0 = 81.55` now sits at **96% of the box** in search coordinates,
-just under the line at which a run flags a parameter as pinned; and a univariate sweep
-across the new box (grid 20, other parameters held at the incumbent) shows `Q` is U-shaped
-with its minimum near `R_0 ≈ 55–70`, rising to **305.9 at `R_0 = 0.5`** where human capital
-collapses to essentially zero. Nothing in the box is infeasible — every point solves — but
-the left half is a region the univariate objective dislikes strongly. Whether the *joint*
-minimum goes there is a different question: `R_0` is the most correlated parameter in the
-set (`phi_3`/`R_0` −0.998), so it can move a long way left with compensating changes in the
-valuation parameters, and that is what the left-hand room exists for. The `sigma`s are
-already log-elasticities (`σ_j,t = exp(σ_j0 + σ_j1·(t−1))`) and are searched in levels
-inside a box.
+`R_0` remains in [0.5,100] and is searched in logs; its fitted baseline is now
+50.60319558. The three expanded elasticity bounds are listed in
+[BASELINE_9PARAM.md](BASELINE_9PARAM.md). The original fit and historical identification
+matrices retain their original bounds. Elasticity coefficients are searched in levels.
 
 **`R_0` became estimable only once HC was put in the data's units.** Before the rescaling
 (`c27a049`) there was no HC moment to identify it against. That rescaling is what separates
@@ -439,11 +423,17 @@ been wrong in magnitude and in shape.
 
 ---
 
-## Part 3 — Where the calibration actually stands
+## Part 3 — Fitted baseline and historical calibration
 
-**There is no completed nine-parameter estimation.** `PARENT_DEFAULTS`
-([`parent_family.jl:114`](../code/src/parent_family.jl#L114)) is an incumbent assembled from
-three sources, and it is what `--report-only` and the search's `extra_seeds` start from:
+The current default is the completed fit in [BASELINE_9PARAM.md](BASELINE_9PARAM.md).
+The following subsection records the pre-estimation calibration and its provenance;
+its values are no longer `PARENT_DEFAULTS`.
+
+### Historical calibration before the completed nine-parameter run
+
+Before the completed run, `PARENT_DEFAULTS`
+([`parent_family.jl:114`](../code/src/parent_family.jl#L114)) was an incumbent assembled from
+three sources; it supplied the previous `--report-only` and search starting point:
 
 | parameter | value | where it comes from |
 |---|---|---|
