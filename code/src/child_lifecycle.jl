@@ -393,6 +393,21 @@ end
 end
 
 """
+    family_coef(model) -> Float64
+
+The weight the family objective puts on the CHILD's value, `(1 - mu) + mu*omega`.
+
+`obj_transfer_work` / `obj_transfer_college` maximise `coef*V_child + mu*V_parent`, so
+anything expressed in the child's own utility units -- `pared_value_offset` in particular --
+must be multiplied by this before it is added to a stored `sol_tr_v_*` value. Adding it raw
+compares a family-weighted value against an unweighted child-utility offset, which
+over-states the parental-education effect by `1/coef`. Defined once here because it was
+previously written out inline in two places and used in neither of the three call sites
+that needed it.
+"""
+@inline family_coef(model::ConSavLaborCollege_AR1) = (1 - model.mu) + model.mu * model.omega
+
+"""
     pared_value_offset(model, bc)
 
 Value offset from the `kappa_ParEd * BothCollege` term in the psychic cost.
@@ -801,7 +816,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1;
         function obj_wrapper(h_vec::Vector, grad::Vector)
             f = obj_last_period(model, h_vec, assets, capital, T, E, p_shock, grad)
             if length(grad) > 0
-                grad[:] = -grad[:]
+                grad .= .-grad
             end
             return -f
         end
@@ -834,7 +849,7 @@ function solve_model_work!(model::ConSavLaborCollege_AR1;
             function obj_wrapper(x::Vector, grad::Vector)
                 f = obj_work_period(model, x, assets, capital, t, E, p_shock, i_p, interp, grad)
                 if length(grad) > 0
-                    grad[:] = -grad[:]  # negate for minimization
+                    grad .= .-grad   # negate for minimization; in place, no temporary
                 end
                 return -f
             end
@@ -961,7 +976,7 @@ function solve_model_college!(model::ConSavLaborCollege_AR1)
                     min_objective!(opt, (c_vec, grad) -> begin
                         f = obj_college_period_general(model, c_vec, assets, capital, t,
                                                        i_p, interp, eps_it, grad)
-                        if length(grad) > 0; grad[:] = -grad[:] end
+                        if length(grad) > 0; grad .= .-grad end
                         return -f
                     end)
                     inequality_constraint!(opt,
@@ -1056,7 +1071,7 @@ function obj_transfer_work(
         V_child      += π_p[ip] * Vj
     end
 
-    coef = (1-model.mu) + model.mu*model.omega
+    coef = family_coef(model)
     f = coef * V_child + model.mu * V_parent
 
     if length(grad) > 0
@@ -1095,7 +1110,7 @@ function obj_transfer_college(
         V_child      += π_p[ip] * Vj
     end
 
-    coef = (1-model.mu) + model.mu*model.omega
+    coef = family_coef(model)
     f = coef * V_child + model.mu * V_parent
 
     if length(grad) > 0
@@ -1200,14 +1215,28 @@ Building blocks already exist:
 `-Inf` is applied only here, at the discrete comparison, for states where college is
 infeasible -- never stored in an interpolated array.
 """
-function terminal_value_surface(m::ConSavLaborCollege_AR1; ip::Int = 1)
+function terminal_value_surface(m::ConSavLaborCollege_AR1; ip::Int = 1, bc::Float64 = 0.0)
     a_col_min = min_parent_assets_for_college(m)
+    # PARENTAL EDUCATION ENTERS BEFORE THE MAX, NOT AFTER IT.
+    #
+    # `kappa_ParEd*BothCollege` lowers the psychic cost of college, so it raises the
+    # college branch only. It is additive and constant across the college years, so it
+    # shifts `sol_tr_v_college` by a closed-form annuity and leaves the transfer policy
+    # unchanged -- but it has to be inside `max(vc, vw)`, because it can flip the
+    # enrolment comparison. Omitting it evaluated the parent's whole terminal
+    # continuation as if bc = 0 while every other parental-education channel in the model
+    # was operating, so a college-educated parent's continuation understated the college
+    # option it would actually take.
+    #
+    # `family_coef` because `sol_tr_v_college` is the FAMILY value coef*V_child +
+    # mu*V_parent, and the offset is in the child's own utility units.
+    off_c = family_coef(m) * pared_value_offset(m, bc)
     out = zeros(m.Nap, m.Nk)          # N13: parental asset dimension
     for it in 1:m.Nt
         w = m.t_weight[it]
         for ik in 1:m.Nk, ia in 1:m.Nap
             vw = m.sol_tr_v_work[ia, ik, ip, 1]
-            vc = m.ap_grid[ia] >= a_col_min ? m.sol_tr_v_college[ia, ik, ip, it] : -Inf
+            vc = m.ap_grid[ia] >= a_col_min ? m.sol_tr_v_college[ia, ik, ip, it] + off_c : -Inf
             isnan(vc) && (vc = -Inf)          # NaN marks infeasible; -Inf only at the max
             if !isfinite(vw) && !isfinite(vc)
                 # Neither branch is defined here. At a <= delta_P the parent cannot retain
@@ -1224,36 +1253,97 @@ function terminal_value_surface(m::ConSavLaborCollege_AR1; ip::Int = 1)
 end
 
 """
-    terminal_value_spline(m; s = 10.0, ip = 1)
+    PARENT_BC_GRID
 
-The parent's terminal continuation value as a `Spline2D` over `(a, HC)`, built with the
-Phase-0.5 timing (see `terminal_value_surface`).
-
-The spline is fitted over the **valid** rows of the asset grid only. At parental assets
-at or below `delta_P` the parent cannot retain its floor, `a_term -> 0`, and
-`kappa_term * log(a_term)` diverges: that is a genuine singularity of the model, not a
-numerical artefact, and the grid should not carry it. Those rows are excluded rather than
-filled with a sentinel.
-
-Returns the spline; `valid_rows(m)` gives the indices used.
+The parent's `BothCollege` states, in the order `ChildTerminalValue` stores them. Kept
+equal to the parent block's own `k_grid` (`[0.0, 1.0]`, `Nk = 2`, exact -- not a
+discretisation), so selecting a surface is a lookup and never an interpolation.
 """
-function terminal_value_spline(m::ConSavLaborCollege_AR1; s::Float64 = 10.0, ip::Int = 1)
-    V  = terminal_value_surface(m; ip = ip)
-    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
+const PARENT_BC_GRID = [0.0, 1.0]
+
+"""
+    ChildTerminalValue
+
+The parent's terminal continuation, one `Spline2D` over `(parental assets, child HC)` PER
+PARENTAL-EDUCATION STATE.
+
+`kappa_ParEd*BothCollege` shifts the college branch before the enrolment max, so a
+college-educated parent faces a different terminal surface -- not the same surface plus a
+constant, because the max is taken after the shift. One surface per `bc` is exact and needs
+no new parent state: the parent already carries `BothCollege` as its `k`.
+
+Calling it with two arguments, or taking a `Dierckx.derivative` of it, forwards to the
+`bc = 0` surface. That is the plotting path (the notebook's marginal-value figures), and it
+is the surface those figures already showed; the SOLVER never takes that path -- it goes
+through `eval_child_value`, which selects on the parent's own `k`.
+"""
+struct ChildTerminalValue
+    by_bc::Vector{Spline2D}
+    bc_grid::Vector{Float64}
+end
+
+"""
+    bc_index(V, bc) -> Int
+
+Which stored surface a parental-education value selects. `bc` is binary, so this is an
+exact lookup; anything not on the grid picks the nearest node rather than silently
+extrapolating a value that has no meaning between 0 and 1.
+"""
+@inline function bc_index(V::ChildTerminalValue, bc::Float64)
+    best, bi = Inf, 1
+    @inbounds for i in eachindex(V.bc_grid)
+        d = abs(V.bc_grid[i] - bc)
+        d < best && (best = d; bi = i)
+    end
+    return bi
+end
+
+@inline (V::ChildTerminalValue)(a::Float64, hc::Float64) = V.by_bc[1](a, hc)
+@inline (V::ChildTerminalValue)(a::Float64, hc::Float64, bc::Float64) =
+    V.by_bc[bc_index(V, bc)](a, hc)
+@inline Dierckx.derivative(V::ChildTerminalValue, a::Float64, hc::Float64, nux::Int, nuy::Int) =
+    Dierckx.derivative(V.by_bc[1], a, hc, nux, nuy)
+
+"""
+    terminal_value_spline(m; s = 10.0, ip = 1, bc_grid = PARENT_BC_GRID) -> ChildTerminalValue
+
+The parent's terminal continuation value, one `Spline2D` over `(a, HC)` per parental
+education state, built with the Phase-0.5 timing (see `terminal_value_surface`).
+
+Each spline is fitted over the **valid** rows of the asset grid only, and the SAME rows for
+every `bc`. At parental assets at or below `delta_P` the parent cannot retain its floor,
+`a_term -> 0`, and `kappa_term * log(a_term)` diverges: that is a genuine singularity of the
+model, not a numerical artefact, and the grid should not carry it. Those rows are excluded
+rather than filled with a sentinel.
+
+Returns a `ChildTerminalValue`; `valid_rows(m)` gives the indices used.
+"""
+function terminal_value_spline(m::ConSavLaborCollege_AR1; s::Float64 = 10.0, ip::Int = 1,
+                               bc_grid::Vector{Float64} = PARENT_BC_GRID)
+    # The valid row range is taken over ALL bc surfaces jointly: the offset is finite, so
+    # it cannot turn a finite row infinite, but the range must still be common or the
+    # surfaces would be fitted over different asset supports and stop being comparable.
+    Vs  = [terminal_value_surface(m; ip = ip, bc = bc) for bc in bc_grid]
+    oks = [[all(isfinite, view(V, ia, :)) for ia in 1:m.Nap] for V in Vs]
+    ok  = [all(o[ia] for o in oks) for ia in 1:m.Nap]
     ia0 = findfirst(ok)
     ia0 === nothing && error("Terminal value is non-finite at every parental asset grid point")
     all(ok[ia0:end]) || error("Terminal value has interior non-finite rows: $(findall(.!ok))")
-    return Spline2D(m.ap_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s)
+    return ChildTerminalValue(
+        [Spline2D(m.ap_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s) for V in Vs],
+        copy(bc_grid))
 end
 
 """
     valid_rows(m) -> UnitRange
 
-Asset-grid rows over which the parent's terminal value is finite (assets above `delta_P`).
+Asset-grid rows over which the parent's terminal value is finite (assets above `delta_P`),
+common to every parental-education surface.
 """
-function valid_rows(m::ConSavLaborCollege_AR1)
-    V  = terminal_value_surface(m)
-    ok = [all(isfinite, view(V, ia, :)) for ia in 1:m.Nap]
+function valid_rows(m::ConSavLaborCollege_AR1; bc_grid::Vector{Float64} = PARENT_BC_GRID)
+    oks = [[all(isfinite, view(terminal_value_surface(m; bc = bc), ia, :)) for ia in 1:m.Nap]
+           for bc in bc_grid]
+    ok  = [all(o[ia] for o in oks) for ia in 1:m.Nap]
     ia0 = findfirst(ok)
     return ia0 === nothing ? (1:0) : (ia0:m.Nap)
 end
@@ -1337,6 +1427,9 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
         a0, k0, p0_idx = sim_a_init[i], sim_k_init[i], sim_p_init_idx[i]
         i_t = eps_indices[i]
         # -Inf enters ONLY here, at the discrete comparison.
+        # NO family_coef here, deliberately: interp_v_college is sol_v_college, the CHILD's
+        # own value, already in the units the offset is expressed in. The coefficient
+        # belongs only where the offset is added to a family-weighted sol_tr_v_* value.
         EV_college = a0 >= a_req_sim[1] ?
             interp_v_college[i_t][p0_idx](a0, k0) + pared_value_offset(model, sim_bc_init[i]) : -Inf
         EV_work    = interp_v_work[p0_idx](a0, k0)
@@ -1535,9 +1628,11 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
         # Compute parent's value for each path. C14: below col_min the college branch was
         # never solved, so it is -Inf here exactly as in discrete_college_choice -- not an
         # extrapolation of the feasible slice.
+        # family_coef: sol_tr_v_college is the FAMILY value, the offset is in the child's
+        # own utility units. See family_coef.
         f_college = parent_assets >= col_min ?
                     sol_tr_v_college_interp[it][ip](parent_assets, HC) +
-                        pared_value_offset(model, sim_bc_init[i]) : -Inf
+                        family_coef(model) * pared_value_offset(model, sim_bc_init[i]) : -Inf
         f_work = sol_tr_v_work_interp[ip](parent_assets, HC)
 
         # Choose path and set transfer

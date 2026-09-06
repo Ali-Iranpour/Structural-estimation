@@ -128,6 +128,42 @@ struct TikTakResult
     trace::Vector{NamedTuple{(:j, :theta, :f_start, :f_local, :improved, :ret),
                              Tuple{Int,Float64,Float64,Float64,Bool,Symbol}}}
     n_exception::Int             # local searches that threw -- always a bug in `f`
+    # HOW THE FINAL POINT WAS ARRIVED AT, kept separate from WHAT it is.
+    #
+    # A run that stops because every restart exhausted `maxeval` is not the same result as
+    # one where they converged, and "a finite objective" certifies neither. NLopt's return
+    # code is the only thing that distinguishes them, so it is carried out of the algorithm
+    # rather than discarded inside it: per restart in `trace.ret`, and for the polish here.
+    polish_ret::Symbol           # :FTOL_REACHED, :MAXEVAL_REACHED, :EXCEPTION, :SKIPPED...
+    polish_improved::Bool        # did the polish actually move the incumbent?
+    n_eval_polish::Int           # evaluations spent in the polish alone
+end
+
+"""
+    ret_class(ret) -> Symbol
+
+Bucket an NLopt return code into `:converged`, `:limit` (a budget stopped it, not a
+criterion), or `:other` (including failures and exceptions).
+
+`:MAXEVAL_REACHED` and `:MAXTIME_REACHED` mean the search was cut off with its stopping
+test unsatisfied. That is a legitimate answer to report, but it is not convergence, and a
+run made mostly of those has a budget problem however good its objective looks.
+"""
+ret_class(ret::Symbol) =
+    ret in (:SUCCESS, :FTOL_REACHED, :XTOL_REACHED, :STOPVAL_REACHED) ? :converged :
+    ret in (:MAXEVAL_REACHED, :MAXTIME_REACHED)                       ? :limit     :
+    :other
+
+"""
+    ret_tally(result) -> Dict{Symbol,Int}
+
+How many local searches ended in each NLopt return code. Reported next to the objective so
+"converged" is a statement about the searches and not about the number they produced.
+"""
+ret_tally(r::TikTakResult) = begin
+    d = Dict{Symbol,Int}()
+    for row in r.trace; d[row.ret] = get(d, row.ret, 0) + 1; end
+    d
 end
 
 """
@@ -412,18 +448,25 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     ftol_rel!(polish_opt, polish_tol); xtol_rel!(polish_opt, polish_tol)
     maxeval!(polish_opt, polish_maxeval)
     ftol_abs!(polish_opt, polish_ftol_abs)   # as the local stage, one order tighter
-    min_objective!(polish_opt, (x, g) -> (n_eval += 1; f(x)))
+    n_polish = Ref(0)
+    min_objective!(polish_opt, (x, g) -> (n_eval += 1; n_polish[] += 1; f(x)))
+    polish_ret = :NOT_RUN
+    polish_improved = false
     try
-        (fp, xp, _) = optimize(polish_opt, Z)
+        (fp, xp, retp) = optimize(polish_opt, Z)
+        polish_ret = retp
         if isfinite(fp) && fp < fZ
             Z, fZ = copy(xp), fp
+            polish_improved = true
         end
     catch e
         n_exception += 1
+        polish_ret = :EXCEPTION
         @warn "polishing search threw; the pre-polish point was kept" exception = e
     end
 
-    return TikTakResult(Z, fZ, n_eval, f_sobol_best, f_prepolish, trace, n_exception)
+    return TikTakResult(Z, fZ, n_eval, f_sobol_best, f_prepolish, trace, n_exception,
+                        polish_ret, polish_improved, n_polish[])
 end
 
 """

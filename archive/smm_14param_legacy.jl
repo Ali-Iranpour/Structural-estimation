@@ -1,6 +1,10 @@
 #!/usr/bin/env julia
 # =============================================================================
-# !! SUPERSEDED AND NON-FUNCTIONAL. DO NOT RUN. !!
+# !! RETIRED. NON-FUNCTIONAL. DO NOT RUN. !!
+#
+# Moved out of code/ on 2026-09-06 (was code/smm.jl). It is in archive/ because that is
+# where this repo keeps superseded code, and because leaving a broken entry point beside
+# the working one is how it gets run by mistake -- an annotation is not a repair.
 #
 # The live estimator is code/smm/run_smm.jl + code/smm/moments.jl. This file is kept
 # only because its 12-moment / 14-parameter design and its child-parameter caching are
@@ -14,7 +18,8 @@
 #   * it is 14 parameters against 12 moments, i.e. UNDER-identified, against the live
 #     estimator's 9 against 10.
 #
-# Retire or migrate it deliberately -- do not repair it incidentally.
+# Nothing references it: no notebook, no script, no doc except as a historical note.
+# Verified 2026-09-06 by grep over code/, docs/ and the notebook before the move.
 # =============================================================================
 
 # =============================================================================

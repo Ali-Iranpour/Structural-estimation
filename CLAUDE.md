@@ -66,6 +66,7 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
 
 ## Layout
 
-`code/src/` model modules · `code/run_all.jl` end-to-end run · `code/smm.jl` + `src/tiktak.jl`
-estimation · `code/transfer_CRRA_wage.ipynb` exploration and counterfactuals ·
+`code/src/` model modules · `code/run_all.jl` end-to-end run · `code/smm/` + `src/tiktak.jl`
+estimation (`run_smm.jl` drives it, `moments.jl` is the economics) ·
+`code/transfer_CRRA_wage.ipynb` exploration and counterfactuals ·
 `docs/ERRORS.md` open and resolved findings, with the measurements behind them.

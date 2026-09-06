@@ -1,0 +1,37 @@
+================================================================================
+SMM standard errors
+================================================================================
+jacobian     output/identification/jac_9col  (step_0_0100)
+point        PARENT_DEFAULTS
+grids        Na = Nhc = 30, simN = 2000, seed = 1234
+moment cov   clustered on Fam_id, 1633 clusters
+Omega rank   10 of 10  (tolerance 6.78e-18)
+
+parameter           estimate    se(equal W)   se(optimal W)     95% CI (equal W)
+--------------------------------------------------------------------------------
+phi_2                0.14184      0.00569        0.00549     [0.1307, 0.1530]
+phi_3                1.00000      0.18089        0.14333     [0.6455, 1.3545]
+lambda_2             1.00000      0.17872        0.15225     [0.6497, 1.3503]
+R_0                 81.55000      6.03364        4.82516     [69.7241, 93.3759]
+sigma_1_0           -0.45750      0.20236        0.15918     [-0.8541, -0.0609]
+sigma_1_1           -0.06340      0.00791        0.00639     [-0.0789, -0.0479]
+sigma_2_0           -3.39554      0.22281        0.18623     [-3.8322, -2.9588]
+sigma_2_1           -0.02870      0.01061        0.00787     [-0.0495, -0.0079]
+sigma_4_0           -4.50000      0.16489        0.13510     [-4.8232, -4.1768]
+
+estimate correlation (equal weights); |corr| > 0.9 is where two parameters
+cannot be told apart by these moments at this point
+  phi_3        R_0          -0.9978
+  R_0          sigma_4_0    +0.9868
+  R_0          sigma_1_0    +0.9864
+  phi_3        sigma_4_0    -0.9857
+  phi_3        sigma_1_0    -0.9831
+  R_0          sigma_2_0    +0.9818
+
+over-identification
+  10 moments, 9 parameters -> 1 degrees of freedom
+  A J-test needs the residual AT the estimate and the efficient weight; it is not
+  computed here because the point this Jacobian was taken at is a CALIBRATION, not
+  a converged estimate. Re-run with --at a fitted estimates.toml to make it meaningful.
+
+wrote output/identification/jac_9col/standard_errors.toml

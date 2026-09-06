@@ -1,0 +1,57 @@
+==============================================================================
+Residual Jacobian and identification audit
+==============================================================================
+started  2026-09-06 13:49:32
+outdir   output/identification/jac_11col
+workers  20
+30.5s
+point    PARENT_DEFAULTS (the incumbent calibration)
+columns  11  (9 estimated, extended by sigma_4_1, mu_1)
+moments  10
+grids    Na = Nhc = 30, simN = 2000, seed = 1234 (common random numbers)
+steps    0.005, 0.01, 0.02  (fraction of each parameter's box width, central differences)
+  !! 11 columns against 10 moments: at least 1 parameter direction(s) are
+     UNIDENTIFIED by construction. The singular values below are the thin SVD's
+     and do not include them; equal counts would not fix identification either.
+
+step 0.0050  (22 evaluations, 0.5 min)
+  singular values: 16.46  11.77  6.33  5.388  2.439  2.167  1.143  0.5217  0.469  0.09157
+  condition number 179.8   smallest singular value 0.09157
+  weakest direction: lambda_2 -0.598, mu_1 +0.437, sigma_1_0 +0.364, sigma_2_0 +0.308
+  !! 11 columns against 10 moments: at least 1 parameter direction(s) are
+     UNIDENTIFIED by construction. The singular values below are the thin SVD's
+     and do not include them; equal counts would not fix identification either.
+
+step 0.0100  (22 evaluations, 0.3 min)
+  singular values: 16.32  11.64  6.351  5.382  2.412  2.17  1.142  0.5292  0.4765  0.089
+  condition number 183.4   smallest singular value 0.089
+  weakest direction: lambda_2 -0.573, mu_1 +0.434, sigma_1_0 +0.366, sigma_2_1 -0.311
+  !! 11 columns against 10 moments: at least 1 parameter direction(s) are
+     UNIDENTIFIED by construction. The singular values below are the thin SVD's
+     and do not include them; equal counts would not fix identification either.
+
+step 0.0200  (22 evaluations, 0.3 min)
+  singular values: 16.29  11.62  6.327  5.371  2.413  2.174  1.141  0.529  0.4792  0.08657
+  condition number 188.2   smallest singular value 0.08657
+  weakest direction: lambda_2 -0.600, mu_1 +0.442, sigma_1_0 +0.361, sigma_2_0 +0.303
+
+resolution of the smallest singular value across steps
+  step 0.0050   sigma_min 0.091568   cond 179.8
+  step 0.0100   sigma_min 0.089003   cond 183.4
+  step 0.0200   sigma_min 0.086565   cond 188.2
+  spread 0.005 against level 0.0866  ->  ratio 0.058
+  RESOLVED: sigma_min is stable across steps, so it is the model's, not the difference's.
+
+pairwise |cos| between scaled Jacobian columns (step 0.005)
+  a cosine near 1 means two parameters move the moments in nearly the same direction;
+  it is a warning about local separation, NOT proof of observational equivalence.
+  sigma_4_0    mu_1         0.9908
+  sigma_1_0    sigma_1_1    0.9078
+  sigma_2_0    sigma_2_1    0.8692
+  sigma_4_0    sigma_4_1    0.8141
+  sigma_4_1    mu_1         0.8068
+  phi_3        lambda_2     0.7587
+  phi_3        mu_1         0.6825
+  lambda_2     mu_1         0.6579
+
+wrote output/identification/jac_11col/jacobian.toml

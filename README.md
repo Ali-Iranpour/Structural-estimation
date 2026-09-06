@@ -26,8 +26,13 @@ the child's birth to age 18; the child is then followed to age 68.
 .
 ├── code/
 │   ├── run_all.jl                  ONE reproducible end-to-end run (--quick to smoke test)
-│   ├── smm.jl                      parameter estimation — SMM by TikTak
 │   ├── transfer_CRRA_wage.ipynb    interactive driver: counterfactuals, figures
+│   ├── smm/
+│   │   ├── run_smm.jl              parameter estimation — SMM by TikTak
+│   │   ├── moments.jl              targets, model moments, objective, fit report
+│   │   ├── jacobian.jl             residual Jacobian + identification audit, saved
+│   │   ├── standard_errors.jl      clustered minimum-distance sandwich
+│   │   └── sensitivity.jl          target-moment response exercise (90 curves)
 │   └── src/
 │       ├── paths.jl                every path in the project — nothing else hard-codes one
 │       ├── manifest.jl             run provenance (git SHA, versions, parameters)
