@@ -50,13 +50,31 @@ tail -f ../../output/smm_runs/<timestamp>/run.log
 Every run creates a fresh timestamped folder — nothing is ever overwritten:
 
 ```
-output/smm_runs/2026-08-27_155123/
+output/smm_runs/2026-09-06_182800/
 ├── run.log          full console transcript, exactly as it appeared
-└── estimates.toml   estimated parameters, Q before/after, budget, git commit
+├── run_record.toml  EVERYTHING the run was set with: git commit, targets by content
+│                    hash, all nine boxes and links, seed, grids, every tolerance and
+│                    budget. Written at STARTUP and rewritten at the end, so a killed
+│                    or --report-only run still records what it was run with. Check
+│                    `status`: "started" means it never reached the end.
+├── restarts.csv     one row per restart as it finishes: theta, start and local value,
+│                    whether it improved, and its NLopt return code
+├── estimates.toml   estimated parameters, Q before/after, acceptance, budget
+├── checkpoint.toml  rewritten atomically after every restart; feeds --resume
+└── seeds.toml       the pre-testing survivors, written once (exact continuation)
 ```
 
-Use `--outdir <path>` to send a throwaway run somewhere else, e.g.
-`--outdir ../../temp/try1`, so experiments don't accumulate in `output/`.
+**Throwaway runs go to `temp/`,** with `--temp [label]`:
+
+```bash
+julia +1.11 --project=../.. run_smm.jl --report-only --temp smoke
+# -> temp/2026-09-06_183505_smoke/
+```
+
+Always timestamped, so a re-run never overwrites the previous one and the folder sorts
+chronologically. Same contents as a real run — including `run_record.toml`, because a
+smoke test whose settings you cannot reconstruct is not worth keeping either. `temp/` is
+gitignored; delete the whole folder whenever.
 
 ### Flags
 
@@ -72,6 +90,7 @@ Use `--outdir <path>` to send a throwaway run somewhere else, e.g.
 | `--local-evals N` | Cap per local search (default 2000). |
 | `--polish-evals N` | Cap for the final polish (default 4000). |
 | `--every N` | Seconds between progress lines (default 2). |
+| `--temp [label]` | Throwaway run: writes to `temp/<timestamp>[_label]/` instead of `output/smm_runs/`. Same contents, always timestamped so nothing overwrites anything. `temp/` is gitignored. |
 | `--outdir P` | Write the run folder to `P` instead of `output/smm_runs/<stamp>/`. |
 | `--serial` | Everything on one process. Slowest, but the easiest to debug. |
 | `--resume DIR` | Continue a killed run from `DIR/checkpoint.toml`. Exact continuation, not a warm start — see below. |
