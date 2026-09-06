@@ -133,9 +133,17 @@ bound_by() = SAFE_MAX == WORKER_BUDGET ? "shared-server budget" :
 # Run directory and logging
 # -----------------------------------------------------------------------------
 const STAMP   = Dates.format(now(), "yyyy-mm-dd_HHMMSS")
-const RUN_DIR = argstr("--outdir", joinpath(REPO, "output", "smm_runs", STAMP))
+# --resume DIR continues a killed run from its checkpoint. The run directory is REUSED,
+# so the checkpoint keeps advancing in place and the log is appended rather than
+# truncated -- losing the first half of a two-day run's transcript to a resume would
+# defeat the point of having one.
+const RESUME_DIR = argstr("--resume", "")
+const RESUMING   = !isempty(RESUME_DIR)
+RESUMING && !isdir(RESUME_DIR) && error("--resume: no such directory: $RESUME_DIR")
+const RUN_DIR = RESUMING ? RESUME_DIR :
+                argstr("--outdir", joinpath(REPO, "output", "smm_runs", STAMP))
 mkpath(RUN_DIR)
-const LOG = open(joinpath(RUN_DIR, "run.log"), "w")
+const LOG = open(joinpath(RUN_DIR, "run.log"), RESUMING ? "a" : "w")
 
 # Paths are printed relative to the repo root so the log stays readable (and the
 # same whoever ran it). `relpath`, not string surgery: normpath leaves a trailing
@@ -419,7 +427,7 @@ say("machine well, raise --sobol (better seeds), not --restarts.")
 
 banner("Incumbent calibration")
 sayf("Q = %.6f\n", q0)
-say_report(x0)
+RESUMING ? say("(resuming: fit table skipped, see the original run's log)") : say_report(x0)
 
 if REPORT_ONLY
     banner("--report-only: stopping before the search")
@@ -444,21 +452,63 @@ end
 # estimates.toml, so a killed run's best point can be fed straight back in.
 const CKPT = joinpath(RUN_DIR, "checkpoint.toml")
 
-function checkpoint!(j::Int, best::Float64, best_x::Vector{Float64})
+const SEEDS_F = joinpath(RUN_DIR, "seeds.toml")
+
+"""
+    save_seeds!(seeds, f_sobol_best)
+
+Persist the pre-testing survivors ONCE, right after the global stage.
+
+Sobol points are deterministic and cost nothing to regenerate; their EVALUATIONS are the
+expensive part (1000 solves). Keeping the selected seeds means a resumed run re-enters
+the local stage with exactly the mixture the original would have used, so continuation is
+exact rather than a warm restart.
+"""
+function save_seeds!(seeds::Vector{Vector{Float64}}, f_sobol_best::Float64)
+    tmp = SEEDS_F * ".tmp"
+    open(tmp, "w") do io
+        println(io, "# Pre-testing survivors. Written once; read by --resume.")
+        println(io, "f_sobol_best = ", f_sobol_best)
+        println(io, "nstar        = ", length(seeds))
+        println(io, "seeds = [")
+        for sd in seeds
+            println(io, "  [", join((@sprintf("%.17g", v) for v in sd), ", "), "],")
+        end
+        println(io, "]")
+    end
+    mv(tmp, SEEDS_F; force = true)
+    return nothing
+end
+
+"""
+    checkpoint!(j, best, best_x; stage, grid)
+
+`stage` and `grid` are NOT decoration. After the full-grid refinement this is called with
+an objective computed at GRID_FULL, while the local stage's calls carry GRID_SEARCH
+values. Recording only GRID_SEARCH -- as the first version did -- labelled a grid-30
+objective as grid-20, which is exactly the confusion the separate Q_final / Q_search
+fields in estimates.toml exist to prevent.
+"""
+function checkpoint!(j::Int, best::Float64, best_x::Vector{Float64};
+                     stage::String = "local", grid::Int = GRID_SEARCH)
     est = unpack(best_x)
     tmp = CKPT * ".tmp"
     open(tmp, "w") do io
         println(io, "# Written after each restart by code/smm/run_smm.jl. Safe to read")
         println(io, "# while the run is going; rewritten atomically.")
+        println(io, "# Resume with:  julia --project=../.. run_smm.jl --resume <this dir>")
+        println(io, "stage         = \"", stage, "\"")
         println(io, "restarts_done = ", j)
         println(io, "restarts_total= ", N_RESTART)
         println(io, "Q_best        = ", best)
-        println(io, "Q_incumbent   = ", q0)
+        println(io, "objective_grid= ", grid, "   # the grid Q_best was computed at")
+        println(io, "Q_incumbent   = ", q0, "   # at grid_search")
         println(io, "grid_search   = ", GRID_SEARCH)
+        println(io, "grid_report   = ", GRID_FULL)
         println(io, "minutes       = ", round(elapsed(), digits = 1))
         println(io, "updated       = \"", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"), "\"")
         println(io, "\n[search_vector]")
-        println(io, "z = [", join((@sprintf("%.10g", v) for v in best_x), ", "), "]")
+        println(io, "z = [", join((@sprintf("%.17g", v) for v in best_x), ", "), "]")
         println(io, "\n[parameters]")
         for q in SMM_PARAMS
             @printf(io, "%-10s = %.8f\n", q.name, getfield(est, q.name))
@@ -468,6 +518,47 @@ function checkpoint!(j::Int, best::Float64, best_x::Vector{Float64})
     return nothing
 end
 
+"""
+    load_resume(dir) -> NamedTuple
+
+Rebuild tiktak's `resume` argument from a run directory's checkpoint and seeds.
+Refuses rather than guesses when the saved run does not match this one.
+"""
+function load_resume(dir::AbstractString)
+    ck_p, sd_p = joinpath(dir, "checkpoint.toml"), joinpath(dir, "seeds.toml")
+    isfile(ck_p) || error("--resume: $ck_p not found")
+    isfile(sd_p) || error("""
+        --resume: $sd_p not found. The interrupted run stopped before its pre-testing
+        stage finished, so there are no seeds to continue from. Start it fresh.""")
+    ck, sd = TOML.parsefile(ck_p), TOML.parsefile(sd_p)
+    seeds = [Float64.(v) for v in sd["seeds"]]
+    n = length(SMM_PARAMS)
+    all(length(x) == n for x in seeds) || error(
+        "--resume: seeds have dimension $(length(first(seeds))) but SMM_PARAMS has $n. " *
+        "The parameter set changed since that run; it cannot be continued.")
+    Int(ck["restarts_total"]) == N_RESTART || error(
+        "--resume: that run had --restarts $(ck["restarts_total"]), this one has " *
+        "$N_RESTART. Pass the same value or start fresh.")
+    Int(ck["grid_search"]) == GRID_SEARCH || error(
+        "--resume: that run searched at grid $(ck["grid_search"]), this one at " *
+        "$GRID_SEARCH. The objectives differ; pass the same --grid or start fresh.")
+    j_done = Int(ck["restarts_done"])
+    return (seeds = seeds, f_sobol_best = Float64(sd["f_sobol_best"]),
+            Z = Float64.(ck["search_vector"]["z"]), fZ = Float64(ck["Q_best"]),
+            j_start = j_done + 1)
+end
+
+const RESUME_STATE = RESUMING ? load_resume(RESUME_DIR) : nothing
+if RESUMING
+    banner("RESUMING")
+    sayf("continuing %s from restart %d of %d\n", short(RESUME_DIR),
+         RESUME_STATE.j_start, N_RESTART)
+    sayf("incumbent from the checkpoint: Q = %.6g (at grid %d)\n",
+         RESUME_STATE.fZ, GRID_SEARCH)
+    say("The pre-testing stage is skipped -- its surviving seeds are reloaded, so the")
+    say("restarts see exactly the mixture they would have seen in the original run.")
+end
+
 banner("TikTak search")
 lo, hi = search_bounds()
 t_start = time()
@@ -475,14 +566,24 @@ elapsed() = (time() - t_start) / 60
 
 const USE_PMAP = !(SERIAL || nprocs() == 1)
 TRACKER.trun = time()
-stage!(:sobol, N_SOBOL_EVAL)
-watcher = USE_PMAP ? watch_progress(N_SOBOL_EVAL) : nothing
+# On a resume there is no Sobol stage, so the tracker must START in :local -- the stage
+# transition normally happens in the on_sobol callback, which never fires. Without this
+# the restarts were reported under the Sobol format ("sobol 31/13  238%").
+if RESUMING
+    stage!(:local)
+    TRACKER.restart = RESUME_STATE.j_start
+else
+    stage!(:sobol, N_SOBOL_EVAL)
+end
+watcher = (USE_PMAP && !RESUMING) ? watch_progress(N_SOBOL_EVAL) : nothing
 
 result = tiktak(objective_tracked, lo, hi;
                 N = N_SOBOL, Nstar = N_RESTART,
                 extra_seeds = [x0],             # the incumbent competes like any Sobol point
                 map_fn = USE_PMAP ? pmap : map,
                 local_maxeval = LOCAL_MAXEVAL, polish_maxeval = POLISH_MAXEVAL,
+                resume = RESUME_STATE,
+                on_seeds = save_seeds!,
                 # tick! does the per-evaluation reporting, so on_sobol would only
                 # double-print. It is used for one thing: i == n is the moment the
                 # Sobol stage ends and the local stage begins, which is where the
@@ -507,7 +608,7 @@ result = tiktak(objective_tracked, lo, hi;
                     stage!(:local)
                 end,
                 on_local = function (j, ns, th, fl, best, best_x)
-                    checkpoint!(j, best, best_x)
+                    checkpoint!(j, best, best_x; stage = "local", grid = GRID_SEARCH)
                     eta = elapsed() / max(j, 1) * (ns - j)
                     sayf("  restart %3d/%-3d DONE   this %11.4g   best Q %11.4g   %5.1f min, ~%.0f min left\n",
                          j, ns, fl, best, elapsed(), eta)
@@ -577,7 +678,8 @@ else
     say("\nsearch ran at the full grid -- no refinement stage needed")
     (copy(Z_SEARCH), Q_SEARCH)
 end
-GRID_SEARCH == GRID_FULL || checkpoint!(N_RESTART, Q_FINAL, Z_FINAL)
+GRID_SEARCH == GRID_FULL ||
+    checkpoint!(N_RESTART, Q_FINAL, Z_FINAL; stage = "refined", grid = GRID_FULL)
 
 # ---- how much of the box the model could not live in -----------------------
 # A penalised draw is a real answer, but the RATE is diagnostic: a few percent is

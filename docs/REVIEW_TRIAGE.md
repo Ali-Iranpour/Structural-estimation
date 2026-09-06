@@ -1,4 +1,164 @@
-# Code review, verified — and what to do before the next estimation run
+# Estimation review — current status and remaining work
+
+## Current assessment — 6 September 2026, code at e3bed90
+
+This section is the current action list. The original review and implementation
+addendum below are retained as historical records; they are not an up-to-date launch
+checklist. In particular, their claims of an exact identification ridge, assets being
+out of bounds only initially, and previous estimates being wholly incomparable should
+be read with the corrections here. This update changes documentation only.
+
+### Identification: a strong warning, not proof of an exact ridge
+
+The following new diagnostics were supplied in the review discussion. They have not
+been independently reproduced in this update, and no saved Jacobian or reproducing
+script was located in the repository. The earlier 49.2 conditioning result appears in
+the implementation report; the new ten-parameter result is reported evidence.
+
+| Reported diagnostic | Value |
+|---|---:|
+| Absolute cosine, sigma_4_1 versus mu_1 | 0.805 |
+| Absolute cosine, sigma_4_0 versus mu_1 | 0.991 |
+| Absolute cosine, sigma_4_0 versus sigma_4_1 | 0.813 |
+| Nine-parameter Jacobian: condition number / smallest singular value | 49.2 / 0.278 |
+| Ten-parameter Jacobian, adding sigma_4_1: condition number / smallest singular value | 1067.1 / 0.052 |
+
+With s = t - 5 > 0, mu_0 = lambda_1 = 1, and mu_1 < 0,
+
+$$\log\frac{\sigma_{4,t}}{1-\tilde\mu_t}
+=\sigma_{40}+\sigma_{41}s-\log(-\mu_1)-\log s.$$
+
+The intercept combination in this ratio is sigma_4_0 - log(-mu_1); sigma_4_1 changes
+its age slope. This supports investigating confounding between sigma_4_0 and mu_1.
+However, mu_1 enters only the intercept **of this ratio**, not only the intercept of
+the full model. In `util_total`, it also changes the child's leisure weight and
+
+$$\tilde\alpha_{2,t}=\phi_3+\mu_1s(\phi_3-\lambda_2),$$
+
+the weight on log HC. The latter channel vanishes at phi_3 = lambda_2, but that special
+case does not remove the other channels or establish a global invariance. Study choices
+also depend on resulting HC and the continuation-value derivative. Thus 0.991 is
+evidence of nearly parallel local moment responses, not exact observational equivalence.
+
+The ten-parameter condition number is about 21.7 times larger, while its smallest
+singular value is about 5.35 times smaller. Both the strongest and weakest directions
+changed. This is a material warning under the reported scaling, not a statement that
+standard errors increased 21.7 times. Parameter units/bounds and moment weights affect
+conditioning; nonzero column rescaling does not change absolute pairwise cosines.
+
+The 0.813 pairwise cosine does not establish the cause of a condition number of 1067.
+For those two columns alone, normalized to unit length, the condition number would be
+sqrt((1 + 0.813)/(1 - 0.813)) = 3.11. The full weak direction may combine several
+parameters and column magnitudes. Nor do the early/late age bins alone establish that
+the ages are too close to identify a slope. Inspect the full singular vectors and
+which moments distinguish their implied parameter movements. Eleven candidate columns
+against ten moments necessarily leave a Jacobian null direction, even if a thin SVD
+reports ten positive singular values.
+
+**Decision:** keep the current nine-parameter model as the baseline, with
+sigma_4_1 = 0.02 and mu_1 = -0.04 fixed. Adding sigma_4_1 remains a candidate extension,
+not the default next run merely to make the moment and parameter counts equal. Do not
+replace it with mu_1 solely to obtain ten parameters: the reported 0.991 warns that
+this alternative also needs investigation. Show Sahber the conditioning evidence with
+these qualifications.
+
+Before deciding on the tenth parameter:
+
+1. Save the Jacobian, evaluation point, parameter order/transforms/bounds, moment
+   scales, finite-difference steps, grids, common random draws and solver settings.
+   Compare nine and ten columns at the same point with identical scaling of shared
+   columns. Repeat reasonable derivative steps and evaluate near the fitted baseline,
+   not just at the incumbent calibration. Check whether the smallest singular value is
+   resolved above numerical derivative variation, and inspect its right singular vector.
+2. Profile the objective over plausible sigma_4_1 values, re-optimizing the other nine
+   parameters at each point with alternative starts and final-grid checks. A flat
+   profile, unstable estimates or bound-driven solutions favour retaining calibration.
+   This is a specification diagnostic, not an automatic confidence interval.
+3. Consider centering the age regressor for numerical optimization: estimate
+   b_4 = sigma_4_0 + sigma_4_1(t_star - 5) and write the active elasticity as
+   exp(b_4 + sigma_4_1(t - t_star)), for a stated reference age within ages 6–17.
+   Preserve the original admissible parameter region when transforming bounds.
+   Centering may improve numerical conditioning; it adds no identifying information.
+4. Run the target-moment response exercise below. If ten parameters remain weakly
+   separated, keep nine; any richer age moments or calibration changes require their
+   own data-support and specification justification. None is adopted by this update.
+
+### Status of fixes already applied
+
+Independent checks in this conversation on e3bed90: TikTak self-test passes;
+`parallel=false` uses thread 1 with four threads available; `batch=4` is rejected when
+parallel is false. A current grid-30 baseline used simN=2000 and seed=1234, reusing one
+child solution. NaN consumption was detected; negative consumption was not. No complete
+estimation or new Jacobian calculation was rerun for this documentation update.
+
+| Item | Status |
+|---|---|
+| Independent local optimizers and correct parallel flag | Fixed; isolated checks pass. This does not prove every part of the SMM objective is thread-safe. |
+| Log-HC denominator equal to 1 | Fixed; covariance-based relative weighting remains separate work. |
+| Equal-age targets, HC ages 3–9, initial HC at age 1 | Implemented in generator/model; changed target definitions must accompany reported results. |
+| Nonfinite moment-input checks | Implemented; full simulated-path feasibility checking remains incomplete. |
+| Atomic best-point checkpoint | Implemented; automatic resume and complete stage/grid metadata remain incomplete. |
+| Fine-grid re-optimization and separate Q_search / Q_final | Implemented; a bounded refinement is not proof of convergence or grid independence. |
+| Quick-run local/polish caps | Fixed; production budgets still need restart evidence. |
+| sigma_4 flat comment | Corrected, but the code's explanation claiming an exact ridge remains incorrect. |
+| Legacy entry point | Marked non-functional; legacy notebook calls have not thereby been repaired. |
+
+### Tier 0 — complete before relying on another estimation
+
+| Importance | Remaining action and completion criterion |
+|---|---|
+| 9/10 | **Full simulation validity.** Extend checks beyond finite moment inputs to consumption positivity, nonnegative controls where required, both time budgets under the model's intended leisure convention, asset feasibility, positive finite HC, and terminal states. Respect age-specific structural zeros. A negative `sim_c[1,1]` currently leaves `n_nonfinite=0`; non-positive checks are specific to targeted HC. Preserve counts/reasons and reject invalid evaluations without silently changing the sample. |
+| 9/10 | **Asset and HC grid coverage.** Include all simulation columns through the age-18 handoff, report per-period counts and maxima, and distinguish initially high households from subsequent crossings. The current baseline has two households above the asset ceiling in every period 1–17 and seven at period 18; maximum assets are 259.04 versus ceiling 100. Current diagnostics omit period 18 and report only about 254.41. Test grid ranges/node placement within the node cap; do not silently clamp the initial distribution. Small tail mass alone does not establish small policy or estimation error. |
+| 9/10 | **Final-solve acceptance.** Distinguish convergence, evaluation-limit stops and exceptions. Check feasibility and numerical stability at final candidates; a 95% state-solver convergence threshold or a lower finite objective is insufficient certification. Persist local, polish and refinement status and exception counts, with an explicit treatment of programming errors rather than unconditional successful completion. |
+| 8/10 | **Parental-education consistency.** Reconcile the college offset with the terminal continuation. Apply the family coefficient to offsets added to family-weighted transfer values, not to an unweighted child-value comparison. The parent already has the binary BothCollege state; type-specific continuation surfaces can use it, so a new parent state variable is not inherently required. Include the offset before the college/work maximum. Other parental-education channels already operate; only the omitted terminal offset is evaluated as if bc=0. |
+| 8/10 | **Interpretation and stale explanations.** Correct remaining exact-ridge assertions, including `moments.jl`, and retain the documented distinction between parental presence and exclusive parental time when interpreting preferences. Fix or clearly retire legacy notebook entry points; annotation of `code/smm.jl` alone is not a repair. |
+
+### Tier 1 — recovery, reporting and speed
+
+| Importance | Remaining action and completion criterion |
+|---|---|
+| 9/10 | **Checkpoint metadata and actual resume.** Record objective grid and stage, actual restart position, candidate/seed order, incumbent, settings, target/code identity and state needed to resume the chosen TikTak sequence. At present the post-refinement checkpoint receives Q_FINAL but still writes only grid_search. Also save the final post-polish winner when search and report grids coincide. Distinguish restarting from a saved best point from resuming the interrupted search. Verify interruption/recovery with a small run. |
+| 8/10 | **Refinement reporting.** Save attempted/converged/improved/failed status separately: `refined = GRID_SEARCH != GRID_FULL` currently means a stage was selected, even after an exception or no improvement. Preserve solver return codes and include refinement evaluations in total-cost reporting; `result.n_eval` currently covers only TikTak. |
+| 9/10 | **Expected continuation and combined value/gradient.** Precompute expectations of stored Hermite values and slopes, and reuse interpolation work for value and gradient. Preserve the existing interpolant; do not recompute nonlinear PCHIP slopes from averaged values. Validate and benchmark the combined change without multiplying overlapping speedup estimates. |
+| 8/10 | **Allocations and budgets.** Profile hot loops and reuse worker-owned buffers. Choose production restart/polish budgets from traces and retained solution quality; keep absolute stopping safeguards. The incumbent objective does not establish the optimized objective. |
+
+### Tier 2 — identification and inference before presenting conclusions
+
+| Importance | Remaining action and completion criterion |
+|---|---|
+| 10/10 | **Plot how all estimated parameters respond to each target moment.** Perturb one target while holding others fixed and jointly re-estimate all estimated parameters. Fix residual scaling/weights, random draws, bounds and solver settings; use alternative starts and final-grid checks. Plot every parameter response, mark the baseline, and record residuals, objective values, bounds and failures. Prefer perturbations expressed in standard errors of sample moments when available; do not use individual-observation SDs as moment SEs. Nine parameters imply 90 curves; a justified ten-parameter extension implies 100. This is the only exercise adopted from the supplied paper, and it has not been implemented or run. |
+| 9/10 | **Identification audit and tenth-parameter decision.** Reproduce and qualify the reported diagnostics as described above. Keep nine as the baseline until an extension has supporting evidence; no exact-fit or identification guarantee follows from equal counts. |
+| 9/10 | **Sampling uncertainty and weighting.** Estimate moment covariance with the relevant sampling dependence and simulation treatment, justify the weighting matrix, and report defensible parameter uncertainty. These are required for inferential claims, not merely work to do if time remains. Sensitivity curves and a full-rank local Jacobian do not replace inference. |
+| 9/10 | **Comparable final results.** Compare promising minima and final-grid parameter stability. Re-evaluate old and new vectors under common corrected definitions when comparing fits. Old raw Q values are not directly comparable after target/weight changes; previous parameter estimates are not rendered meaningless. |
+
+### Tier 3 — benchmark larger computational changes
+
+| Importance | Remaining action and completion criterion |
+|---|---|
+| 8/10 | **State-level parallelism.** Solve independent state blocks within a period against fixed next-period continuation, then synchronize. Use independent optimizers and mutable buffers. Benchmark processes versus threads, memory, communication and oversubscription; retain correctness checks. This can accelerate every sequential TikTak evaluation without changing restart order. |
+| 7/10 | **Alternative local methods / NLopt version.** Benchmark isolated versions and methods against the pinned baseline before adoption. An upgrade does not invalidate results computed correctly with an older version. State parallelism is a cost/benefit choice, not inherently unsuitable for a thesis. |
+
+### Corrections to historical claims below
+
+- There are eight level moments and two log-HC moments. The old rounded HC values
+  6.5492 - 6.0802 imply 0.4690 log points, approximately 59.8% in levels. Changing a
+  denominator from 6.1 to 0.05 changes squared-objective weight by about 14,884 times,
+  not 150. A Jacobian column's squared-sensitivity share is not automatically a
+  parameter's estimation influence or proof of identification.
+- Pairwise correlation and full column rank concern local responses under chosen
+  scales; they do not prove global identification. The study profile is endogenous
+  and its early/late means are targeted even when both slope parameters are calibrated.
+- Coarse-grid speedups are measurements, not guarantees. Fine-grid refinement is
+  implemented, but neither its numerical risk nor the remaining speedup opportunity
+  has been shown to be zero. Restarts hitting budgets need scrutiny regardless of
+  whether the current design has more moments than parameters.
+- The historical shared-optimizer bug supplies a plausible crash mechanism, not a
+  reproduced causal diagnosis of the old silent exit. Checkpoints protect against
+  termination/pre-emption; a normal tmux client disconnect itself does not kill the job.
+
+---
+
+# Historical review — before implementation and the current assessment
 
 Triage of an external review of the SMM pipeline, TikTak, both solvers and the target
 generator. Every claim was checked against the code, and the ones that matter were
@@ -355,3 +515,111 @@ equal-age weighting, the HC₀ re-indexing, and the refusal of invalid simulatio
 previous estimates were produced under the old definitions and are not comparable.** The
 first three are advisor-gated under `CLAUDE.md` and should reach Sahber with the open
 μ₁/σ₄₁ question rather than arriving inside a set of results.
+
+
+---
+
+# Second round — the four follow-up findings
+
+All four were verified and all four were valid. Three were errors in the first round's
+work; one was an overstatement in its commit message.
+
+## 1. Feasibility was checked only for human capital
+
+The first round counted non-finite cells and called it a validity check. Measured by
+injecting each pathology into a solved baseline:
+
+```
+sim_c  = NaN                          caught
+sim_c  = -5.0  negative consumption   NOT caught
+sim_h  = -0.3  negative hours         NOT caught
+sim_h  =  1.8  hours > time budget    NOT caught
+sim_a  = -50   below a_min = 0        NOT caught
+sim_hc = -1.0  negative skill         caught
+```
+
+**Fixed.** `simulation_violations(p)` now checks every simulated series against the
+model's own domain — consumption and skill strictly positive, investment non-negative,
+each time share in the unit interval, both leisure residuals non-negative, assets at or
+above `a_min` — and counts violations **by kind**, so the penalty log records which
+economic law broke rather than that something did. Assets are checked over all `T+1`
+columns. `smm_objective` refuses such a draw; `report_fit` prints the table. Zero
+violations at the incumbent, so the check does not produce false positives.
+
+## 2. Checkpoint metadata, and no resume
+
+Two problems. The post-refinement call passed a **full-grid** objective while
+`checkpoint!` unconditionally wrote `grid_search`, labelling a grid-30 number as grid-20.
+And only saving was implemented, not continuation.
+
+**Fixed.** `checkpoint!` takes `stage` and `grid`, and writes `objective_grid` alongside
+`grid_search`/`grid_report`. Resume is now real and **exact**, not a warm start: the
+pre-testing survivors are persisted once to `seeds.toml`, and `--resume <dir>` re-enters
+the local stage at the next restart with the saved incumbent and those seeds, so restart
+*j* sees precisely the mixture it would have seen. Verified on Rastrigin: a run resumed
+at restart 11 reached the identical objective (0.9949590571) in 1096 evaluations against
+the full run's 2447. `load_resume` refuses rather than guesses when the parameter count,
+restart budget or search grid differ from the saved run. The run directory is reused and
+its log appended, so a resume does not truncate a two-day transcript.
+
+## 3. "All at t=1" was wrong
+
+Measured at the incumbent, full grid, `simN = 2000`:
+
+```
+t=1..17   2 households above the ceiling, max 214.43 -> 254.41
+t=18      7 households above,             max 259.04     <- the handoff
+households ever above: 7      above at t=1: 2
+```
+
+The first round compared the fraction of **households** above at t=1 (0.1%) with the
+fraction of **cells** above over t=1..17 (0.1%), read the equality as "all of it is the
+initial draw", and reported that. They match only because 2 households × 17 periods /
+34,000 cells equals 2 / 2,000 — different denominators, same digits. **Five of the seven
+cross during the family stage**, and the old diagnostic excluded column `T+1` — the one
+that becomes the child's initial assets — from both its share and its maximum.
+
+**Fixed.** Coverage is reported as households (ever above, at t=1, at the handoff) over
+all `T+1` columns, with the maximum taken over all of them, and the crossing count called
+out explicitly. The grid itself is still unchanged: clamping would distort the initial
+wealth draw, and widening `a_max` under the ≤ 30 node cap coarsens the region where the
+mass sits. That trade-off is a decision, not a bug fix.
+
+## 4. The identification ridge named the wrong pair
+
+The first round claimed σ₄₁ and μ₁ form a ridge. Taking logs of the child's study FOC,
+with μ₀ = 1 and λ₁ = 1 so that $(1-\tilde\mu_t) = -\mu_1(t-5)$:
+
+$$\log\frac{\sigma_{4,t}}{1-\tilde\mu_t} = \sigma_{40} + \sigma_{41}(t-5) - \log(-\mu_1) - \log(t-5)$$
+
+μ₁ enters **only the intercept**, which makes it collinear with σ₄₀, not with σ₄₁.
+Measured |cos| between scaled residual-Jacobian columns:
+
+| pair | \|cos\| |
+|---|---:|
+| **σ₄₀ vs μ₁** | **0.991** — worst pair of all eleven |
+| σ₄₀ vs σ₄₁ | 0.813 |
+| σ₄₁ vs μ₁ | 0.805 — correlated, not a ridge |
+
+**Fixed** in the comment, with the measurements.
+
+**A caveat on the recommendation to add σ₄₁.** It is well founded on rank, but it costs
+conditioning:
+
+```
+ 9 parameters (current)     condition number   49.2,  smallest sv 0.278
+10 with sigma_4_1 added     condition number 1067.1,  smallest sv 0.052
+```
+
+because σ₄₀ and σ₄₁ are themselves 0.813 collinear — study time is targeted only at ages
+6–9 and 10–17, too close together to separate the level of the elasticity from its slope.
+**A study-time moment further apart in age would fix that; adding the parameter alone
+would not.** This belongs with the specification question rather than being settled here.
+
+## Still deferred
+
+Unchanged from the first round, and for the same reasons: the parental-education
+treatment (a specification choice that would add parental type as a state to the parent's
+terminal problem), σ₄₁ itself, the asset-grid range, standard errors, the
+target-moment sensitivity exercise, and all of the interpolation and parallelism
+performance work.

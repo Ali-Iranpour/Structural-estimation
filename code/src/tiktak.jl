@@ -229,6 +229,17 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 polish_maxeval::Int = 4000, polish_ftol_abs::Float64 = 1e-14,
                 extra_seeds::Vector{Vector{Float64}} = Vector{Vector{Float64}}(),
                 stop_tol::Float64 = 0.0,
+                # RESUME. Pass `(seeds, f_sobol_best, Z, fZ, j_start)` to skip the global
+                # stage entirely and re-enter the local stage at restart `j_start` with
+                # `Z`/`fZ` as the incumbent. This is exact continuation, not a warm start:
+                # the seeds are the ones the original pre-testing selected, so restart j
+                # sees precisely the mixture it would have seen. Sobol points are cheap to
+                # regenerate but their EVALUATIONS are not, which is why the seeds travel
+                # in the checkpoint rather than being recomputed.
+                resume::Union{Nothing,NamedTuple} = nothing,
+                # Fires once, right after pre-testing, with the selected seeds. A caller
+                # checkpoints them so a killed run can be resumed.
+                on_seeds = (seeds, f_sobol_best) -> nothing,
                 parallel::Bool = false,     # see the NLopt warning in the header
                 # BATCH IS GATED ON `parallel`. It used to default off Threads.nthreads()
                 # regardless, so `parallel = false` silently still ran the local stage on
@@ -253,7 +264,8 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
 
     length(lo) == length(hi) || error("lo and hi must have the same length")
     all(lo .< hi) || error("every lo must be strictly below its hi")
-    1 <= Nstar <= N + length(extra_seeds) || error("need 1 <= Nstar <= N + #extra_seeds")
+    resume !== nothing || 1 <= Nstar <= N + length(extra_seeds) ||
+        error("need 1 <= Nstar <= N + #extra_seeds")
     parallel || batch <= 1 || error("""
         batch = $batch was requested with parallel = false. The local stage would run on
         Threads.@threads while the caller believes threading is off. Pass parallel = true
@@ -261,10 +273,20 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     n_eval = 0
 
     # ---- global stage: pre-testing ------------------------------------------
-    cands = sobol_points(lo, hi, N)
-    append!(cands, [clamp.(s, lo, hi) for s in extra_seeds])
+    if resume !== nothing
+        length(resume.seeds) == Nstar || error(
+            "resume has $(length(resume.seeds)) seeds but Nstar = $Nstar")
+        all(length(sd) == length(lo) for sd in resume.seeds) || error(
+            "resume seeds have the wrong dimension for this box")
+        1 <= resume.j_start <= Nstar + 1 || error(
+            "resume.j_start = $(resume.j_start) is outside 1..$(Nstar + 1)")
+    end
+    cands = resume === nothing ? sobol_points(lo, hi, N) : Vector{Vector{Float64}}()
+    resume === nothing && append!(cands, [clamp.(s, lo, hi) for s in extra_seeds])
     fs = Vector{Float64}(undef, length(cands))
-    if parallel
+    if resume !== nothing
+        # nothing to do: the seeds already are the surviving pre-tested points
+    elseif parallel
         done = Threads.Atomic{Int}(0)
         plock = ReentrantLock()
         best_so_far = Ref(Inf)
@@ -296,12 +318,20 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
             on_sobol(i, length(cands), fs[i], best_so_far)
         end
     end
-    order = sortperm(fs)                      # ascending: f(s_1) <= ... <= f(s_N*)
-    seeds = [cands[k] for k in order[1:Nstar]]
-    f_sobol_best = fs[order[1]]
+    local seeds::Vector{Vector{Float64}}, f_sobol_best::Float64
+    if resume === nothing
+        order = sortperm(fs)                  # ascending: f(s_1) <= ... <= f(s_N*)
+        seeds = [cands[k] for k in order[1:Nstar]]
+        f_sobol_best = fs[order[1]]
+        on_seeds(seeds, f_sobol_best)
+    else
+        seeds = resume.seeds
+        f_sobol_best = resume.f_sobol_best
+    end
 
     # ---- local stage --------------------------------------------------------
-    Z, fZ = copy(seeds[1]), f_sobol_best      # incumbent best minimiser and value
+    Z, fZ = resume === nothing ? (copy(seeds[1]), f_sobol_best) :
+                                 (copy(resume.Z), resume.fZ)
     trace = NamedTuple{(:j, :theta, :f_start, :f_local, :improved, :ret),
                        Tuple{Int,Float64,Float64,Float64,Bool,Symbol}}[]
     fZ_prev_distinct = Inf
@@ -310,7 +340,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     # Batched: within a batch every restart reads the same Z*, so they can run
     # concurrently. batch == 1 is the sequential published algorithm.
     nb = max(1, batch)
-    j = 1
+    j = resume === nothing ? 1 : resume.j_start
     stop = false
     while j <= Nstar && !stop
         idx = j:min(j + nb - 1, Nstar)

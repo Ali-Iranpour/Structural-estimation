@@ -74,6 +74,27 @@ Use `--outdir <path>` to send a throwaway run somewhere else, e.g.
 | `--every N` | Seconds between progress lines (default 2). |
 | `--outdir P` | Write the run folder to `P` instead of `output/smm_runs/<stamp>/`. |
 | `--serial` | Everything on one process. Slowest, but the easiest to debug. |
+| `--resume DIR` | Continue a killed run from `DIR/checkpoint.toml`. Exact continuation, not a warm start — see below. |
+
+### Resuming a killed run
+
+The local stage is ~99% of the wall clock and runs for the better part of a day, so on a
+server a disconnect, a wall-clock limit or a pre-emption will eventually catch one. The run
+writes `checkpoint.toml` after **every** restart (atomically, via a temp file and rename),
+and `seeds.toml` once after pre-testing.
+
+```bash
+cd code/smm && julia --project=../.. run_smm.jl --resume ../../output/smm_runs/2026-09-06_014210
+```
+
+This re-enters the local stage at the next restart with the saved incumbent **and the
+saved pre-testing seeds**, so restart *j* sees exactly the mixture it would have seen in
+the original run — continuation is exact, not approximate. The Sobol stage is skipped
+(its evaluations are the expensive part; the points themselves are deterministic). The run
+directory is reused and its log appended, so the original transcript survives.
+
+Pass the same `--restarts` and `--grid` you used originally. The loader refuses rather than
+guesses if the parameter count, restart budget or search grid differ from the saved run.
 
 ## How many cores does it use?
 
