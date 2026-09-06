@@ -50,7 +50,10 @@ output/figures/
 .mcp.json
 
 # SMM run outputs: logs, checkpoints and per-run estimates are reproducible artefacts
-output/smm_runs/
+output/smm_runs/*
+# Frozen, reviewed nine-parameter baseline (keep original evidence in clones).
+!output/smm_runs/2026-09-06_183119/
+!output/smm_runs/2026-09-06_183119/**
 
 # The `latest` symlink run_smm.jl re-points at every run. Per-machine, not shared.
 output/smm_runs/latest

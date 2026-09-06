@@ -535,15 +535,7 @@ end
 # searched in logs, so a step can never produce a negative weight. sigma_2_0 is a
 # log-elasticity already (sigma_2 = exp(sigma_2_0 + sigma_2_1*(t-1))) and is
 # searched in levels inside a box.
-#
-# Bounds, and why:
-#   phi_1_0   [0.2, 5.0]     weight on consumption; 1.0 is the incumbent and the
-#                            de facto numeraire for the other weights.
-#   phi_2_0   [0.05, 20.0]   weight on leisure; incumbent 0.5. Wide, because the
-#                            leisure level is sensitive to it and eta = 2.
-#   sigma_2_0 [-5.0, -0.5]   incumbent -1.80 (sigma_2 = 0.165). The box spans
-#                            sigma_2 in [0.0067, 0.607]; staying below 1 keeps the
-#                            Cobb-Douglas share sensible.
+
 struct SMMParam
     name::Symbol
     lo::Float64
@@ -551,133 +543,24 @@ struct SMMParam
     link::Symbol       # :log or :level
 end
 
-#   sigma_2_1 [-0.05, 0.05]  the AGE SLOPE of the money elasticity, incumbent 0.02.
-#                            sigma_2_t = exp(sigma_2_0 + sigma_2_1*(t-1)), so over
-#                            t = 1..17 this box spans a 0.45x fall to a 2.2x rise in
-#                            the elasticity. For scale, the data's own log-linear
-#                            investment slope is +0.0158/yr, so the incumbent 0.02 is
-#                            already close and this box is roughly +-3x around it.
-#
-#                            NOTE the interaction with sigma_2_0: the Cobb-Douglas
-#                            share stays below 1 only while sigma_2_0 + 16*sigma_2_1
-#                            < 0, so the top corner of the joint box (-0.5, 0.05)
-#                            implies sigma_2_17 = 1.35 and an explosive HC technology.
-#                            That corner is left reachable rather than boxed out
-#                            because solve_model! throws there and smm_objective turns
-#                            it into SMM_PENALTY -- infeasible is a legitimate answer,
-#                            and the estimate sits at sigma_2_0 ~ -3.8, nowhere near it.
-#   sigma_1_0 [-4.0, -0.2]   LEVEL of the HC elasticity to parent TIME, incumbent
-#                            -0.90 (sigma_1 = 0.407). Spans sigma_1 in [0.018, 0.819].
-#                            This is the parameter that moves t_p: parent_family.jl's
-#                            own note records that tau_p is flat at 0.011-0.023 for
-#                            every phi_2 from 0.05 to 3.0 because the FOC scales with
-#                            phi_2 on both sides -- "tau_p is set by sigma_1 and the
-#                            value of the child's HC". So phi_2_0 identifies h_p and
-#                            sigma_1_0 identifies t_p, through separate channels.
-#   sigma_1_1 [-0.20, 0.05]  AGE SLOPE of that elasticity, incumbent -0.08. The data
-#                            supports this far better than its sigma_2 counterpart:
-#                            t_p HALVES over the family stage (30.3 -> 9.7 hrs/wk,
-#                            late/early 0.512x) and does so monotonically, which is
-#                            exactly the shape exp(sigma_1_0 + sigma_1_1*(t-1)) can
-#                            produce. Investment, by contrast, is U-shaped.
+# The nine-parameter run 2026-09-06_183119 is frozen with its ORIGINAL bounds.
+# These are exploration bounds for FUTURE runs (2026-09-07): give the three
+# near-bound coefficients room. Widening a box is not evidence that its new edge
+# is an optimum. Joint profiles and feasibility checks still apply; see
+# docs/BASELINE_9PARAM.md and the controlled probes in output/smm_diagnostics/.
 const SMM_PARAMS = [
-    # phi_1 and lambda_1 are NOT here: utility is defined only up to relative weights, so
-    # two of the five must be normalised. Both are pinned at 1.0 (instruction 2026-08-30).
-    SMMParam(:phi_2,     0.01, 20.0, :log),    # mean hours of work
-    SMMParam(:phi_3,     0.05, 20.0, :log),    # parental time + monetary investment
-    SMMParam(:lambda_2,  0.05, 20.0, :log),    # the child's own study time
-    # R_0 is the HC technology's TFP and therefore the natural parameter for the HC
-    # LEVEL, exactly as sigma_1_0 is for parental time. It became estimable only once HC
-    # was put in the data's units: before the rescaling there was no HC moment to
-    # identify it against.
-    #
-    # BOX [0.5, 100], widened downward and narrowed upward (instruction 2026-09-06). It
-    # was [5, 300]. The direction follows the fit: at the incumbent R_0 = 81.55 the model
-    # OVERSHOOTS human capital by +79.7% early and +42.6% late in levels, so the estimate
-    # has to move DOWN and the room it needs is on the left. Three hundred was room in the
-    # direction the data says is already wrong; half is room in the direction it has to go.
-    #
-    # SEARCHED IN LOGS, which is what puts the search's attention on the left. A Sobol
-    # sequence uniform in log(R_0) is NOT uniform in R_0 -- its density in levels falls
-    # like 1/R. Over this box the quartiles of the level sit at
-    #
-    #     25%  R_0 <  1.9        50%  R_0 <  7.1        75%  R_0 < 26.6
-    #
-    # so half the pre-testing points land below 7.1 and only a quarter above 26.6. Under
-    # the old [5, 300] box the median was 38.7. The link does the concentrating; no extra
-    # transform is needed and none is applied.
-    #
-    # NOTE THE CEILING against the incumbent. R_0 = 81.55 sits at 96% of this box in
-    # SEARCH coordinates -- interior, but only just, and just under the 98% line
-    # run_smm.jl would flag it as pinned. If an estimate comes back near 100 the box is
-    # wrong, not the model: raise `hi` rather than reporting a bound as an estimate.
-    #
-    # MEASURED across the new box, grid 20, every OTHER parameter held at the incumbent
-    # (so this is a univariate slice, see the caveat below). Nothing is penalised -- the
-    # model solves at every one of these -- but Q is U-shaped and its minimum is NOT on
-    # the left:
-    #
-    #     R_0     0.50    1.0    2.0    5.0   10.0   20.0   40.0  81.55  100.0
-    #     Q      305.9  236.5  158.8   76.1   32.5   11.0    4.2    2.92    3.75
-    #     HC gap -100%  -100%  -100% -99.8% -97.6% -82.6% -45.8% +80.2% +151.3%
-    #
-    # So the univariate optimum sits around R_0 ~ 55-70: below 81.55, because the model
-    # overshoots HC there, but far above the left half of the box, where HC collapses to
-    # essentially zero and Q is 10-100x worse than at the incumbent. Half the Sobol points
-    # land below 7.07, i.e. in the region where Q >= 32.
-    #
-    # CAVEAT, and it is not a small one: this slice holds the other eight parameters
-    # fixed, and R_0 is the most strongly correlated parameter in the set -- the estimate
-    # correlations are phi_3/R_0 -0.998, R_0/sigma_4_0 +0.987, R_0/sigma_1_0 +0.986
-    # (output/identification/jac_9col/standard_errors.toml). A JOINT optimum can sit at a
-    # much lower R_0 with compensating moves in the valuation parameters, which is
-    # precisely what the left-hand room is for. The slice says where the objective is bad
-    # holding everything else still; it does not say where the joint minimum is.
-    SMMParam(:R_0,       0.5, 100.0, :log),    # HC level, against the HC moments
-    SMMParam(:sigma_1_0, -4.0, -0.2,  :level), # HC elasticity to parental TIME, level
-    SMMParam(:sigma_1_1, -0.20, 0.05, :level), #   ... and its age slope
-    SMMParam(:sigma_2_0, -5.0, -0.5,  :level), # HC elasticity to MONEY, level
-    SMMParam(:sigma_2_1, -0.05, 0.05, :level), #   ... and its age slope
-    SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # HC elasticity to the CHILD'S own study
-    # sigma_4_1 IS NOT ESTIMATED -- and note it is NOT ZERO either. It keeps its
-    # PARENT_DEFAULTS value of 0.02, so sigma_4 RISES 24.6% over ages 6-17
-    # (0.01133 -> 0.01412, measured). An earlier version of this comment claimed
-    # "sigma_4 is held flat in t"; that was false, and it had reached the advisor memo
-    # before it was caught. State what the code does.
-    #
-    # Why it is not estimated -- AND NOT THE REASON PREVIOUSLY GIVEN HERE. An earlier
-    # version of this comment claimed sigma_4_1 and mu_1 form an identification ridge.
-    # That is wrong. Taking logs of the child's study FOC ratio, with mu_0 = 1 and
-    # lambda_1 = 1 so that (1 - mu_t) = -mu_1*(t-5):
-    #
-    #     log[ sigma_4_t / (1 - mu_t) ] = sigma_4_0 + sigma_4_1*(t-5) - log(-mu_1) - log(t-5)
-    #
-    # mu_1 enters ONLY the intercept, through -log(-mu_1). That makes it collinear with
-    # sigma_4_0, NOT with sigma_4_1, which carries the age SLOPE. MEASURED on the scaled
-    # residual Jacobian at the incumbent (|cos| between columns):
-    #
-    #     sigma_4_0 vs mu_1      0.991   <- the real near-collinearity, worst of all pairs
-    #     sigma_4_0 vs sigma_4_1 0.813
-    #     sigma_4_1 vs mu_1      0.805   <- correlated, but not a ridge
-    #
-    # So the pair that cannot be estimated together is (sigma_4_0, mu_1). mu_1 does have
-    # other channels -- it also moves alpha_1 and alpha_2 in the family utility -- but
-    # not enough to break that.
-    #
-    # The reason sigma_4_1 is nonetheless still out is CONDITIONING, not rank. Adding it
-    # with mu_1 fixed leaves the system full rank but much harder to solve:
-    #
-    #     9 parameters (current)      condition number   49.2, smallest sv 0.278
-    #     10 with sigma_4_1 added     condition number 1067.1, smallest sv 0.052
-    #
-    # because sigma_4_0 and sigma_4_1 are themselves 0.813 collinear: study time is
-    # targeted only at ages 6-9 and 10-17, which are too close together to separate the
-    # level of the elasticity from its slope. Adding a study-time moment further apart in
-    # age would fix that; adding the parameter alone would not.
-    #
-    # mu_1 is not estimated either (it holds at -0.04), so the age profile of study time
-    # is at present an assumption on BOTH sides. Which to free is an open question with
-    # the advisor; do not resolve it here.
+    SMMParam(:phi_2,     0.01, 20.0, :log),
+    SMMParam(:phi_3,     0.05, 20.0, :log),
+    SMMParam(:lambda_2,  0.05, 20.0, :log),
+    SMMParam(:R_0,       0.5, 100.0, :log),
+    SMMParam(:sigma_1_0, -4.0, -0.1,  :level), # upper limit was -0.2
+    SMMParam(:sigma_1_1, -0.20, 0.05, :level),
+    SMMParam(:sigma_2_0, -5.0, -0.5,  :level),
+    SMMParam(:sigma_2_1, -0.10, 0.05, :level), # lower limit was -0.05
+    SMMParam(:sigma_4_0, -8.0, -1.0,  :level), # lower limit was -6.0
+    # sigma_4_1 = 0.02 and mu_1 = -0.04 stay fixed at PARENT_DEFAULTS.
+    # sigma_4_1 is the first candidate for a later ten-parameter pilot. Historical
+    # calibration Jacobians do not establish identification at the fitted point.
 ]
 
 # Over-identification is now DELIBERATE (ten moments, nine parameters) and is explained

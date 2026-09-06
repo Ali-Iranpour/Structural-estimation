@@ -1,5 +1,49 @@
 # Estimation review — current status and remaining work
 
+## Baseline promotion and boundary fixes — 7 September 2026
+
+The accepted nine-parameter run is preserved in Git and promoted, at full checkpoint
+precision, into `PARENT_DEFAULTS`. [BASELINE_9PARAM.md](BASELINE_9PARAM.md) records the
+immutable snapshot, original versus future bounds, fixed parameters and regression checks.
+The near-bound `sigma_1_0`, `sigma_2_1`, and `sigma_4_0` limits now allow exploration to
+−0.1, −0.1, and −8 respectively. The estimated set remains nine parameters.
+
+**A6's boundary-stencil and invalid-perturbation defects are fixed:** the Jacobian now uses
+central or second-order one-sided differences, saves actual points/weights/schemes, and
+refuses invalid perturbations. Old Jacobian artifacts have not been recomputed. Optional
+candidate boxes now cover `sigma_4_1` in [−0.05,0.15] and restrict `mu_1` to [−0.08,−0.005].
+A7 inference and the other post-estimation tasks below remain separate unfinished work.
+No expanded estimation has been launched.
+
+---
+
+## Post-estimation inspection — 7 September 2026
+
+The completed run [`2026-09-06_183119`](../output/smm_runs/2026-09-06_183119/estimates.toml)
+used **2,000 Sobol points / 5 restarts**, with 400-evaluation local/polish caps. Its retained
+polish returned `FTOL_REACHED`; **Q = 0.2500261422642604 reproduces exactly**, with zero
+invalid simulated cells including the age-18 handoff. A1 and A2 from the older audit below
+are fixed in the code used for this run; generic `ErrorException` handling was narrowed.
+Resume was not exercised, and the remaining derivative/inference tools are not certified.
+
+See the [complete run inspection and controlled parameter probes](../output/smm_diagnostics/2026-09-06_183119/inspection_notes.md)
+for all nine bounds, ten residuals, restart gains, runtime, coverage and next steps.
+**Study time accounts for 72.69% of Q.** The recommended first extension is `sigma_4_1`,
+jointly re-estimating the original nine and investigating the lower bound on `sigma_4_0`.
+A controlled slope/intercept probe reduced Q to 0.107708; this is not a fitted expanded model.
+Tested single-coordinate `R_1` and `mu_1` moves did not improve the fit. More restarts and
+identification validation remain distinct tasks.
+
+Two additional provenance issues are confirmed in this run: its `run_record.toml` is not
+valid TOML because `child_grid` contains an unquoted Julia NamedTuple, and its end-of-run
+commit stamp postdates startup. The current writer has corrected the former formatting;
+the original saved file was preserved. Preserve the startup code identity in future records.
+Model/moment/TikTak sources did not change across those intervening commits, and exact
+reproduction supports the numerical fit. These findings supplement, rather than erase,
+the older audit below.
+
+---
+
 ## Launch-readiness audit — 6 September 2026
 
 **No: the comments through Tier 2 are not all fully resolved.** The previous assessment

@@ -1,0 +1,144 @@
+simN = 2000
+note = "Controlled slices, not re-estimated models; baseline nine parameters fixed except listed changes. No identification or global optimality claim."
+grid = 30
+seed = 1234
+
+[[probes]]
+label = "R_1=-1.0"
+
+    [probes.changes]
+    R_1 = -1.0
+[[probes]]
+label = "R_1=-0.5"
+
+    [probes.changes]
+    R_1 = -0.5
+[[probes]]
+label = "R_1=0.5"
+
+    [probes.changes]
+    R_1 = 0.5
+[[probes]]
+label = "R_1=1.0"
+
+    [probes.changes]
+    R_1 = 1.0
+[[probes]]
+label = "sigma_4_1=0.0"
+
+    [probes.changes]
+    sigma_4_1 = 0.0
+[[probes]]
+label = "sigma_4_1=0.01"
+
+    [probes.changes]
+    sigma_4_1 = 0.01
+[[probes]]
+label = "sigma_4_1=0.03"
+
+    [probes.changes]
+    sigma_4_1 = 0.03
+[[probes]]
+label = "sigma_4_1=0.04"
+
+    [probes.changes]
+    sigma_4_1 = 0.04
+[[probes]]
+label = "sigma_4_1=0.08"
+
+    [probes.changes]
+    sigma_4_1 = 0.08
+[[probes]]
+label = "sigma_4_1=0.12"
+
+    [probes.changes]
+    sigma_4_1 = 0.12
+[[probes]]
+label = "mu_1=-0.06"
+
+    [probes.changes]
+    mu_1 = -0.06
+[[probes]]
+label = "mu_1=-0.05"
+
+    [probes.changes]
+    mu_1 = -0.05
+[[probes]]
+label = "mu_1=-0.03"
+
+    [probes.changes]
+    mu_1 = -0.03
+[[probes]]
+label = "mu_1=-0.02"
+
+    [probes.changes]
+    mu_1 = -0.02
+[[probes]]
+label = "sigma_1_0=-0.2"
+
+    [probes.changes]
+    sigma_1_0 = -0.2
+[[probes]]
+label = "sigma_1_0=-0.15"
+
+    [probes.changes]
+    sigma_1_0 = -0.15
+[[probes]]
+label = "sigma_2_1=-0.05"
+
+    [probes.changes]
+    sigma_2_1 = -0.05
+[[probes]]
+label = "sigma_2_1=-0.075"
+
+    [probes.changes]
+    sigma_2_1 = -0.075
+[[probes]]
+label = "sigma_2_1=-0.1"
+
+    [probes.changes]
+    sigma_2_1 = -0.1
+[[probes]]
+label = "sigma_4_0=-6.0"
+
+    [probes.changes]
+    sigma_4_0 = -6.0
+[[probes]]
+label = "sigma_4_0=-6.2"
+
+    [probes.changes]
+    sigma_4_0 = -6.2
+[[probes]]
+label = "sigma_4_0=-6.5"
+
+    [probes.changes]
+    sigma_4_0 = -6.5
+[[probes]]
+label = "study_pivot_slope=0.04"
+
+    [probes.changes]
+    sigma_4_1 = 0.04
+    sigma_4_0 = -6.1052187990828735
+[[probes]]
+label = "study_pivot_slope=0.08"
+
+    [probes.changes]
+    sigma_4_1 = 0.08
+    sigma_4_0 = -6.345218799082874
+[[probes]]
+label = "study_pivot_slope=0.12"
+
+    [probes.changes]
+    sigma_4_1 = 0.12
+    sigma_4_0 = -6.585218799082873
+
+[baseline]
+sigma_2_0 = -3.755061670055589
+lambda_2 = 8.679256726534701
+sigma_1_0 = -0.2232425708968751
+sigma_2_1 = -0.049981076507371304
+phi_3 = 1.020143373142503
+R_0 = 50.60319557962827
+sigma_4_0 = -5.985218799082873
+phi_2 = 0.14372193830057325
+sigma_1_1 = -0.14134183068950082
