@@ -1,0 +1,39 @@
+
+==============================================================================
+Target-moment sensitivity   [PILOT -- machinery validation, NOT the exercise]
+==============================================================================
+started  2026-09-06 13:45:07
+outdir   output/sensitivity/pilot_2026-09-06_134507
+29.9s
+centre    PARENT_DEFAULTS (the incumbent calibration)
+          !! The exercise SHOULD be centred on a fitted baseline. Pass --at once one
+             exists; a sensitivity curve around a calibration describes the
+             calibration's neighbourhood, not the estimator's.
+moments   mean_h_p, mean_hc_early
+offsets   -1.0, 1.0  (standard errors of the sample moment)
+budget    40 sobol + 2 restarts per point, grid 20, simN 2000, seed 1234
+points    4  (2 moments x 2 offsets)
+  mean_h_p         +1 se  target   0.3094  Q    0.30644  (warm    0.40784 / alt    0.30644)   22.5 min  [1/4]
+     !! the warm start was 0.101 worse than an independent multistart --
+        this point's curve value came from the multistart, and the warm
+        chain is walking into a different basin. Treat neighbours with care.
+  mean_h_p         -1 se  target   0.3052  Q    0.31093  (warm    0.41074 / alt    0.31093)   21.9 min  [2/4]
+     !! the warm start was 0.0998 worse than an independent multistart --
+        this point's curve value came from the multistart, and the warm
+        chain is walking into a different basin. Treat neighbours with care.
+  mean_hc_early    +1 se  target   6.0775  Q    0.30271  (warm    0.40896 / alt    0.30271)   21.9 min  [3/4]
+     !! the warm start was 0.106 worse than an independent multistart --
+        this point's curve value came from the multistart, and the warm
+        chain is walking into a different basin. Treat neighbours with care.
+  mean_hc_early    -1 se  target   6.0699  Q    0.30887  (warm    0.40956 / alt    0.30887)   21.9 min  [4/4]
+     !! the warm start was 0.101 worse than an independent multistart --
+        this point's curve value came from the multistart, and the warm
+        chain is walking into a different basin. Treat neighbours with care.
+
+==============================================================================
+Done in 88.2 min -- 4 points
+==============================================================================
+curves written to output/sensitivity/pilot_2026-09-06_134507/curves.csv
+Read curves.csv beside the caveats in this script's header. `alt_gap` > 0 means the warm
+start was beaten by an independent multistart at that point; `on_bound` means the argmin
+hit its box and the response there is censored, not a slope.

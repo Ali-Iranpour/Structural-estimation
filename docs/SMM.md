@@ -408,7 +408,7 @@ recollections from a review conversation.
 |---|---|---|
 | [`jacobian.jl`](../code/smm/jacobian.jl) | local separation: singular values, condition number, weak directions, every pairwise cosine — saved with the point, boxes, scales, grids, seed and steps | global identification; a small condition number is not precision |
 | [`standard_errors.jl`](../code/smm/standard_errors.jl) | sampling uncertainty: the clustered minimum-distance sandwich under equal and efficient weights | simulation error, the weighting choice, specification error |
-| [`sensitivity.jl`](../code/smm/sensitivity.jl) | how the argmin moves when one target moves — all nine parameters jointly re-estimated at each perturbed target | identification or robustness evidence |
+| [`sensitivity.jl`](../code/smm/sensitivity.jl) | how the argmin moves when one target moves — all nine parameters jointly re-estimated at each perturbed target | identification or robustness evidence. A point that reports `MAXEVAL_REACHED` or `on_bound` is censored, not a slope |
 
 Each refuses to run on missing inputs rather than substituting a plausible one:
 `standard_errors.jl` will not compute its own Jacobian, and `sensitivity.jl` will not
