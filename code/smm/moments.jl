@@ -347,6 +347,61 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
             n_nonfinite    = n_bad[])
 end
 
+# Tolerance for the domain checks below. The optimizer's own floors are 1e-4 (goods) and
+# TIME_FLOOR = 1e-3 (time), and `snap_parent` repairs only float-sized violations
+# (tol 1e-10) BY DESIGN -- a genuinely out-of-bounds value is meant to propagate rather
+# than be silently rewritten. This tolerance is therefore loose enough to ignore
+# interpolation noise at a bound and tight enough that a real violation is still a
+# violation.
+const SIM_FEAS_TOL = 1e-8
+
+"""
+    simulation_violations(p) -> NamedTuple
+
+Cells of the simulation that leave the model's own domain, counted by KIND.
+
+This exists because counting non-finite cells is not the same as checking validity, and
+the difference was measured, not assumed. Injecting each pathology into a solved baseline:
+
+    sim_c  = NaN                        caught (non-finite)
+    sim_c  = -5.0  negative consumption NOT caught
+    sim_h  = -0.3  negative hours       NOT caught
+    sim_h  =  1.8  hours > time budget  NOT caught
+    sim_a  = -50   below a_min = 0      NOT caught
+    sim_hc = -1.0  negative skill       caught (the one series with a positivity test)
+
+Everything finite was accepted, so a simulation could report an ordinary-looking fit on
+economically impossible paths. A negative consumption is not a bad parameter draw with a
+large objective -- it is a solve that failed, and it must be refused, not scored.
+
+Assets are checked over ALL T+1 columns. Column T+1 is the terminal state that becomes
+the child's initial assets at the handoff, so excluding it hides exactly the column that
+propagates into the next block.
+"""
+function simulation_violations(p::Parent_child_interaction_age_specific_AR1)
+    cols = SMM_AGE_LO:SMM_AGE_HI
+    tol  = SIM_FEAS_TOL
+    C, E, H, Tp = p.sim_c[:, cols], p.sim_e[:, cols], p.sim_h[:, cols], p.sim_t[:, cols]
+    I, HC       = p.sim_i[:, cols], p.sim_hc[:, cols]
+    A           = p.sim_a[:, 1:(p.T + 1)]
+
+    nf = sum(M -> count(!isfinite, M), (C, E, H, Tp, I, HC)) + count(!isfinite, A)
+    fin(f) = x -> isfinite(x) && f(x)
+    unit   = x -> x < -tol || x > 1 + tol
+
+    v = (nonfinite               = nf,
+         c_nonpositive           = count(fin(x -> x <= 0.0), C),
+         e_negative              = count(fin(x -> x < -tol), E),
+         hc_nonpositive          = count(fin(x -> x <= 0.0), HC),
+         h_outside_unit          = count(fin(unit), H),
+         t_outside_unit          = count(fin(unit), Tp),
+         i_outside_unit          = count(fin(unit), I),
+         parent_leisure_negative = count(fin(x -> x < -tol), 1.0 .- H .- Tp),
+         child_leisure_negative  = count(fin(x -> x < -tol), 1.0 .- Tp .- I),
+         assets_below_min        = count(fin(x -> x < p.a_min - tol), A))
+    return (total = sum(values(v)), v...)
+end
+
 """
     moment_diagnostics(p) -> NamedTuple
 
@@ -363,21 +418,36 @@ function moment_diagnostics(p::Parent_child_interaction_age_specific_AR1)
 
     # GRID COVERAGE. Policies are interpolated with Flat() extrapolation, so a simulated
     # state above the solved grid silently reuses the policy at the top node. That is
-    # defensible for a thin tail and indefensible if the mass moves out there, so it is
-    # measured rather than assumed -- and split by WHERE it comes from, which is the part
-    # that decides what to do about it.
-    a_hi = maximum(p.a_grid)
-    A    = p.sim_a[:, cols]
-    frac_hi   = mean(A .> a_hi)
-    frac_hi_1 = mean(p.sim_a[:, 1] .> a_hi) * (1 / length(cols))   # t = 1's share of all cells
+    # defensible for a thin tail and indefensible if the mass lives out there, so it is
+    # measured rather than assumed.
+    #
+    # MEASURED over ALL T+1 columns, and reported as HOUSEHOLDS, not as a share of cells.
+    # An earlier version did neither, and the conclusion drawn from it was wrong: it
+    # compared the fraction of HOUSEHOLDS above at t=1 (0.1%) against the fraction of
+    # CELLS above over t=1..17 (0.1%), read the equality as "all of it is the initial
+    # draw", and reported that. The two numbers match only because 2 households x 17
+    # periods / 34,000 cells equals 2 / 2,000 -- different denominators, same digits.
+    #
+    # What is actually true at the incumbent: 2 households sit above the ceiling in EVERY
+    # period 1..17, and 7 are above at the T+1 handoff, peaking at 259 against a ceiling
+    # of 100. So five of them cross DURING the family stage; it is not only initial
+    # wealth. The handoff column matters most of all -- it becomes the child's initial
+    # assets -- and the old diagnostic excluded it from both the share and the maximum.
+    a_hi  = maximum(p.a_grid)
+    Aall  = p.sim_a[:, 1:(p.T + 1)]
+    Aflow = p.sim_a[:, cols]
+    n_sim = size(Aall, 1)
     return (income = inc, resources = res,
             saving_rate = (res - c - e) / res,
             terminal_assets = nanmean(p.sim_a[:, p.T + 1]),
             h_p = nanmean(vec(p.sim_h[:, cols])),
             t_p = nanmean(vec(p.sim_t[:, cols])),
-            a_above_grid = frac_hi,
-            a_above_grid_t1 = frac_hi_1,
-            a_max_sim = maximum(A), a_grid_max = a_hi)
+            a_grid_max        = a_hi,
+            a_max_sim         = maximum(Aall),          # over ALL columns, handoff included
+            a_hh_ever_above   = count(i -> any(Aall[i, :] .> a_hi), 1:n_sim) / n_sim,
+            a_hh_above_t1     = mean(p.sim_a[:, 1] .> a_hi),
+            a_hh_above_handoff= mean(p.sim_a[:, p.T + 1] .> a_hi),
+            a_cell_above_flow = mean(Aflow .> a_hi))
 end
 
 # -----------------------------------------------------------------------------
@@ -457,16 +527,39 @@ const SMM_PARAMS = [
     # "sigma_4 is held flat in t"; that was false, and it had reached the advisor memo
     # before it was caught. State what the code does.
     #
-    # Why it is not estimated. The child's study FOC is driven by the ratio
-    #     sigma_4_t / [(1 - mu_t) * lambda_1],   sigma_4_t = exp(sigma_4_0 + sigma_4_1(t-5))
-    # and with mu_0 = 1 and lambda_1 = 1 the denominator is exactly -mu_1*(t-5). Both
-    # parameters therefore scale the SAME (t-5) term, one inside the numerator's exponent
-    # and one in the denominator, so the study-time age profile cannot identify both --
-    # an optimizer given the pair sits on a ridge.
+    # Why it is not estimated -- AND NOT THE REASON PREVIOUSLY GIVEN HERE. An earlier
+    # version of this comment claimed sigma_4_1 and mu_1 form an identification ridge.
+    # That is wrong. Taking logs of the child's study FOC ratio, with mu_0 = 1 and
+    # lambda_1 = 1 so that (1 - mu_t) = -mu_1*(t-5):
+    #
+    #     log[ sigma_4_t / (1 - mu_t) ] = sigma_4_0 + sigma_4_1*(t-5) - log(-mu_1) - log(t-5)
+    #
+    # mu_1 enters ONLY the intercept, through -log(-mu_1). That makes it collinear with
+    # sigma_4_0, NOT with sigma_4_1, which carries the age SLOPE. MEASURED on the scaled
+    # residual Jacobian at the incumbent (|cos| between columns):
+    #
+    #     sigma_4_0 vs mu_1      0.991   <- the real near-collinearity, worst of all pairs
+    #     sigma_4_0 vs sigma_4_1 0.813
+    #     sigma_4_1 vs mu_1      0.805   <- correlated, but not a ridge
+    #
+    # So the pair that cannot be estimated together is (sigma_4_0, mu_1). mu_1 does have
+    # other channels -- it also moves alpha_1 and alpha_2 in the family utility -- but
+    # not enough to break that.
+    #
+    # The reason sigma_4_1 is nonetheless still out is CONDITIONING, not rank. Adding it
+    # with mu_1 fixed leaves the system full rank but much harder to solve:
+    #
+    #     9 parameters (current)      condition number   49.2, smallest sv 0.278
+    #     10 with sigma_4_1 added     condition number 1067.1, smallest sv 0.052
+    #
+    # because sigma_4_0 and sigma_4_1 are themselves 0.813 collinear: study time is
+    # targeted only at ages 6-9 and 10-17, which are too close together to separate the
+    # level of the elasticity from its slope. Adding a study-time moment further apart in
+    # age would fix that; adding the parameter alone would not.
     #
     # mu_1 is not estimated either (it holds at -0.04), so the age profile of study time
-    # is at present an assumption on BOTH sides rather than an estimate. Which of the two
-    # to free is an open question with the advisor; do not resolve it here.
+    # is at present an assumption on BOTH sides. Which to free is an open question with
+    # the advisor; do not resolve it here.
 ]
 
 # Over-identification is now DELIBERATE (ten moments, nine parameters) and is explained
@@ -593,11 +686,14 @@ function smm_objective(z::AbstractVector{Float64}, targets, V_child;
         end
         m = model_moments(p)
 
-        # A simulation with non-finite or non-positive cells is not a bad parameter draw,
-        # it is an invalid evaluation. Scoring it would let a partly-failed simulation
-        # compete on the strength of the cells that happened to survive.
-        if m.n_nonfinite > 0
-            _penalize!(:nonfinite_sim)
+        # A simulation that leaves the model's domain is not a bad parameter draw, it is
+        # an invalid evaluation. Scoring it would let a partly-failed solve compete on
+        # the strength of the cells that happened to survive. Checked by KIND so the
+        # penalty log says WHICH economic law broke, not merely that something did.
+        viol = simulation_violations(p)
+        if viol.total > 0
+            worst = argmax(Dict(k => v for (k, v) in pairs(viol) if k !== :total))
+            _penalize!(Symbol("invalid_sim_", worst))
             return SMM_PENALTY
         end
 
@@ -730,15 +826,22 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
             d.terminal_assets*DOLLARS_PER_MODEL_UNIT)
     @printf(out, "  leisure l_p           %8.4f  (%.1f hrs/wk)\n",
             1 - d.h_p - d.t_p, (1 - d.h_p - d.t_p)*HOURS_PER_WEEK)
-    @printf(out, "  non-finite sim cells  %8d\n", m.n_nonfinite)
-    # Reported, NOT clamped. sim_a_init is LogNormal(0.296, 1.402); its upper tail simply
-    # runs past a_max, so clamping the draw would distort the initial wealth distribution
-    # to flatter a grid. The choice is between widening a_max (which, under the <= 30 node
-    # cap, coarsens the region where the mass actually sits) and accepting flat
-    # extrapolation for a thin tail. Left open deliberately -- see docs/REVIEW_TRIAGE.md.
-    @printf(out, "  assets above a_max    %8.3f%% of cells (max %.1f vs grid %.0f)\n",
-            100*d.a_above_grid, d.a_max_sim, d.a_grid_max)
-    @printf(out, "     of which from t=1  %8.3f%%  (initial-wealth tail, not a transition)\n",
-            100*d.a_above_grid_t1)
+    v = simulation_violations(p)
+    @printf(out, "  invalid sim cells     %8d\n", v.total)
+    if v.total > 0
+        for (k, n) in pairs(v)
+            k === :total || n == 0 || @printf(out, "     %-22s %8d\n", k, n)
+        end
+    end
+    # Reported, NOT clamped. sim_a_init is LogNormal(0.296, 1.402) and its upper tail runs
+    # past a_max, so clamping the draw would distort the initial wealth distribution to
+    # flatter a grid. But it is NOT only the initial draw -- see moment_diagnostics.
+    @printf(out, "  assets above a_max=%.0f  max %.1f  (households: %.2f%% ever, %.2f%% at t=1, %.2f%% at handoff)\n",
+            d.a_grid_max, d.a_max_sim, 100*d.a_hh_ever_above,
+            100*d.a_hh_above_t1, 100*d.a_hh_above_handoff)
+    if d.a_hh_ever_above > d.a_hh_above_t1 + 1e-12
+        @printf(out, "     %.2f%% of households CROSS the ceiling during t = 1..17 -- not just the initial draw\n",
+                100*(d.a_hh_ever_above - d.a_hh_above_t1))
+    end
     return (moments = m, diagnostics = d, params = kw)
 end
