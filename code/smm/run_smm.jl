@@ -160,6 +160,26 @@ const RUN_DIR = RESUMING ? RESUME_DIR :
         joinpath(REPO, "temp", isempty(TEMP_LABEL) ? STAMP : STAMP * "_" * TEMP_LABEL) :
         argstr("--outdir", joinpath(REPO, "output", "smm_runs", STAMP))
 mkpath(RUN_DIR)
+
+# A STABLE NAME FOR "THE RUN THAT IS GOING ON RIGHT NOW".
+#
+# `output/smm_runs/latest` is re-pointed at every run, so you never have to read a
+# timestamp out of the startup output and paste it into a tail command:
+#
+#     tail -f output/smm_runs/latest/run.log
+#
+# The link target is RELATIVE (just the folder name), so it keeps working if the whole
+# output tree is moved or copied to another machine. A symlink is a convenience and never
+# a reason to fail a run, so every failure here is swallowed -- some filesystems do not
+# support them, and losing the estimation over that would be absurd.
+let link = joinpath(dirname(RUN_DIR), "latest")
+    try
+        (islink(link) || ispath(link)) && rm(link; force = true, recursive = false)
+        symlink(basename(RUN_DIR), link)
+    catch
+    end
+end
+
 const LOG = open(joinpath(RUN_DIR, "run.log"), RESUMING ? "a" : "w")
 
 # Paths are printed relative to the repo root so the log stays readable (and the
@@ -216,6 +236,8 @@ else
     sayf("grids      Na=Nhc=%d for both the search and the report\n", GRID_FULL)
 end
 sayf("writing to %s\n", short(RUN_DIR))
+sayf("           (also reachable as %s/latest -- tail that, no timestamp needed)\n",
+     short(dirname(RUN_DIR)))
 
 # -----------------------------------------------------------------------------
 # Start the workers
