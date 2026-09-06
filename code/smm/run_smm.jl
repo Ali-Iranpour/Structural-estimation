@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 # =============================================================================
-# run_smm.jl -- estimate six parent parameters on six data means.
+# run_smm.jl -- estimate NINE parent parameters against TEN data moments.
 #
 #     cd code/smm && julia --project=../.. run_smm.jl --quick     # 2 min smoke test
 #     cd code/smm && julia --project=../.. run_smm.jl             # the real run
@@ -622,6 +622,40 @@ sayf("Q: sobol-best %.6g  ->  pre-polish %.6g  ->  final %.6g\n",
 sayf("incumbent Q was %.6g  (improvement %.1f%%)\n", q0, 100 * (q0 - result.f) / q0)
 
 # -----------------------------------------------------------------------------
+# How the search TERMINATED -- not how good its number is
+# -----------------------------------------------------------------------------
+# A finite objective certifies nothing on its own. A restart that stopped because it hit
+# `maxeval` did not satisfy any convergence test, and a run made mostly of those has a
+# budget problem however good the objective looks; a restart that threw is a bug in the
+# objective, not a bad parameter draw (`smm_objective` already converts genuine model
+# failures into a finite penalty and RE-THROWS everything else). All three used to be
+# invisible: the return codes lived in `result.trace` and were never read.
+const RET_TALLY = ret_tally(result)
+const N_CONVERGED = sum(v for (k, v) in RET_TALLY if ret_class(k) === :converged; init = 0)
+const N_LIMIT     = sum(v for (k, v) in RET_TALLY if ret_class(k) === :limit;     init = 0)
+const N_OTHER     = sum(v for (k, v) in RET_TALLY if ret_class(k) === :other;     init = 0)
+
+say("\nhow the local searches ended")
+for (k, v) in sort(collect(RET_TALLY); by = last, rev = true)
+    sayf("  %-22s %5d   (%s)\n", k, v, ret_class(k))
+end
+sayf("  %-22s %5d converged / %d hit a budget / %d other\n", "", N_CONVERGED, N_LIMIT, N_OTHER)
+sayf("polish: ret %s (%s), %d evaluations, %s\n", result.polish_ret,
+     ret_class(result.polish_ret), result.n_eval_polish,
+     result.polish_improved ? "improved the incumbent" : "did not improve the incumbent")
+if result.n_exception > 0
+    sayf("\n!! %d local search(es) THREW. That is a bug in the objective, not a bad draw --\n",
+         result.n_exception)
+    say("   smm_objective scores genuine model failures and re-throws everything else.")
+    say("   The affected restarts were discarded; treat this run as suspect.")
+end
+if N_LIMIT > N_CONVERGED
+    sayf("\n!! %d of %d restarts stopped on a BUDGET, not a convergence test.\n",
+         N_LIMIT, length(result.trace))
+    say("   Raise --local-evals, or read the trace before quoting this as a minimum.")
+end
+
+# -----------------------------------------------------------------------------
 # Full-grid refinement
 # -----------------------------------------------------------------------------
 # The search minimises Q on GRID_SEARCH. Re-EVALUATING that winner at the full grid is
@@ -640,6 +674,18 @@ const Q_SEARCH = result.f
 # same rule that bites top-level `for` loops (see CLAUDE.md). The first version of this
 # block did exactly that and reported the UNREFINED point while printing the refined one.
 # Returning the pair makes the data flow explicit and the trap unreachable.
+# WHAT THE REFINEMENT DID, kept separate from WHETHER IT RAN.
+#
+# `refined = GRID_SEARCH != GRID_FULL` -- the old field -- says only that a stage was
+# SELECTED. It read `true` after an exception and after a refinement that found nothing,
+# which are three different outcomes with the same label. These four are distinguishable:
+#
+#   :skipped         the search already ran at the report grid, so there was nothing to do
+#   :improved        BOBYQA converged (or stopped) at a strictly better full-grid point
+#   :no_improvement  it ran and returned nothing better than the coarse winner
+#   :failed          it threw; the coarse winner was kept
+const REFINE_SKIPPED = (status = :skipped, ret = :NOT_RUN, evals = 0)
+
 function refine_at_full_grid(z_search::Vector{Float64}, lo, hi)
     banner(@sprintf("Full-grid refinement (grid %d -> %d)", GRID_SEARCH, GRID_FULL))
     q_coarse_winner = objective_full(z_search)
@@ -653,33 +699,44 @@ function refine_at_full_grid(z_search::Vector{Float64}, lo, hi)
     min_objective!(ropt, (z, g) -> (n_ref[] += 1; objective_full(z)))
     try
         (qr, zr, retr) = optimize(ropt, z_search)
-        sayf("refined: %d evaluations, %.1f min, ret %s\n", n_ref[], (time()-t_ref)/60, retr)
+        sayf("refined: %d evaluations, %.1f min, ret %s (%s)\n",
+             n_ref[], (time()-t_ref)/60, retr, ret_class(retr))
         if isfinite(qr) && qr < q_coarse_winner
             sayf("Q(grid %d): %.6g at the coarse winner  ->  %.6g refined  (%.2f%% better)\n",
                  GRID_FULL, q_coarse_winner, qr,
                  100*(q_coarse_winner - qr)/max(abs(q_coarse_winner), eps()))
-            return (copy(zr), qr)
+            return (copy(zr), qr, (status = :improved, ret = retr, evals = n_ref[]))
         end
         sayf("Q(grid %d): %.6g at the coarse winner; refinement did not improve on it\n",
              GRID_FULL, q_coarse_winner)
-        return (copy(z_search), q_coarse_winner)
+        return (copy(z_search), q_coarse_winner,
+                (status = :no_improvement, ret = retr, evals = n_ref[]))
     catch e
         @warn "full-grid refinement failed; keeping the coarse winner" exception = e
-        return (copy(z_search), q_coarse_winner)
+        sayf("refinement FAILED after %d evaluations: %s\n", n_ref[], sprint(showerror, e))
+        return (copy(z_search), q_coarse_winner,
+                (status = :failed, ret = :EXCEPTION, evals = n_ref[]))
     end
 end
 
 @everywhere objective_full(z) = smm_objective(z, TARGETS, V_CHILD;
                                               Na = G_FULL_.Na, Nk = G_FULL_.Nk,
                                               Nhc = G_FULL_.Nhc, simN = G_FULL_.simN)
-const (Z_FINAL, Q_FINAL) = if GRID_SEARCH != GRID_FULL
+const (Z_FINAL, Q_FINAL, REFINE) = if GRID_SEARCH != GRID_FULL
     refine_at_full_grid(Z_SEARCH, lo, hi)
 else
     say("\nsearch ran at the full grid -- no refinement stage needed")
-    (copy(Z_SEARCH), Q_SEARCH)
+    (copy(Z_SEARCH), Q_SEARCH, REFINE_SKIPPED)
 end
-GRID_SEARCH == GRID_FULL ||
-    checkpoint!(N_RESTART, Q_FINAL, Z_FINAL; stage = "refined", grid = GRID_FULL)
+
+# THE FINAL WINNER IS ALWAYS CHECKPOINTED, refinement or not.
+#
+# This used to be guarded by `GRID_SEARCH != GRID_FULL`, and both grids default to 30 --
+# so on a DEFAULT run the last checkpoint written was the pre-polish incumbent after the
+# final restart, and the polish's improvement existed only in estimates.toml. If the report
+# stage then died, the best point on disk was not the best point found.
+checkpoint!(N_RESTART, Q_FINAL, Z_FINAL;
+            stage = GRID_SEARCH == GRID_FULL ? "final" : "refined", grid = GRID_FULL)
 
 # ---- how much of the box the model could not live in -----------------------
 # A penalised draw is a real answer, but the RATE is diagnostic: a few percent is
@@ -687,7 +744,11 @@ GRID_SEARCH == GRID_FULL ||
 function gather_penalties()
     total = Dict{Symbol,Int}()
     for w in procs()
-        d = w == myid() ? SMM_PENALTY_LOG : remotecall_fetch(() -> SMM_PENALTY_LOG, w)
+        # `Main.SMM_PENALTY_LOG`, not the bare name: a closure over the bare name
+        # SERIALISES this process's copy and asks the worker to install it, which each
+        # worker then refuses -- "Cannot transfer global variable" on every gather. Going
+        # through Main makes it a global lookup performed on the worker.
+        d = w == myid() ? SMM_PENALTY_LOG : remotecall_fetch(() -> copy(Main.SMM_PENALTY_LOG), w)
         for (k, v) in d
             total[k] = get(total, k, 0) + v
         end
@@ -710,7 +771,32 @@ else
 end
 
 banner("Estimated calibration")
-say_report(Z_FINAL)
+const FINAL_REPORT = say_report(Z_FINAL)
+
+# -----------------------------------------------------------------------------
+# Acceptance: is this point fit to be used, separate from how good its Q is
+# -----------------------------------------------------------------------------
+# Three conditions, and all three have to hold. A lower finite objective is not one of
+# them: a point can be the best one found and still sit on economically impossible paths,
+# or be the output of searches that all ran out of budget.
+const N_INVALID_FINAL = FINAL_REPORT.violations.total
+const ACCEPTED = (N_CONVERGED > 0) && (result.n_exception == 0) && (N_INVALID_FINAL == 0)
+
+say("\nacceptance")
+sayf("  local searches converged     %s  (%d converged, %d hit a budget, %d other)\n",
+     N_CONVERGED > 0 ? "yes" : "NO ", N_CONVERGED, N_LIMIT, N_OTHER)
+sayf("  no objective exceptions      %s  (%d)\n",
+     result.n_exception == 0 ? "yes" : "NO ", result.n_exception)
+sayf("  final simulation in domain   %s  (%d invalid cells)\n",
+     N_INVALID_FINAL == 0 ? "yes" : "NO ", N_INVALID_FINAL)
+sayf("  refinement                   %s (ret %s, %d evals)\n",
+     REFINE.status, REFINE.ret, REFINE.evals)
+if ACCEPTED
+    say("  ACCEPTED -- this point may be quoted, with the caveats in docs/SMM.md")
+else
+    say("  NOT ACCEPTED -- do not quote this point. Fix the failing condition above first;")
+    say("  a finite Q is not a certification, and neither is a 95% state-solver share.")
+end
 
 # ---- did anything land on a box edge? --------------------------------------
 # A parameter pinned to its bound is not a converged estimate -- it is the model
@@ -741,14 +827,19 @@ end
 # -----------------------------------------------------------------------------
 est = unpack(Z_FINAL)
 open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
-    println(io, "# SMM, three parent moments. GENERATED by code/smm/run_smm.jl.")
+    println(io, "# SMM: ", length(SMM_MOMENTS), " parent moments, ", length(SMM_PARAMS),
+                 " parameters. GENERATED by code/smm/run_smm.jl.")
     println(io, "generated  = \"", Dates.format(now(), "yyyy-mm-dd HH:MM"), "\"")
     println(io, "git_commit = \"", git_sha(), "\"")
     println(io, "targets    = \"Input/smm_targets_baseline.toml\"")
     println(io, "quick      = ", QUICK)
     println(io, "n_sobol    = ", N_SOBOL)
     println(io, "n_restarts = ", N_RESTART)
-    println(io, "n_eval     = ", result.n_eval)
+    println(io, "n_eval     = ", result.n_eval, "   # TikTak only: sobol + restarts + polish")
+    println(io, "n_eval_total= ", result.n_eval + REFINE.evals,
+            "   # including the full-grid refinement")
+    println(io, "n_eval_polish= ", result.n_eval_polish)
+    println(io, "n_eval_refine= ", REFINE.evals)
     println(io, "grid_search= ", GRID_SEARCH, "   # parent Na = Nhc used by the optimizer")
     println(io, "grid_report= ", GRID_FULL, "   # parent Na = Nhc the reported fit was re-solved at")
     println(io, "workers    = ", max(0, nprocs() - 1))
@@ -760,7 +851,21 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "Q_final    = ", Q_FINAL, "   # at grid_report, after refinement")
     println(io, "Q_search   = ", Q_SEARCH, "   # at grid_search, what the search minimised")
     println(io, "Q_incumbent= ", q0, "   # at grid_search")
-    println(io, "refined    = ", GRID_SEARCH != GRID_FULL)
+    # ACCEPTANCE. How the point was reached, beside what it is worth.
+    println(io, "refine_status = \"", REFINE.status, "\"   # skipped|improved|no_improvement|failed")
+    println(io, "refine_ret    = \"", REFINE.ret, "\"")
+    println(io, "polish_ret    = \"", result.polish_ret, "\"")
+    println(io, "polish_improved = ", result.polish_improved)
+    println(io, "n_converged   = ", N_CONVERGED, "   # local searches that met a stopping test")
+    println(io, "n_hit_budget  = ", N_LIMIT, "   # stopped on maxeval/maxtime, NOT converged")
+    println(io, "n_ret_other   = ", N_OTHER)
+    println(io, "n_exception   = ", result.n_exception, "   # >0 means a BUG in the objective")
+    println(io, "n_invalid_final = ", N_INVALID_FINAL, "   # off-domain cells at the final point")
+    println(io, "accepted      = ", ACCEPTED,
+            "   # converged restarts, no exceptions, and a feasible final simulation")
+    print(io, "ret_tally  = {")
+    print(io, join(("$(k) = $(v)" for (k, v) in sort(collect(RET_TALLY); by = first)), ", "))
+    println(io, "}")
     println(io, "\n[parameters]")
     for q in SMM_PARAMS
         @printf(io, "%-10s = %.8f   # was %.8f\n", q.name, getfield(est, q.name),

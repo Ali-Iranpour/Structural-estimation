@@ -1,0 +1,48 @@
+==============================================================================
+Residual Jacobian and identification audit
+==============================================================================
+started  2026-09-06 13:38:59
+outdir   output/identification/jac_10col_mu1
+workers  20
+30.4s
+point    PARENT_DEFAULTS (the incumbent calibration)
+columns  10  (9 estimated, extended by mu_1)
+moments  10
+grids    Na = Nhc = 30, simN = 2000, seed = 1234 (common random numbers)
+steps    0.005, 0.01, 0.02  (fraction of each parameter's box width, central differences)
+
+step 0.0050  (20 evaluations, 0.3 min)
+  singular values: 16.45  11.77  6.329  5.388  2.439  2.16  1.095  0.5112  0.2855  0.08724
+  condition number 188.6   smallest singular value 0.08724
+  weakest direction: lambda_2 +0.637, mu_1 -0.538, sigma_1_0 -0.307, sigma_4_0 +0.266
+
+step 0.0100  (20 evaluations, 0.2 min)
+  singular values: 16.3  11.64  6.35  5.382  2.412  2.162  1.095  0.5246  0.2961  0.08217
+  condition number 198.4   smallest singular value 0.08217
+  weakest direction: lambda_2 +0.627, mu_1 -0.558, sigma_4_0 +0.293, sigma_1_0 -0.293
+
+step 0.0200  (20 evaluations, 0.2 min)
+  singular values: 16.28  11.62  6.326  5.371  2.413  2.167  1.094  0.522  0.3002  0.08138
+  condition number 200.0   smallest singular value 0.08138
+  weakest direction: lambda_2 +0.639, mu_1 -0.549, sigma_1_0 -0.294, sigma_4_0 +0.285
+
+resolution of the smallest singular value across steps
+  step 0.0050   sigma_min 0.087235   cond 188.6
+  step 0.0100   sigma_min 0.082166   cond 198.4
+  step 0.0200   sigma_min 0.081385   cond 200.0
+  spread 0.00585 against level 0.0814  ->  ratio 0.072
+  RESOLVED: sigma_min is stable across steps, so it is the model's, not the difference's.
+
+pairwise |cos| between scaled Jacobian columns (step 0.005)
+  a cosine near 1 means two parameters move the moments in nearly the same direction;
+  it is a warning about local separation, NOT proof of observational equivalence.
+  sigma_4_0    mu_1         0.9908
+  sigma_1_0    sigma_1_1    0.9078
+  sigma_2_0    sigma_2_1    0.8692
+  phi_3        lambda_2     0.7587
+  phi_3        mu_1         0.6825
+  lambda_2     mu_1         0.6579
+  sigma_1_0    sigma_4_0    0.6512
+  phi_3        sigma_4_0    0.6323
+
+wrote output/identification/jac_10col_mu1/jacobian.toml

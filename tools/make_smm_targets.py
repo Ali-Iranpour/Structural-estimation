@@ -89,6 +89,82 @@ AGE_SPLIT = 9
 AGE_HC_LO = 3
 
 
+
+# =============================================================================
+# MOMENT COVARIANCE -- the input standard errors need and the file did not carry
+# =============================================================================
+# `sd` in this file is the cross-sectional SD of one variable. It is NOT the standard
+# error of a moment, and it says nothing about the COVARIANCE between two moments. Using
+# per-observation SDs as if they were moment SEs is the specific mistake the review
+# warned about, and inference needs the real thing:
+#
+#   * the moments are means, so their sampling variance falls with the number of
+#     independent units -- not with the number of observations, which are repeat
+#     observations of the same families;
+#   * they are computed on OVERLAPPING samples. mean_c_p and mean_e_p_early are measured
+#     on the same households in the same years, so their sampling errors are correlated,
+#     and a diagonal weighting matrix built from SDs would get the standard errors wrong
+#     in an unknown direction;
+#   * each moment is an EQUAL-AGE mean -- a mean over child ages of per-age means -- so
+#     an observation's influence depends on how many observations share its age.
+#
+# The estimator below is the standard clustered sandwich, built from influence functions.
+# For moment j with age set A_j and per-age counts n_{j,a}, the influence of observation
+# (i, a) is
+#
+#     psi_{i,j} = (1/|A_j|) * (1/n_{j,a}) * (y_{ij} - ybar_{j,a})
+#
+# and Omega = sum_c (sum_{i in c} psi_i)(sum_{i in c} psi_i)', clustering on the family.
+# CLUSTER_ON is `Fam_id`: the same family appears in many years and, for the moments split
+# by child age, in both age groups, so the family is the independent unit.
+#
+# WHAT THIS IS NOT. It is the covariance of the DATA moments only. It does not include
+# simulation error (the model side uses a fixed seed and simN draws), and it is not itself
+# a weighting matrix -- see code/smm/standard_errors.jl, which combines it with a saved
+# Jacobian and says what each assumption buys.
+CLUSTER_ON = "Fam_id"
+
+# The moments the estimator actually targets, in SMM_MOMENTS order. `mean_l_p` and the
+# pooled `mean_e_p` are written to the file for reference but are not targeted, so they
+# are not part of the covariance the weighting matrix would be built from.
+TARGETED = ["mean_c_p", "mean_h_p",
+            "mean_t_p_early", "mean_t_p_late",
+            "mean_e_p_early", "mean_e_p_late",
+            "mean_i_c_early", "mean_i_c_late",
+            "mean_hc_early", "mean_hc_late"]
+
+
+def moment_influence(series, ages, clusters):
+    """Per-cluster influence of an equal-age mean. Returns a Series indexed by cluster."""
+    s = series.dropna()
+    a = ages.loc[s.index]
+    c = clusters.loc[s.index]
+    n_age = a.map(a.value_counts())            # observations sharing this observation's age
+    ybar_age = a.map(s.groupby(a).mean())      # that age's own mean
+    psi = (s - ybar_age) / (n_age * a.nunique())
+    return psi.groupby(c).sum()
+
+
+def moment_covariance(moments, r):
+    """Cluster-robust covariance of the targeted moment vector."""
+    clusters = r[CLUSTER_ON]
+    infl = {}
+    for mo in moments:
+        infl[mo["name"]] = moment_influence(mo["series"], r["Child_Age"], clusters)
+    names = [mo["name"] for mo in moments]
+    # One row per cluster, one column per moment; a cluster that contributes nothing to a
+    # moment contributes a zero, not a dropped row -- that is what carries the overlap.
+    all_clusters = sorted(set().union(*(set(v.index) for v in infl.values())))
+    P = np.zeros((len(all_clusters), len(names)))
+    idx = {c: i for i, c in enumerate(all_clusters)}
+    for j, nm in enumerate(names):
+        for c, v in infl[nm].items():
+            P[idx[c], j] = v
+    Omega = P.T @ P
+    n_cl = {nm: int((np.abs(P[:, j]) > 0).sum()) for j, nm in enumerate(names)}
+    return names, Omega, n_cl, len(all_clusters)
+
+
 def git_sha():
     try:
         return subprocess.check_output(
@@ -293,6 +369,50 @@ def main():
         print(f"{mo['name']:12s} {len(s):7d} {mean_equal:10.4f} {mean_pooled:10.4f} "
               f"{s.std():10.4f}   {mo['source']}")
 
+    # ---- clustered moment covariance ------------------------------------------
+    targeted = [mo for mo in moments if mo["name"] in TARGETED]
+    names, Omega, n_cl, n_clusters = moment_covariance(targeted, r)
+    se = np.sqrt(np.diag(Omega))
+    D = np.diag(1.0 / np.where(se > 0, se, 1.0))
+    Corr = D @ Omega @ D
+
+    lines += [
+        "# ---------------------------------------------------------------------------",
+        "# Cluster-robust covariance of the TARGETED moment vector.",
+        "#",
+        f"# Clustered on {CLUSTER_ON} ({n_clusters} families). `se` is the standard error of",
+        "# each moment -- NOT the cross-sectional `sd` above, which is a different quantity",
+        "# and is 20-100x larger. `cov` is row-major over `names`; `corr` is the same matrix",
+        "# scaled to unit diagonal, which is the readable one.",
+        "#",
+        "# Used by code/smm/standard_errors.jl. Read its header before quoting anything",
+        "# built on this: it is the covariance of the DATA moments, and it does not include",
+        "# simulation error.",
+        "[moment_cov]",
+        "cluster_on = \"" + CLUSTER_ON + "\"",
+        f"n_clusters = {n_clusters}",
+        "names      = [" + ", ".join(f'"{n}"' for n in names) + "]",
+        "n_clusters_by_moment = [" + ", ".join(str(n_cl[n]) for n in names) + "]",
+        "se         = [" + ", ".join(f"{v:.10g}" for v in se) + "]",
+        "cov        = [",
+    ]
+    for i in range(len(names)):
+        lines.append("  [" + ", ".join(f"{Omega[i, j]:.10g}" for j in range(len(names))) + "],")
+    lines += ["]", "corr       = ["]
+    for i in range(len(names)):
+        lines.append("  [" + ", ".join(f"{Corr[i, j]:.6f}" for j in range(len(names))) + "],")
+    lines += ["]", ""]
+
+    print()
+    print(f"{'moment':16s} {'se':>12s} {'sd':>12s}   se/sd   clusters")
+    print("-" * 66)
+    for j, nm in enumerate(names):
+        sd = next(mo["series"].dropna().std() for mo in targeted if mo["name"] == nm)
+        print(f"{nm:16s} {se[j]:12.6f} {sd:12.6f} {se[j]/sd:7.4f} {n_cl[nm]:10d}")
+    off = Corr[np.triu_indices(len(names), 1)]
+    print(f"\nmoment correlations: min {off.min():+.3f}  max {off.max():+.3f}  "
+          f"|corr|>0.3 in {int((np.abs(off) > 0.3).sum())} of {len(off)} pairs")
+
     OUT.write_text("\n".join(lines))
     print(f"\nwrote {OUT.relative_to(REPO)}")
     write_by_age()
@@ -328,8 +448,34 @@ def write_by_age():
       x_gach, x_lw    LOG human capital -- comparable to log(model hc) up to an ADDITIVE
                       constant log(M), the scale factor that was never applied.
     """
+    # THIS STAGE IS OPTIONAL AND MUST NOT BLOCK THE TARGETS.
+    #
+    # The by-age CSVs are a plotting convenience for the notebook; the targets file above
+    # is what the estimation reads. They were previously written in the same pass with no
+    # guard, so when Input/ carried a .dta that lacked a column the script crashed AFTER
+    # writing the targets -- leaving a non-zero exit on a run that had in fact succeeded at
+    # its main job. Measured 2026-09-06: SMM_Moments_ByAge.dta has no `mu_assets_real`
+    # column and SMM_Moments_ByAge_Cohort.dta is not in Input/ at all, so BOTH by-age
+    # outputs are stale relative to the .dta files actually present. The committed CSVs
+    # were generated from a newer extract that is not in the repository.
+    #
+    # Skipping loudly is the honest behaviour: the CSVs on disk are left untouched and
+    # named as stale, rather than half-rewritten or silently accepted.
     for key, (src, dst, note) in BY_AGE_SOURCES.items():
-        d = pd.read_stata(REPO / "Input" / src)
+        path = REPO / "Input" / src
+        if not path.exists():
+            print(f"  SKIP {dst}: {src} is not in Input/. "
+                  f"The committed CSV is left as it is and is STALE.")
+            continue
+        d = pd.read_stata(path)
+        missing = [c for c in ("mu_cons_exhous_real_w99", "mu_m_method2_final_w99",
+                               "mu_assets_real", "mu_leis_mom_wk", "mu_leis_dad_wk",
+                               "mu_par_time_tot", "mu_study_hrs", "mu_x_gach", "mu_x_lw")
+                   if c not in d.columns]
+        if missing:
+            print(f"  SKIP {dst}: {src} is missing {', '.join(missing)}. "
+                  f"The committed CSV is left as it is and is STALE.")
+            continue
         d = d[(d.Child_Age >= AGE_LO) & (d.Child_Age <= AGE_HI)].sort_values("Child_Age")
         out = pd.DataFrame({
             "child_age": d.Child_Age.astype(int),

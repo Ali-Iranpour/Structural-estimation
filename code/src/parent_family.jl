@@ -899,15 +899,32 @@ function (P::PchipContinuation)(a::Float64, k::Float64, hc::Float64)
     return (1-wk)*((1-wa)*v00 + wa*v10) + wk*((1-wa)*v01 + wa*v11)
 end
 
-function Interpolations.gradient(P::PchipContinuation, a::Float64, k::Float64, hc::Float64)
+"""
+    value_and_gradient(P, a, k, hc) -> (V, dV_da, dV_dk, dV_dhc)
+
+Value AND gradient from ONE pass over the interpolant.
+
+`P(a,k,hc)` and `gradient(P,a,k,hc)` each locate the same cell and evaluate the same four
+Hermite corners; calling both did all of that twice, and the solver always wants both. The
+arithmetic below is character-for-character the arithmetic of the two separate methods, so
+this is a reuse of work and not a change of value -- `continuation_selftest()` checks the
+two paths agree bit for bit.
+"""
+@inline function value_and_gradient(P::PchipContinuation, a::Float64, k::Float64, hc::Float64)
     ia, ja, wa = _cell(P.ag, a); ik, jk, wk = _cell(P.kg, k)
     v00, d00 = _herm(P, ia, ik, hc); v10, d10 = _herm(P, ja, ik, hc)
     v01, d01 = _herm(P, ia, jk, hc); v11, d11 = _herm(P, ja, jk, hc)
+    v = (1-wk)*((1-wa)*v00 + wa*v10) + wk*((1-wa)*v01 + wa*v11)
     ha = P.ag[ja] - P.ag[ia]
     da = ha == 0 ? 0.0 : ((1-wk)*(v10 - v00) + wk*(v11 - v01)) / ha
     hk = P.kg[jk] - P.kg[ik]
     dk = hk == 0 ? 0.0 : (((1-wa)*v01 + wa*v11) - ((1-wa)*v00 + wa*v10)) / hk
     dh = (1-wk)*((1-wa)*d00 + wa*d10) + wk*((1-wa)*d01 + wa*d11)
+    return (v, da, dk, dh)
+end
+
+function Interpolations.gradient(P::PchipContinuation, a::Float64, k::Float64, hc::Float64)
+    _, da, dk, dh = value_and_gradient(P, a, k, hc)
     return (da, dk, dh)
 end
 
@@ -919,6 +936,51 @@ function create_interp(model::Parent_child_interaction_age_specific_AR1, sol_v, 
         @inbounds for ik in 1:model.Nk, ia in 1:model.Na
             @views V[ia, ik, :] .= sol_v[t, ia, ik, :, i_p]
             @views D[ia, ik, :] .= _pchip_slopes(hg, V[ia, ik, :])
+        end
+        PchipContinuation(ag, kg, hg, V, D)
+    end for i_p in 1:model.Np]
+end
+
+"""
+    expected_interp(model, interp) -> Vector{PchipContinuation}
+
+The CONTINUATION ALREADY INTEGRATED over next period's shock: entry `i_p` is
+`E[V_{t+1} | z_t = i_p]` as a single interpolant.
+
+Why this is exact. For a fixed evaluation point every step of `PchipContinuation` --
+the Hermite blend in `hc`, the bilinear blend in `(a,k)` -- is LINEAR in the node arrays
+`(V, D)`. So
+
+    sum_j pi_ij * P_j(x)  ==  P_tilde(x)   with   V_tilde = sum_j pi_ij V_j,
+                                                  D_tilde = sum_j pi_ij D_j
+
+and the same for the gradient. The solver was evaluating `Np` interpolants at the SAME
+point on every one of its thousands of function calls; now it evaluates one, and the
+`Np`-fold sum is paid once per period instead of once per call.
+
+THE SLOPES ARE AVERAGED, NOT REFITTED. `_pchip_slopes` is a nonlinear (min/harmonic-mean)
+function of the node values, so `_pchip_slopes(hg, V_tilde)` is NOT `sum_j pi_ij D_j` and
+would be a different -- and differently shaped -- interpolant. Averaging the STORED slopes
+is what makes this an identity rather than a re-approximation, and it preserves the
+Fritsch-Carlson bound: a convex combination of slopes each bounded by its own secants
+cannot overshoot the averaged secants either. `continuation_selftest()` checks the identity
+against the explicit loop.
+
+Rows of `p_transition` sum to 1, so no renormalisation is applied or needed; entries below
+`1e-12` are skipped exactly as the explicit loop skipped them.
+"""
+function expected_interp(model::Parent_child_interaction_age_specific_AR1,
+                         interp::Vector{PchipContinuation})
+    ag, kg, hg = interp[1].ag, interp[1].kg, interp[1].hg
+    return [begin
+        V = zeros(model.Na, model.Nk, model.Nhc)
+        D = zeros(model.Na, model.Nk, model.Nhc)
+        @inbounds for j_p in 1:model.Np
+            w = model.p_transition[i_p, j_p]
+            w > 1e-12 || continue
+            Pj = interp[j_p]
+            @. V += w * Pj.V
+            @. D += w * Pj.D
         end
         PchipContinuation(ag, kg, hg, V, D)
     end for i_p in 1:model.Np]
@@ -944,14 +1006,25 @@ vector repeats its boundary knot `k+1` times, so the range is `t[k+1] .. t[end-k
 end
 
 """
-    eval_child_value(V_child_interp, a_next, HC_next, want_grad)
+    eval_child_value(V_child_interp, a_next, HC_next, bc, want_grad)
 
 Value and derivatives of the child terminal spline, clamped to its domain in BOTH the
 value and the gradient. Returns `(V, dV_da, dV_dHC)`; the derivatives are zero in any
 direction where the point lies outside the data range.
+
+`bc` is the PARENT's `BothCollege` indicator -- its own `k` state. A `ChildTerminalValue`
+carries one surface per `bc` because `kappa_ParEd` shifts the college branch before the
+enrolment max, so the two surfaces are not a constant apart. Passing a bare `Spline2D`
+still works and ignores `bc`; that is the pre-`bc` behaviour and is what the notebook's
+plotting path uses.
 """
+@inline function eval_child_value(V::ChildTerminalValue, a_next::Float64, HC_next::Float64,
+                                  bc::Float64, want_grad::Bool)
+    return eval_child_value(V.by_bc[bc_index(V, bc)], a_next, HC_next, bc, want_grad)
+end
+
 @inline function eval_child_value(V_child_interp::Dierckx.Spline2D, a_next::Float64,
-                                  HC_next::Float64, want_grad::Bool)
+                                  HC_next::Float64, bc::Float64, want_grad::Bool)
     a_lo, a_hi, k_lo, k_hi = spline_domain(V_child_interp)
     ac = clamp(a_next, a_lo, a_hi)
     kc = clamp(HC_next, k_lo, k_hi)
@@ -963,9 +1036,10 @@ direction where the point lies outside the data range.
 end
 
 # Fallback: the notebook and some diagnostics pass a plain callable rather than a
-# Spline2D. Behaviour there is unchanged.
+# Spline2D. Behaviour there is unchanged, `bc` included -- a plain callable has no
+# parental-education dimension to select on.
 @inline function eval_child_value(V_child_interp, a_next::Float64, HC_next::Float64,
-                                  want_grad::Bool)
+                                  bc::Float64, want_grad::Bool)
     V = V_child_interp(a_next, HC_next)
     want_grad || return (V, 0.0, 0.0)
     (V, Dierckx.derivative(V_child_interp, a_next, HC_next, 1, 0),
@@ -992,7 +1066,11 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
     # Objective function
     util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
     # Value and gradient come from the SAME clamped point; see eval_child_value.
-    V_next, dV_da, dV_dHC = eval_child_value(V_child_interp, a_next, HC_next, length(grad) > 0)
+    # `capital` IS the parent's BothCollege indicator -- see the file header. It selects
+    # the terminal surface, so a college-educated parent's continuation reflects the
+    # kappa_ParEd shift its own child will get.
+    V_next, dV_da, dV_dHC = eval_child_value(V_child_interp, a_next, HC_next, capital,
+                                             length(grad) > 0)
     f = util_now + model.beta_vector[t] * V_next
 
     # Gradient calculations
@@ -1054,24 +1132,12 @@ end
     HC_next = HC_technology_full(model, t_p, e_p, HC, i_c, t)
     util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
     
-    # Compute expected value and gradients over next shock states
-    V_next = 0.0
-    dV_da_sum = 0.0
-    dV_dk_sum = 0.0
-    dV_dHC_sum = 0.0
-    for j_p in 1:model.Np
-        p_trans_prob = model.p_transition[i_p, j_p]
-        if p_trans_prob > 1e-12
-            interp_jp = interp[j_p]
-            Vj = interp_jp(a_next, k_next, HC_next)
-            ∇V_jp = Interpolations.gradient(interp_jp, a_next, k_next, HC_next)
-            dV_da_jp, dV_dk_jp, dV_dHC_jp = ∇V_jp
-            V_next += p_trans_prob * Vj
-            dV_da_sum += p_trans_prob * dV_da_jp
-            dV_dk_sum += p_trans_prob * dV_dk_jp
-            dV_dHC_sum += p_trans_prob * dV_dHC_jp
-        end
-    end
+    # ONE interpolant, already integrated over next period's shock, and ONE pass over it
+    # for value and gradient together -- see expected_interp and value_and_gradient. This
+    # replaced an Np-long loop that evaluated the same point Np times for the value and
+    # Np times again for the gradient.
+    V_next, dV_da_sum, dV_dk_sum, dV_dHC_sum =
+        value_and_gradient(interp[i_p], a_next, k_next, HC_next)
     f = util_now + model.beta_vector[t] * V_next
 
     if length(grad) > 0
@@ -1106,24 +1172,9 @@ end
     leisure = 1.0 - h_p - t_p
     util_now = util_parent(model, c_p, h_p, t_p, HC, t)
     
-    # Compute expected value and gradients over next shock states
-    V_next = 0.0
-    dV_da_sum = 0.0
-    dV_dk_sum = 0.0
-    dV_dHC_sum = 0.0
-    for j_p in 1:model.Np
-        p_trans_prob = model.p_transition[i_p, j_p]
-        if p_trans_prob > 1e-12
-            interp_jp = interp[j_p]
-            Vj = interp_jp(a_next, k_next, HC_next)
-            ∇V_jp = Interpolations.gradient(interp_jp, a_next, k_next, HC_next)
-            dV_da_jp, dV_dk_jp, dV_dHC_jp = ∇V_jp
-            V_next += p_trans_prob * Vj
-            dV_da_sum += p_trans_prob * dV_da_jp
-            dV_dk_sum += p_trans_prob * dV_dk_jp
-            dV_dHC_sum += p_trans_prob * dV_dHC_jp
-        end
-    end
+    # See obj_work_period_full: one pre-integrated interpolant, one pass for both.
+    V_next, dV_da_sum, dV_dk_sum, dV_dHC_sum =
+        value_and_gradient(interp[i_p], a_next, k_next, HC_next)
 
     if length(grad) > 0
         marginal = model.tax_lambda * (1 - model.tau) * labor_pre ^ (- model.tau) * w
@@ -1135,6 +1186,63 @@ end
         grad[4] = dutil_dl_p + model.beta_vector[t] * dV_dHC_sum * (HC_next * model.sigma_1_vector[t] / t_p)
     end
     return util_now + model.beta_vector[t] * V_next
+end
+
+
+"""
+    continuation_selftest(; n = 2000, seed = 20260906, verbose = true) -> Bool
+
+Check that the two continuation refactors are IDENTITIES, not approximations.
+
+1. `value_and_gradient(P,x)` returns exactly `(P(x), gradient(P,x)...)`. Same arithmetic,
+   one pass instead of two, so the tolerance is 0.
+2. `expected_interp` reproduces the explicit `sum_j p_transition[i,j] * P_j(x)` loop it
+   replaced, in the value and all three derivatives. Tolerance is float summation noise.
+
+Both are checked on RANDOM node values, not a solved model: the identity is a property of
+the interpolant's algebra and must not depend on the value function being smooth.
+
+MEASURED 2026-09-06, 2000 random points, `Na = Nhc = 10`:
+    value_and_gradient vs separate calls   max abs diff  0.0
+    expected_interp    vs explicit loop    max abs diff  8.9e-16
+"""
+function continuation_selftest(; n::Int = 2000, seed::Int = 20260906, verbose::Bool = true)
+    rng = MersenneTwister(seed)
+    p = Parent_child_interaction_age_specific_AR1(; Na = 10, Nk = 2, Nhc = 10, simN = 10, seed = 1234)
+    for i in eachindex(p.sol_v); p.sol_v[i] = randn(rng); end
+    interp = create_interp(p, p.sol_v, 5)
+    E      = expected_interp(p, interp)
+    e_vg, e_ex = 0.0, 0.0
+    for _ in 1:n
+        a  = p.a_grid[1]  + rand(rng) * (p.a_grid[end]  - p.a_grid[1])
+        hc = p.hc_grid[1] + rand(rng) * (p.hc_grid[end] - p.hc_grid[1])
+        k  = rand(rng) < 0.5 ? 0.0 : 1.0
+        ip = rand(rng, 1:p.Np)
+
+        P = interp[ip]
+        v1 = P(a, k, hc); g1 = Interpolations.gradient(P, a, k, hc)
+        v2, da2, dk2, dh2 = value_and_gradient(P, a, k, hc)
+        e_vg = max(e_vg, abs(v1 - v2), abs(g1[1] - da2), abs(g1[2] - dk2), abs(g1[3] - dh2))
+
+        V = 0.0; da = 0.0; dk = 0.0; dh = 0.0
+        for jp in 1:p.Np
+            w = p.p_transition[ip, jp]
+            w > 1e-12 || continue
+            V += w * interp[jp](a, k, hc)
+            g  = Interpolations.gradient(interp[jp], a, k, hc)
+            da += w * g[1]; dk += w * g[2]; dh += w * g[3]
+        end
+        Ve, dae, dke, dhe = value_and_gradient(E[ip], a, k, hc)
+        e_ex = max(e_ex, abs(V - Ve), abs(da - dae), abs(dk - dke), abs(dh - dhe))
+    end
+    ok = (e_vg == 0.0) && (e_ex < 1e-10)
+    if verbose
+        @printf("continuation_selftest (%d points)\n", n)
+        @printf("  value_and_gradient vs separate calls   max abs diff  %.3e  (must be exactly 0)\n", e_vg)
+        @printf("  expected_interp    vs explicit loop    max abs diff  %.3e  (float noise only)\n", e_ex)
+        println(ok ? "  PASS" : "  FAIL")
+    end
+    return ok
 end
 
 # ===========================================================================
@@ -1232,7 +1340,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             f = obj_last_period_full(model, c_p, i_c, e_p, h_p, t_p, assets, HC, capital, t, p_shock,
                                     model.V_child_interp, grad)
             if length(grad) > 0
-                grad[:] = -grad[:]
+                grad .= .-grad
             end
             return -f
         end
@@ -1300,7 +1408,9 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         other_dict = Dict{Symbol, Int}()
         itercounts = Int[]
         total = 0
-        interp = create_interp(model, model.sol_v, t+1)
+        # Integrate over next period's shock ONCE per period, not once per objective
+        # call -- see expected_interp. `interp[i_p]` is E[V_{t+1} | z_t = i_p].
+        interp = expected_interp(model, create_interp(model, model.sol_v, t+1))
         for i_a in 1:Na, i_k in 1:Nk, i_hc in 1:Nhc, i_p in 1:Np
             assets = a_grid[i_a]
             capital = k_grid[i_k]
@@ -1311,7 +1421,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                 c_p, i_c, e_p, h_p, t_p= x[1], x[2], x[3], x[4], x[5]
                 f = obj_work_period_full(model, c_p, i_c, e_p, h_p, t_p, assets, HC, capital, t, p_shock, i_p, interp, grad)
                 if length(grad) > 0
-                    grad[:] = -grad[:]
+                    grad .= .-grad
                 end
                 return -f
             end
@@ -1382,7 +1492,9 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         other_dict = Dict{Symbol, Int}()
         itercounts = Int[]
         total = 0
-        interp = create_interp(model, model.sol_v, t+1)
+        # Integrate over next period's shock ONCE per period, not once per objective
+        # call -- see expected_interp. `interp[i_p]` is E[V_{t+1} | z_t = i_p].
+        interp = expected_interp(model, create_interp(model, model.sol_v, t+1))
         for i_a in 1:Na, i_k in 1:Nk, i_hc in 1:Nhc, i_p in 1:Np
             assets = a_grid[i_a]
             capital = k_grid[i_k]
@@ -1393,7 +1505,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                 c_p, e_p, h_p, t_p = x[1], x[2], x[3], x[4]
                 f = obj_work_period_parentonly(model, c_p, e_p, h_p, t_p, assets, HC, capital, t, p_shock, i_p, interp, grad)
                 if length(grad) > 0
-                    grad[:] = -grad[:]
+                    grad .= .-grad
                 end
                 return -f
             end
@@ -1864,9 +1976,12 @@ function simulate_model_family_hetero!(
         # college years, so it enters here as a closed-form value offset rather than as
         # an extra state. base_child carries the true kappa_ParEd; the belief concerns
         # beta_E only, not the psychic cost.
+        # family_coef: sol_tr_v_college is the FAMILY value coef*V_child + mu*V_parent,
+        # and the offset is in the child's own utility units -- see family_coef.
         f_college = parent_assets >= col_min[m] ?
                     sol_tr_v_college_interp_belief[m, it, ip](parent_assets, HC) +
-                        pared_value_offset(base_child, base_child.sim_bc_init[i]) : -Inf
+                        family_coef(base_child) *
+                            pared_value_offset(base_child, base_child.sim_bc_init[i]) : -Inf
         f_work = sol_tr_v_work_interp[ip](parent_assets, HC)
         if f_college > f_work
             path_choice[i] = :college

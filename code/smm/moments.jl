@@ -417,9 +417,10 @@ function moment_diagnostics(p::Parent_child_interaction_age_specific_AR1)
     res = inc + p.y
 
     # GRID COVERAGE. Policies are interpolated with Flat() extrapolation, so a simulated
-    # state above the solved grid silently reuses the policy at the top node. That is
-    # defensible for a thin tail and indefensible if the mass lives out there, so it is
-    # measured rather than assumed.
+    # state outside the solved grid silently reuses the policy at the boundary node. That
+    # is defensible for a thin tail and indefensible if the mass lives out there, so it is
+    # measured rather than assumed -- for BOTH state variables the parent carries on a
+    # grid, assets and human capital.
     #
     # MEASURED over ALL T+1 columns, and reported as HOUSEHOLDS, not as a share of cells.
     # An earlier version did neither, and the conclusion drawn from it was wrong: it
@@ -428,26 +429,60 @@ function moment_diagnostics(p::Parent_child_interaction_age_specific_AR1)
     # draw", and reported that. The two numbers match only because 2 households x 17
     # periods / 34,000 cells equals 2 / 2,000 -- different denominators, same digits.
     #
-    # What is actually true at the incumbent: 2 households sit above the ceiling in EVERY
-    # period 1..17, and 7 are above at the T+1 handoff, peaking at 259 against a ceiling
-    # of 100. So five of them cross DURING the family stage; it is not only initial
-    # wealth. The handoff column matters most of all -- it becomes the child's initial
-    # assets -- and the old diagnostic excluded it from both the share and the maximum.
+    # What is actually true at the incumbent: 2 households sit above the asset ceiling in
+    # EVERY period 1..17, and 7 are above at the T+1 handoff, peaking at 259 against a
+    # ceiling of 100. So five of them cross DURING the family stage; it is not only
+    # initial wealth. The handoff column matters most of all -- it becomes the child's
+    # initial assets -- and the old diagnostic excluded it from both the share and the
+    # maximum.
+    #
+    # HC was not measured at all before. It has a FLOOR as well as a ceiling (hc_min = 50
+    # in W-score units), and a state below the floor is extrapolated just as silently as
+    # one above the ceiling, so both ends are counted.
     a_hi  = maximum(p.a_grid)
+    a_lo  = minimum(p.a_grid)
+    hc_hi = maximum(p.hc_grid)
+    hc_lo = minimum(p.hc_grid)
     Aall  = p.sim_a[:, 1:(p.T + 1)]
-    Aflow = p.sim_a[:, cols]
+    Hall  = p.sim_hc[:, 1:(p.T + 1)]
     n_sim = size(Aall, 1)
+
+    # PER-PERIOD counts and maxima, so "a thin tail" can be checked against where and when
+    # it happens rather than inferred from a single pooled share. Column T+1 is the
+    # handoff and is included; it is the column that propagates into the child block.
+    per_period_over(M, hi) = [count(x -> isfinite(x) && x > hi, view(M, :, t)) for t in 1:size(M, 2)]
+    per_period_max(M)      = [(v = filter(isfinite, view(M, :, t)); isempty(v) ? NaN : maximum(v))
+                              for t in 1:size(M, 2)]
+
     return (income = inc, resources = res,
             saving_rate = (res - c - e) / res,
             terminal_assets = nanmean(p.sim_a[:, p.T + 1]),
             h_p = nanmean(vec(p.sim_h[:, cols])),
             t_p = nanmean(vec(p.sim_t[:, cols])),
+            n_sim = n_sim,
+            # --- assets ---
+            a_grid_min        = a_lo,
             a_grid_max        = a_hi,
             a_max_sim         = maximum(Aall),          # over ALL columns, handoff included
-            a_hh_ever_above   = count(i -> any(Aall[i, :] .> a_hi), 1:n_sim) / n_sim,
+            a_min_sim         = minimum(Aall),
+            a_hh_ever_above   = count(i -> any(view(Aall, i, :) .> a_hi), 1:n_sim) / n_sim,
             a_hh_above_t1     = mean(p.sim_a[:, 1] .> a_hi),
             a_hh_above_handoff= mean(p.sim_a[:, p.T + 1] .> a_hi),
-            a_cell_above_flow = mean(Aflow .> a_hi))
+            a_cell_above_flow = mean(p.sim_a[:, cols] .> a_hi),
+            a_over_by_period  = per_period_over(Aall, a_hi),
+            a_max_by_period   = per_period_max(Aall),
+            # --- human capital ---
+            hc_grid_min       = hc_lo,
+            hc_grid_max       = hc_hi,
+            hc_max_sim        = maximum(Hall),
+            hc_min_sim        = minimum(Hall),
+            hc_hh_ever_above  = count(i -> any(view(Hall, i, :) .> hc_hi), 1:n_sim) / n_sim,
+            hc_hh_ever_below  = count(i -> any(view(Hall, i, :) .< hc_lo), 1:n_sim) / n_sim,
+            hc_hh_above_handoff = mean(p.sim_hc[:, p.T + 1] .> hc_hi),
+            hc_over_by_period = per_period_over(Hall, hc_hi),
+            hc_under_by_period= [count(x -> isfinite(x) && x < hc_lo, view(Hall, :, t))
+                                 for t in 1:size(Hall, 2)],
+            hc_max_by_period  = per_period_max(Hall))
 end
 
 # -----------------------------------------------------------------------------
@@ -826,7 +861,8 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
             d.terminal_assets*DOLLARS_PER_MODEL_UNIT)
     @printf(out, "  leisure l_p           %8.4f  (%.1f hrs/wk)\n",
             1 - d.h_p - d.t_p, (1 - d.h_p - d.t_p)*HOURS_PER_WEEK)
-    v = simulation_violations(p)
+    viol = simulation_violations(p)
+    v = viol
     @printf(out, "  invalid sim cells     %8d\n", v.total)
     if v.total > 0
         for (k, n) in pairs(v)
@@ -836,12 +872,38 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
     # Reported, NOT clamped. sim_a_init is LogNormal(0.296, 1.402) and its upper tail runs
     # past a_max, so clamping the draw would distort the initial wealth distribution to
     # flatter a grid. But it is NOT only the initial draw -- see moment_diagnostics.
-    @printf(out, "  assets above a_max=%.0f  max %.1f  (households: %.2f%% ever, %.2f%% at t=1, %.2f%% at handoff)\n",
-            d.a_grid_max, d.a_max_sim, 100*d.a_hh_ever_above,
-            100*d.a_hh_above_t1, 100*d.a_hh_above_handoff)
+    n_sim = d.n_sim
+    @printf(out, "  assets above a_max=%.0f  max %.1f  (households: %d ever (%.2f%%), %d at t=1, %d at handoff)\n",
+            d.a_grid_max, d.a_max_sim, round(Int, d.a_hh_ever_above*n_sim), 100*d.a_hh_ever_above,
+            round(Int, d.a_hh_above_t1*n_sim), round(Int, d.a_hh_above_handoff*n_sim))
     if d.a_hh_ever_above > d.a_hh_above_t1 + 1e-12
-        @printf(out, "     %.2f%% of households CROSS the ceiling during t = 1..17 -- not just the initial draw\n",
-                100*(d.a_hh_ever_above - d.a_hh_above_t1))
+        @printf(out, "     %d households CROSS the ceiling during t = 1..%d -- not just the initial draw\n",
+                round(Int, (d.a_hh_ever_above - d.a_hh_above_t1)*n_sim), SMM_AGE_HI)
     end
-    return (moments = m, diagnostics = d, params = kw)
+    @printf(out, "  HC in [%.0f, %.0f]      range %.1f - %.1f  (households: %d ever above, %d ever below, %d above at handoff)\n",
+            d.hc_grid_min, d.hc_grid_max, d.hc_min_sim, d.hc_max_sim,
+            round(Int, d.hc_hh_ever_above*n_sim), round(Int, d.hc_hh_ever_below*n_sim),
+            round(Int, d.hc_hh_above_handoff*n_sim))
+
+    # PER-PERIOD, because a pooled share cannot distinguish "two households from the start"
+    # from "everyone in the last two periods", and those call for different fixes. Column
+    # T+1 is the handoff -- the one that becomes the child's initial state.
+    if any(>(0), d.a_over_by_period) || any(>(0), d.hc_over_by_period) ||
+       any(>(0), d.hc_under_by_period)
+        println(out, "\n  off-grid states by period (n = ", n_sim, " households)")
+        @printf(out, "    %-5s %8s %10s %8s %8s %10s\n",
+                "t", "a>a_max", "max a", "hc>hi", "hc<lo", "max hc")
+        for t in 1:length(d.a_over_by_period)
+            lbl = t == length(d.a_over_by_period) ? "T+1" : string(t)
+            (d.a_over_by_period[t] == 0 && d.hc_over_by_period[t] == 0 &&
+             d.hc_under_by_period[t] == 0 && lbl != "T+1") && continue
+            @printf(out, "    %-5s %8d %10.1f %8d %8d %10.1f\n", lbl,
+                    d.a_over_by_period[t], d.a_max_by_period[t],
+                    d.hc_over_by_period[t], d.hc_under_by_period[t], d.hc_max_by_period[t])
+        end
+        println(out, "    (rows with no off-grid state are omitted; T+1 is the age-18 handoff)")
+    else
+        println(out, "  every simulated state is inside both grids")
+    end
+    return (moments = m, diagnostics = d, params = kw, violations = viol)
 end

@@ -280,13 +280,42 @@ the *average* of mother and father. Using `leis_hh` would double the target.
 ## What is being estimated
 
 **Nine parameters against ten moments — over-identified by one.** `Q` cannot reach
-zero and the weighting matrix is *not* irrelevant at the optimum, so equal weights
-are a real assumption. Counting nine against ten establishes nothing about
-identification on its own; what does is the residual Jacobian, which at the incumbent
-has full column rank, condition number 49 and smallest singular value 0.28. The
-weakest direction is `lambda_2` against `sigma_1_0 + sigma_4_0 + sigma_2_0`
-(valuation against technology) and the second weakest is `sigma_2_1`. Both are
-identified; neither sharply.
+zero and the weighting matrix is *not* irrelevant at the optimum, so equal weights are a
+real assumption. Counting nine against ten establishes nothing about identification on its
+own; what does is the residual Jacobian — **and that is now a saved artefact, not a
+recollection**. Run `jacobian.jl` and read `output/identification/<dir>/jacobian.toml`.
+
+Measured 2026-09-06 at the incumbent, grid 30, central differences at 0.5/1/2% of each
+box width, columns scaled to a full-box move:
+
+| columns | condition number | smallest singular value | thin-SVD rank |
+|---|---:|---:|---|
+| 9 (current) | 51.2 | 0.266 | 9 of 9 |
+| 10, adding `sigma_4_1` | 228.9 | 0.060 | 10 of 10 |
+| 11, adding `sigma_4_1` and `mu_1` | 183.4 | 0.089 | 10 of **11** — one direction is unidentified by construction |
+
+`sigma_min` is stable across the three steps (spread 7% of its level), so it is the model's
+and not the finite difference's.
+
+**The pairwise cosines reproduce; the condition-number ratio does not.** Cosines are
+invariant to column scaling and come out as reported — `sigma_4_0`/`mu_1` **0.991**,
+`sigma_4_0`/`sigma_4_1` **0.814**, `sigma_4_1`/`mu_1` **0.807**. Condition numbers are
+*not* scale-invariant, and the previously circulated 49.2 → **1067.1** does not reproduce:
+under a stated box for `sigma_4_1` of [−0.05, 0.05] the same comparison is 51.2 → **228.9**,
+a 4.5× degradation rather than 21.7×. The direction of the conclusion survives; the
+magnitude was never reproducible because the box it depended on was never recorded.
+
+**A finding that changes the emphasis.** Among the nine parameters actually estimated, the
+worst-separated pair is **`sigma_1_0` vs `sigma_1_1` at 0.908** — *higher* than the
+`sigma_4_0`/`sigma_4_1` 0.814 that is the stated reason for leaving `sigma_4_1` out. Both
+`t_p` and `i_c` are split at the same two age groups, so if 0.814 disqualifies a slope
+parameter, 0.908 is a problem for one already in the set. Take this as an argument for
+richer age moments, not for dropping `sigma_1_1`.
+
+**Estimate correlations are worse than the cosines suggest.** From the sandwich
+(`standard_errors.jl`): `phi_3`/`R_0` **−0.998**, `R_0`/`sigma_4_0` **+0.987**,
+`R_0`/`sigma_1_0` **+0.986**. Valuation against technology is the binding problem, and it
+is not visible in a pairwise column cosine.
 
 **Two scales, deliberately.** Level moments are scaled by their own target so every
 residual is a proportional error. The two HC moments are means of *logs*, where the
@@ -298,14 +327,21 @@ score like a 7.7% miss. See `moment_scale` in `moments.jl`.
 the simulation is, and the HC moments start at child age 3 because the composite is
 not administered earlier. See `SMM_AGE_HC_LO` and `AGE_HC_LO`.
 
-| Parameter | Moves | Bounds | Incumbent |
-|---|---|---|---|
-| `phi_1_0` | consumption weight → `c_p` | [0.2, 5.0], log | 0.8417 |
-| `phi_2_0` | leisure weight → `h_p` | [0.05, 20.0], log | 0.5256 |
-| `sigma_1_0` | **level** of HC elasticity to parent *time* → early `t_p` | [−4.0, −0.2] | −0.90 |
-| `sigma_1_1` | **age slope** of that elasticity → late `t_p` | [−0.20, 0.05] | −0.08 |
-| `sigma_2_0` | **level** of HC elasticity to *money* → early `e_p` | [−5.0, −0.5] | −3.3268 |
-| `sigma_2_1` | **age slope** of that elasticity → late `e_p` | [−0.05, 0.05] | −0.0229 |
+| Parameter | Moves | Bounds | Link | Incumbent |
+|---|---|---|---|---|
+| `phi_2` | leisure weight → `h_p` | [0.01, 20.0] | log | 0.1418 |
+| `phi_3` | parents' weight on child skill → `t_p`, `e_p` | [0.05, 20.0] | log | 1.0 |
+| `lambda_2` | child's weight on skill → `i_c` | [0.05, 20.0] | log | 1.0 |
+| `R_0` | HC technology TFP → the **level** of log HC | [5.0, 300.0] | log | 81.55 |
+| `sigma_1_0` | **level** of HC elasticity to parent *time* → early `t_p` | [−4.0, −0.2] | level | −0.4575 |
+| `sigma_1_1` | **age slope** of that elasticity → late `t_p` | [−0.20, 0.05] | level | −0.0634 |
+| `sigma_2_0` | **level** of HC elasticity to *money* → early `e_p` | [−5.0, −0.5] | level | −3.3955 |
+| `sigma_2_1` | **age slope** of that elasticity → late `e_p` | [−0.05, 0.05] | level | −0.0287 |
+| `sigma_4_0` | HC elasticity to the child's *own study* → `i_c` | [−6.0, −1.0] | level | −4.50 |
+
+`phi_1` and `lambda_1` are **normalised to 1** — utility is defined only up to relative
+weights, so two of the five must be pinned. `sigma_4_1 = 0.02` and `mu_1 = −0.04` are held
+fixed; see *Identification* below for why, and for the qualification that goes with it.
 
 `sigma_1_0` is the right partner for `t_p` on the model's own evidence:
 `parent_family.jl` records that `tau_p` sits at 0.011–0.023 for *every* `phi_2`
@@ -399,7 +435,7 @@ not.
 
 The untargeted block underneath is what tells you whether a good `Q` is
 believable: if the saving rate or terminal assets have gone somewhere absurd to
-buy a good fit on three means, that is worth knowing before the numbers travel.
+buy a good fit on ten moments, that is worth knowing before the numbers travel.
 
 ## What SMM is doing here, in four paragraphs
 
@@ -415,7 +451,7 @@ moments (here, means) rather than a likelihood; "simulated" because this model h
 no closed form, so the moments have to come out of a simulation.
 
 The thing being minimised is `Q`, the summed squared relative gap between the
-six simulated means and the six data means. Minimising it is hard because `Q`
+ten simulated moments and their ten data counterparts. Minimising it is hard because `Q`
 has no derivative anyone can write down and may have several local minima — hence
 TikTak (`../src/tiktak.jl`), which scatters Sobol points over the parameter box to
 find promising regions, then runs local searches from the best of them.
@@ -432,5 +468,8 @@ chasing the random number generator instead of the parameters.
 |---|---|
 | `run_smm.jl` | Driver: worker setup, budget, progress, TikTak, logging, reporting. |
 | `moments.jl` | Targets, model moments, objective, fit report. The economics. |
+| `jacobian.jl` | Saves the residual Jacobian with its full metadata: singular values, condition number, weak directions, pairwise cosines. **Run this before arguing about identification** — the numbers in this file's text came from it. |
+| `standard_errors.jl` | The clustered minimum-distance sandwich, from a saved Jacobian plus `[moment_cov]`. Sampling uncertainty only — read its header for what it does not cover. |
+| `sensitivity.jl` | The target-moment response exercise: perturb one target, jointly re-estimate all nine, 90 curves. Checkpoint/resume built in. |
 | `../src/tiktak.jl` | The optimizer (Arnoud, Guvenen & Kleineberg 2022). Shared. |
-| `../smm.jl` | **Legacy**: the older 14-parameter, 12-moment estimation. Left in place; not used by anything here. |
+| `../../archive/smm_14param_legacy.jl` | **Retired** 2026-09-06: the older 14-parameter, 12-moment estimation. Non-functional against the current model; kept in `archive/` as a record, referenced by nothing. |

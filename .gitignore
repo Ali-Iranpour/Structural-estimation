@@ -21,8 +21,13 @@ docs/papers/
 *.jl.mem
 _nb_smoketest.jl
 
-# SMM search output — regenerate with `julia --project=.. smm.jl`
+# Legacy SMM output from the retired 14-parameter estimator (now
+# archive/smm_14param_legacy.jl). Not regenerable and not read by anything.
 output/data/smm_estimates.toml
+
+# output/identification/ and output/sensitivity/ ARE tracked: they are the saved
+# Jacobians, standard errors and sensitivity curves the review asked to be reproducible
+# artefacts rather than recollections. They are small text and CSV.
 
 # Input: the Stata moment files are large and regenerable; the small
 # generated targets file IS tracked, because run_smm.jl needs it.
