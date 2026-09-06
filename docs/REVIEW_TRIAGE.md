@@ -337,13 +337,31 @@ evidence attached.
 Valuation against technology is the binding problem, it is worse than any pairwise Jacobian
 cosine shows, and it is invisible without the covariance.
 
-**5. Out of scope, found in passing: the by-age target generator was broken.**
-`tools/make_smm_targets.py` crashed in `write_by_age()` because `SMM_Moments_ByAge.dta` has
-no `mu_assets_real` column and `SMM_Moments_ByAge_Cohort.dta` is not in `Input/` at all — it
-had been writing the targets and *then* exiting non-zero. It now skips that optional stage
-loudly and completes. **The committed `Input/smm_moments_by_age*.csv` are stale**: they were
-generated from an extract that is not in the repository. Nothing in the estimation reads
-them; the notebook plots them. Needs the right `.dta` files, which I do not have.
+**5. Out of scope, found in passing: the by-age target generator crashed here, and my
+first diagnosis of why was wrong.** `tools/make_smm_targets.py` was writing the targets and
+*then* dying in `write_by_age()`, which is a bad failure mode regardless of cause; the guard
+that makes that stage skip loudly instead stays. But I attributed the crash to a missing
+column and concluded the committed `Input/smm_moments_by_age*.csv` were **stale**, and that
+conclusion was wrong — corrected in `fe78940`. Regenerating them from the right extract
+reproduces the committed files byte for byte. **They are current.**
+
+Two things do remain, and they are not the same claim:
+
+- **The `.dta` extracts differ between machines.** On `haflinger`,
+  `Input/SMM_Moments_ByAge.dta` (md5 `d8688f1c…`, 18 rows × 133 columns) carries the full
+  `mu_/sd_/md_/wmu_` set for consumption, time, investment and achievement and **no asset
+  column at all**, and `SMM_Moments_ByAge_Cohort.dta` is absent — only its derived CSV is
+  present. So the crash here was real and reproducible; this server simply has an older
+  extract than the one the correction was checked against.
+- **The `.dta` files are still untracked.** `fe78940` removed `Input/*.dta` from
+  `.gitignore`, which is the right root-cause fix, but did not `git add` the files — so a
+  fresh clone still gets no by-age inputs and the stated goal is not yet achieved. **They
+  should be added from the machine with the newer extract, not from this one**, or the
+  repository would capture the version without the asset columns.
+
+Before that happens, note the warning `fe78940` itself records: this repository is public,
+`SMM_Moments_Micro.dta` is individual-level PSID/CDS microdata, and git history is
+permanent. That is a data-agreement question, not a git one.
 
 ---
 
