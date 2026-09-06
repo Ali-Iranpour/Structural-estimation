@@ -332,7 +332,7 @@ not administered earlier. See `SMM_AGE_HC_LO` and `AGE_HC_LO`.
 | `phi_2` | leisure weight → `h_p` | [0.01, 20.0] | log | 0.1418 |
 | `phi_3` | parents' weight on child skill → `t_p`, `e_p` | [0.05, 20.0] | log | 1.0 |
 | `lambda_2` | child's weight on skill → `i_c` | [0.05, 20.0] | log | 1.0 |
-| `R_0` | HC technology TFP → the **level** of log HC | [5.0, 300.0] | log | 81.55 |
+| `R_0` | HC technology TFP → the **level** of log HC | [0.5, 100.0] | log | 81.55 |
 | `sigma_1_0` | **level** of HC elasticity to parent *time* → early `t_p` | [−4.0, −0.2] | level | −0.4575 |
 | `sigma_1_1` | **age slope** of that elasticity → late `t_p` | [−0.20, 0.05] | level | −0.0634 |
 | `sigma_2_0` | **level** of HC elasticity to *money* → early `e_p` | [−5.0, −0.5] | level | −3.3955 |

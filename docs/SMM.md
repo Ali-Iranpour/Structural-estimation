@@ -149,7 +149,7 @@ Preference weights are **time-invariant**: the `_1` slopes and per-period vector
 | `phi_2` | weight on parental leisure → `h_p` (work; `l = 1 − h − t`) | `[0.01, 20.0]` | log |
 | `phi_3` | parents' weight on child skill → `t_p` and `e_p` | `[0.05, 20.0]` | log |
 | `lambda_2` | the child's own weight on skill → `i_c` (study time) | `[0.05, 20.0]` | log |
-| `R_0` | HC technology TFP → the **level** of `log HC` | `[5.0, 300.0]` | log |
+| `R_0` | HC technology TFP → the **level** of `log HC` | `[0.5, 100.0]` | log |
 | `sigma_1_0` | elasticity of HC to parental **time** → `t_p` level | `[−4.0, −0.2]` | level |
 | `sigma_1_1` | its age slope → `t_p` early vs late | `[−0.20, 0.05]` | level |
 | `sigma_2_0` | elasticity of HC to **money** → `e_p` level | `[−5.0, −0.5]` | level |
@@ -157,7 +157,23 @@ Preference weights are **time-invariant**: the `_1` slopes and per-period vector
 | `sigma_4_0` | elasticity of HC to the child's **own study** → `i_c` | `[−6.0, −1.0]` | level |
 
 Source of truth: [`moments.jl:506`](../code/smm/moments.jl#L506). Strictly-positive weights
-are searched **in logs**, so a step can never propose a negative weight. The `sigma`s are
+are searched **in logs**, so a step can never propose a negative weight — and the log link
+is also what concentrates the search. A Sobol sequence uniform in `log θ` is not uniform in
+`θ`: its density in levels falls like `1/θ`. Over `R_0`'s box that puts 25% of pre-testing
+points below 1.9, half below 7.1 and only a quarter above 26.6.
+
+**`R_0`'s box was changed to `[0.5, 100.0]` on 2026-09-06** (was `[5, 300]`), widening it
+downward and narrowing it upward. The direction follows the fit — the model overshoots HC
+by +79.7% early at the incumbent, so the estimate has to move down. Two things to carry
+with it: the incumbent `R_0 = 81.55` now sits at **96% of the box** in search coordinates,
+just under the line at which a run flags a parameter as pinned; and a univariate sweep
+across the new box (grid 20, other parameters held at the incumbent) shows `Q` is U-shaped
+with its minimum near `R_0 ≈ 55–70`, rising to **305.9 at `R_0 = 0.5`** where human capital
+collapses to essentially zero. Nothing in the box is infeasible — every point solves — but
+the left half is a region the univariate objective dislikes strongly. Whether the *joint*
+minimum goes there is a different question: `R_0` is the most correlated parameter in the
+set (`phi_3`/`R_0` −0.998), so it can move a long way left with compensating changes in the
+valuation parameters, and that is what the left-hand room exists for. The `sigma`s are
 already log-elasticities (`σ_j,t = exp(σ_j0 + σ_j1·(t−1))`) and are searched in levels
 inside a box.
 
