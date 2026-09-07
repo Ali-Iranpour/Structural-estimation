@@ -15,13 +15,16 @@ julia +1.11 --project=../.. run_smm.jl                  # the real run
 Flags, runtimes and the parallelism story are in
 [`code/smm/README.md`](../code/smm/README.md). This file is the method.
 
-> **Status, 7 September 2026.** The completed nine-parameter run
-> `2026-09-06_183119` is now the baseline in `PARENT_DEFAULTS`, with
-> Q = 0.2500261422642604. Its outputs and original bounds are preserved; three
-> limits were expanded for future searches. See [BASELINE_9PARAM.md](BASELINE_9PARAM.md)
-> and the [run inspection](../output/smm_diagnostics/2026-09-06_183119/inspection_notes.md).
-> Older calibration measurements below are explicitly historical. Remaining work is
-> tracked in [REVIEW_TRIAGE.md](REVIEW_TRIAGE.md).
+> **Status, 7 September 2026, 19:42.** The school-plus-study run
+> `2026-09-07_114138` reproduces Q = 0.011580631181773578. Its winning polish
+> met FTOL, but acceptance is false because `sigma_2_1` sits at −0.10.
+> All nine estimates, ten residuals, runtime and numerical checks are in the
+> [current inspection](../output/smm_diagnostics/2026-09-07_114138/inspection_notes.md).
+> The [provisional candidate](../Input/parent_candidate_school_time.toml) is preserved
+> separately; `PARENT_DEFAULTS` still uses the historical homework-only baseline in
+> [BASELINE_9PARAM.md](BASELINE_9PARAM.md). These objectives use different targets.
+> Boundary/grid review comes before a larger run; `sigma_4_1` remains the first
+> candidate extension. See [REVIEW_TRIAGE.md](REVIEW_TRIAGE.md).
 
 ---
 

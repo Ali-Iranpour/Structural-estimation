@@ -1,0 +1,17 @@
+Solving baseline child grid
+fitted Q=0.011580631181773578 invalid=0
+sigma_2_1=-0.11 Q=0.02289719394943935 invalid=0
+sigma_2_1=-0.125 Q=0.08092042396938345 invalid=0
+sigma_2_1=-0.15 Q=0.23641907784148747 invalid=0
+sigma_4_1=0.03 Q=0.010789139087932324 invalid=0
+sigma_4_1=0.04 Q=0.014000489975049414 invalid=0
+sigma_4_1=0.06 Q=0.033166678641206274 invalid=0
+R_1=-0.5 Q=0.05732672328660512 invalid=0
+R_1=0.5 Q=0.052197578221636204 invalid=0
+mu_1=-0.05 Q=0.05865594833939971 invalid=0
+mu_1=-0.03 Q=0.07153961347613629 invalid=0
+money_pivot=-0.125 Q=0.020364602281163675 invalid=0
+money_pivot=-0.15 Q=0.06238619210578097 invalid=0
+Solving asset-grid sensitivity at a_max=300 with 30 nodes
+asset_max=300 Q=0.013012541321386023 invalid=0
+DONE

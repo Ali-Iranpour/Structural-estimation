@@ -1,0 +1,47 @@
+# Provisional result, not promoted into PARENT_DEFAULTS.
+source_run = "output/smm_runs/2026-09-07_114138"
+source_code = "6a3a916"
+targets_file = "output/smm_runs/2026-09-07_114138/targets.toml"
+status = "provisional_boundary_review"
+accepted = false
+params_on_bound = ["sigma_2_1"]
+Q_final = 0.011580631181773578
+seed = 1234
+simN = 2000
+grid = 30
+
+[parameters]
+phi_2 = 0.17955567051220203
+phi_3 = 1.2482684976035674
+lambda_2 = 16.801082188500427
+R_0 = 48.907809300977156
+sigma_1_0 = -0.7035276953796781
+sigma_1_1 = -0.11959049423874989
+sigma_2_0 = -3.772442219874511
+sigma_2_1 = -0.09999941398779479
+sigma_4_0 = -3.170996159165415
+
+[fixed]
+R_1 = 0.0
+sigma_4_1 = 0.02
+mu_1 = -0.04
+
+[run_bounds]
+phi_2 = [0.01, 20.0]
+phi_3 = [0.05, 20.0]
+lambda_2 = [0.05, 20.0]
+R_0 = [0.5, 100.0]
+sigma_1_0 = [-4.0, -0.1]
+sigma_1_1 = [-0.2, 0.05]
+sigma_2_0 = [-5.0, -0.5]
+sigma_2_1 = [-0.1, 0.05]
+sigma_4_0 = [-6.0, -1.0]
+
+[source_sha256]
+"checkpoint.toml" = "42533d6b43ed4406d889624127c0c6be41c562bae4886c045af1d2a6d710058b"
+"estimates.toml" = "477d430fc29bfaf317e12ca14545a1734538cd7c80ed73406158b29ffe167d6a"
+"restarts.csv" = "989b62d1bee09185cd3b1ae488746d7a5e050386b8bb63aa9980d987c1971795"
+"run.log" = "b8be3da5e9f4307719e8db298b0d67cd139cdba04115e8352aca2b3112f627d4"
+"run_record.toml" = "067a5ca61a159a364bc46d2caad74bb60cb2f698dbca845cf6fe789e49df3dd2"
+"seeds.toml" = "49aafb76b9b9f468c7f2b1b6b27ecbff0ef305eeb16e93ae835ee7cfdfed0c1d"
+"targets.toml" = "74823b68b9d42e9ef5e24faeb23055c68a370feee37b8ac8024e7f51c3484873"

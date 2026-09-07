@@ -1,5 +1,10 @@
 # Preserved nine-parameter baseline
 
+The newer school-plus-study run `2026-09-07_114138` is a separate provisional result
+(Q = 0.011580631181773578, acceptance false because of `sigma_2_1`). It has not
+replaced the defaults described here. See its [inspection](../output/smm_diagnostics/2026-09-07_114138/inspection_notes.md)
+and [candidate snapshot](../Input/parent_candidate_school_time.toml).
+
 The accepted run `2026-09-06_183119` is the baseline as of 7 September 2026.
 Its original outputs are tracked under [`output/smm_runs/2026-09-06_183119`](../output/smm_runs/2026-09-06_183119).
 They retain their original estimates, bounds, logs and metadata without rewriting them.

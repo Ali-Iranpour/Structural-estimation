@@ -13,13 +13,20 @@ If this is your first time running an SMM, read *What SMM is doing here* at the
 bottom first — it is four paragraphs and the rest of this file will make more
 sense afterwards.
 
-## Fitted baseline
+## Current result and preserved baseline
 
-`PARENT_DEFAULTS` and the incumbent seed now use the full-precision estimates from
-`2026-09-06_183119` (Q = 0.2500261422642604). The original run is preserved in Git;
-three search limits were expanded for future runs. See
-[`BASELINE_9PARAM.md`](../../docs/BASELINE_9PARAM.md) for the snapshot, bounds and checks.
-The estimated set remains nine parameters.
+The school-plus-study run `2026-09-07_114138` has Q = 0.011580631181773578 and a
+converged winning polish, but fails acceptance because `sigma_2_1` is at −0.10.
+Its full-precision estimates are preserved in
+[`parent_candidate_school_time.toml`](../../Input/parent_candidate_school_time.toml).
+See the [current inspection](../../output/smm_diagnostics/2026-09-07_114138/inspection_notes.md)
+for all moments, bounds and next steps.
+
+`PARENT_DEFAULTS` and the runner's incumbent seed remain the historical
+`2026-09-06_183119` fit, Q = 0.2500261422642604 against its original homework-only
+targets. A default `--report-only` therefore evaluates that historical vector,
+not the provisional candidate. See [`BASELINE_9PARAM.md`](../../docs/BASELINE_9PARAM.md).
+The estimated set remains nine parameters; boundary and grid review precede promotion.
 
 ## Run it
 

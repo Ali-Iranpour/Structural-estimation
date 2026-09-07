@@ -58,3 +58,7 @@ output/smm_runs/*
 # The `latest` symlink run_smm.jl re-points at every run. Per-machine, not shared.
 output/smm_runs/latest
 temp/latest
+
+# Provisional school-plus-study run: preserve evidence and its frozen targets.
+!output/smm_runs/2026-09-07_114138/
+!output/smm_runs/2026-09-07_114138/**

@@ -1019,16 +1019,11 @@ const FINAL_REPORT = say_report(Z_FINAL)
 const N_INVALID_FINAL = FINAL_REPORT.violations.total
 
 # ---- did anything land on a box edge? ---------------------------------------
-# A parameter pinned to its bound is NOT a converged estimate -- it is the model saying
-# "I cannot reach this target from inside the admissible region". Position is measured in
-# SEARCH coordinates, because a log-linked parameter sits somewhere quite different on the
-# linear scale.
-#
-# THIS IS PART OF ACCEPTANCE, not a footnote. It was printed but not gated on, and then I
-# dropped it entirely while rewriting the acceptance block on 2026-09-06 -- so the
-# 2026-09-06_183119 run reported `accepted = true` with sigma_4_0 at -5.985 against a lower
-# bound of -6.0, i.e. 0.3% into its own box. A bound-pinned parameter and a converged
-# search are different claims and both have to hold.
+# The 2% search-coordinate threshold is a conservative review flag, not a test
+# of optimizer convergence or proof that the target is unattainable. A bounded
+# optimizer can converge at an edge. Keep this flag in acceptance until boundary
+# profiles and numerical sensitivity have been reviewed; do not silently relax it.
+# The original evidence in saved run files is retained unchanged.
 const PINNED = let (lo_s, hi_s) = search_bounds(), est_ = unpack(Z_FINAL)
     out = NamedTuple[]
     for (i, q) in enumerate(SMM_PARAMS)
@@ -1043,14 +1038,14 @@ end
 if isempty(PINNED)
     say("\nall parameters interior to their boxes")
 else
-    say("\n!! PARAMETERS ON A BOUND -- these are not converged estimates:")
+    say("\n!! PARAMETERS NEAR A SEARCH BOUND -- boundary review required:")
     for p_ in PINNED
-        sayf("  %-10s = %10.4f  pinned to its %s bound [%.3f, %.3f]  (%.1f%% into the box)\n",
+        sayf("  %-10s = %10.4f  near its %s bound [%.3f, %.3f]  (%.1f%% into the box)\n",
              p_.name, p_.value, p_.which, p_.lo, p_.hi, 100 * p_.pos)
     end
-    say("The model could not reach the target from inside the box. Either the box is too")
-    say("narrow, or the target is outside what this specification can produce. Widen the")
-    say("box and re-run, or report the bound AS a bound -- never as an estimate.")
+    say("This proximity flag is separate from the optimizer stopping status. Check a")
+    say("boundary profile and numerical sensitivity before promoting the result; proximity")
+    say("alone does not prove that the box is too narrow or the target is unattainable.")
 end
 
 # A2. ACCEPTANCE IS A STATEMENT ABOUT THE RETAINED WINNER, NOT ABOUT THE POPULATION.
@@ -1146,7 +1141,7 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "n_invalid_final = ", N_INVALID_FINAL, "   # off-domain cells at the final point")
     println(io, "params_on_bound = [",
             join(("\"$(p_.name)\"" for p_ in PINNED), ", "),
-            "]   # pinned within 2% of a box edge -- NOT converged estimates")
+            "]   # within 2% of a search-box edge; requires boundary review")
     println(io, "accepted      = ", ACCEPTED,
             "   # converged restarts, no exceptions, and a feasible final simulation")
     print(io, "ret_tally  = {")

@@ -1,0 +1,83 @@
+simN = 2000
+note = "Conditional slices, not joint fits or identification tests; asset sensitivity also changes grid spacing at fixed node count."
+grid = 30
+seed = 1234
+
+[fixed]
+sigma_4_1 = 0.02
+mu_1 = -0.04
+R_1 = 0.0
+
+[[probes]]
+label = "sigma_2_1=-0.11"
+
+    [probes.changes]
+    sigma_2_1 = -0.11
+[[probes]]
+label = "sigma_2_1=-0.125"
+
+    [probes.changes]
+    sigma_2_1 = -0.125
+[[probes]]
+label = "sigma_2_1=-0.15"
+
+    [probes.changes]
+    sigma_2_1 = -0.15
+[[probes]]
+label = "sigma_4_1=0.03"
+
+    [probes.changes]
+    sigma_4_1 = 0.03
+[[probes]]
+label = "sigma_4_1=0.04"
+
+    [probes.changes]
+    sigma_4_1 = 0.04
+[[probes]]
+label = "sigma_4_1=0.06"
+
+    [probes.changes]
+    sigma_4_1 = 0.06
+[[probes]]
+label = "R_1=-0.5"
+
+    [probes.changes]
+    R_1 = -0.5
+[[probes]]
+label = "R_1=0.5"
+
+    [probes.changes]
+    R_1 = 0.5
+[[probes]]
+label = "mu_1=-0.05"
+
+    [probes.changes]
+    mu_1 = -0.05
+[[probes]]
+label = "mu_1=-0.03"
+
+    [probes.changes]
+    mu_1 = -0.03
+[[probes]]
+label = "money_pivot=-0.125"
+
+    [probes.changes]
+    sigma_2_0 = -3.572437531776869
+    sigma_2_1 = -0.125
+[[probes]]
+label = "money_pivot=-0.15"
+
+    [probes.changes]
+    sigma_2_0 = -3.3724375317768693
+    sigma_2_1 = -0.15
+
+[baseline]
+sigma_2_0 = -3.772442219874511
+lambda_2 = 16.801082188500427
+sigma_1_0 = -0.7035276953796781
+sigma_2_1 = -0.09999941398779479
+phi_3 = 1.2482684976035674
+R_0 = 48.907809300977156
+sigma_4_0 = -3.170996159165415
+phi_2 = 0.17955567051220203
+sigma_1_1 = -0.11959049423874989

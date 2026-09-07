@@ -1,5 +1,74 @@
 # Estimation review — current status and remaining work
 
+## Completed school-plus-study run — 7 September 2026, 19:42
+
+**Current result: provisional, not accepted.** Run `2026-09-07_114138` reproduces
+**Q = 0.011580631181773578** exactly with zero invalid final cells. The winning
+BOBYQA polish returned `FTOL_REACHED`, but `sigma_2_1 = −0.09999941398779479`
+is effectively at its −0.10 lower bound. The current acceptance gate correctly
+withholds promotion pending boundary review. `lambda_2 = 16.8011` is 2.91% from
+its upper edge in log search coordinates and should also be monitored.
+
+The [complete inspection](../output/smm_diagnostics/2026-09-07_114138/inspection_notes.md)
+contains all nine estimates and bound distances, all ten targets/model moments/residuals,
+restart gains, evaluation counts, handoff states, grid coverage and controlled probes.
+The full-precision [candidate snapshot](../Input/parent_candidate_school_time.toml)
+preserves the provisional estimates, fixed parameters, original boxes and source hashes.
+The [original run files](../output/smm_runs/2026-09-07_114138/) are preserved unchanged,
+with a separate frozen target copy. `PARENT_DEFAULTS` remains the historical baseline;
+this run is not silently promoted to an accepted calibration.
+
+**Actual budget and cost:** 4,000 Sobol points, six restarts, 500-evaluation local/polish
+caps, grid 30, N=2,000, seed 1234, 20 processes. Optimization calls reconcile as
+**4,001 + 2,589 + 161 = 6,751**. Three restarts hit MAXEVAL; three met FTOL.
+Full wall time was **8h 00m 33s**, versus 479.1 minutes in the saved post-setup timer.
+There were 286 penalties (4.24%), zero unclassified objective exceptions, and no
+full-grid refinement. The last restart gained 0.439%; polish gained 0.053%.
+
+**Remaining misfit:** child time supplies **59.73% of Q**. Model hours fall
+**43.60 → 41.22**, while data hours rise **40.87 → 43.37**. Against the SAME new targets,
+the original default vector scores Q=1.649564, so the new fit reduces Q by 99.298%.
+Do not compare that percentage with the old homework-only Q=0.250026.
+
+**Numerical coverage:** two of 2,000 households exceed the asset ceiling 100 at every
+age, including handoff (maximum 257.1712); no HC state leaves [50,1500]. Raising both
+parent/child asset ceilings to 300 at the same 30 nodes removes the off-grid asset
+households but changes Q to **0.013012541 (+12.36%)**; late monetary investment moves
+about 1.46%. This changes spacing as well as coverage, so it is not isolated tail bias.
+Zero invalid cells persists. Handoff assets average 37.2552 and HC averages 467.5424.
+
+**Next sequence, before paying for 30 restarts:**
+
+1. Jointly profile/re-optimize the existing nine around the money-slope boundary.
+   A provisional diagnostic box `sigma_2_1 ∈ [−0.15,0.05]` can test the lower edge;
+   monitor `lambda_2` against 20. Lowering the money slope alone or at the tested
+   age-9 intercept pivots worsens Q, so no better estimate is established by widening.
+2. Resolve asset-grid sensitivity and compare candidates on the same grid. Start a
+   fresh nine-parameter pilot after choosing the box/grid: 1,000 Sobol points,
+   6–10 restarts, initially 1,000 local/polish evaluations. Inspect actual stopping
+   status instead of treating those caps as a guarantee. Changed bounds require a
+   fresh run, not resuming this checkpoint.
+3. If the child-time slope miss remains, test **`sigma_4_1` first** as the tenth
+   parameter, jointly re-estimating all ten. The single-coordinate 0.03 probe reduces
+   Q to **0.010789139 (−6.83%)**; tested `R_1` and `mu_1` changes worsen it. These
+   slices do not establish identification or remove the current boundary issue.
+4. Recompute fitted-point Jacobians at multiple steps, inspect rank/conditioning,
+   and resolve A7 inference before quoting uncertainty. Then consider the planned
+   1,000-Sobol/30-restart production search. Tier 2 is not certified by this low Q.
+
+**Reporting correction:** the 2% proximity check is a conservative acceptance rule,
+not proof that an optimizer failed to converge or that a target is unattainable.
+The runner's warning/comments now make that distinction; `isempty(PINNED)` remains
+in the acceptance gate. Original logs retain their original wording.
+
+Validation: full-grid Q reproduction, 14 diagnostic rows (fitted point, 12 parameter
+probes and one grid sensitivity), zero invalid cells in all, exact target hash,
+reconciled stage counts, source-checksummed snapshot and boundary/Jacobian regressions.
+No new estimation, search-bound change or default promotion was made in this review.
+The sections below are dated historical evidence, not the current result summary.
+
+---
+
 ## School-plus-study input review and pilot bounds — 7 September 2026
 
 Reviewed input commit `4cf0121` against baseline commit `79bac8c`.
