@@ -1035,6 +1035,28 @@ const PINNED = let (lo_s, hi_s) = search_bounds(), est_ = unpack(Z_FINAL)
     end
     out
 end
+# NEAR a bound but not on it. Reported, NOT gated on -- the acceptance test stays exactly
+# where it is. lambda_2 came back at 97.09% of its box in the 2026-09-07 candidate: inside
+# the 98% line, so silent, while being one short step from a wall. A parameter drifting
+# toward its box across successive runs is worth seeing BEFORE it pins, and that is a
+# different thing from failing acceptance.
+const NEAR_BOUND = let (lo_s, hi_s) = search_bounds(), est_ = unpack(Z_FINAL)
+    out = NamedTuple[]
+    for (i, q) in enumerate(SMM_PARAMS)
+        pos = (Z_FINAL[i] - lo_s[i]) / (hi_s[i] - lo_s[i])
+        (0.02 <= pos < 0.05 || 0.95 < pos <= 0.98) &&
+            push!(out, (name = q.name, value = getfield(est_, q.name),
+                        which = pos < 0.5 ? "lower" : "upper", pos = pos))
+    end
+    out
+end
+if !isempty(NEAR_BOUND)
+    say("\n!  APPROACHING A BOUND (within 5%) -- not a failure, but watch it across runs:")
+    for p_ in NEAR_BOUND
+        sayf("  %-10s = %10.4f  %.1f%% of its box, near the %s bound\n",
+             p_.name, p_.value, 100 * p_.pos, p_.which)
+    end
+end
 if isempty(PINNED)
     say("\nall parameters interior to their boxes")
 else
@@ -1142,6 +1164,9 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "params_on_bound = [",
             join(("\"$(p_.name)\"" for p_ in PINNED), ", "),
             "]   # within 2% of a search-box edge; requires boundary review")
+    println(io, "params_near_bound = [",
+            join(("\"$(p_.name)\"" for p_ in NEAR_BOUND), ", "),
+            "]   # within 5% of an edge; reported only, does NOT affect acceptance")
     println(io, "accepted      = ", ACCEPTED,
             "   # converged restarts, no exceptions, and a feasible final simulation")
     print(io, "ret_tally  = {")
