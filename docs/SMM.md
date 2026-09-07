@@ -244,10 +244,27 @@ a diff.
 | `mean_t_p_late` | `par_time_tot / 112`, ages 10–17 | 0.3333 | 590 |
 | `mean_e_p_early` | `m_method2_final_w99`, ages 1–9 | 0.3429 | 8,178 |
 | `mean_e_p_late` | `m_method2_final_w99`, ages 10–17 | 0.3911 | 7,182 |
-| `mean_i_c_early` | `study_hrs / 112`, ages 6–9 | 0.0393 | 171 |
-| `mean_i_c_late` | `study_hrs / 112`, ages 10–17 | 0.0496 | 584 |
+| `mean_i_c_early` | `c_time_hrs / 112`, ages 6–9 | 0.3649 | 476 |
+| `mean_i_c_late` | `c_time_hrs / 112`, ages 10–17 | 0.3872 | 1,500 |
 | `mean_hc_early` | `x_gach` (log PCA composite), ages 3–9 | 6.0737 | 252 |
 | `mean_hc_late` | `x_gach` (log PCA composite), ages 10–17 | 6.2508 | 549 |
+
+**The child's time input is `c_time_hrs`, not `study_hrs`** (instruction 2026-09-07).
+`study_hrs` is own study alone — homework, self-study, academic clubs — averaging 3.4
+hrs/wk. `c_time_hrs` adds the median school hours by (Year, Age), giving the child's whole
+time input to skill production, ~41 hrs/wk from age 6. The targets moved from 0.039 / 0.050
+to 0.365 / 0.387, a ninefold change, so **estimates produced against the old targets are
+not comparable**. Two properties of the variable, both from `Input/CODEBOOK.md`:
+
+- It is a **conventional zero below age 6**, not a measurement — and the model's `i_c` is
+  identically zero before `T_CHILD_VOICE = 6`, so the two agree there by construction.
+- Its school component is a **median by (Year, Age)**, identical for every child of an age.
+  It therefore carries the level and almost no cross-child variation: target its mean, and
+  do not weight its SD, which is not comparable to `study_hrs`.
+
+Measured at the fitted baseline, the model reaches 0.3655 early against the 0.3649 target
+at `sigma_4_0 ≈ −3.0` — interior to its `[−8.0, −1.0]` box, so the switch does not push the
+parameter onto a bound.
 
 **Ages are matched on both sides, and each side is weighted the same way.** The targets are
 means **over child ages**, equally weighted, because the simulation is — an

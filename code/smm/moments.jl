@@ -29,7 +29,7 @@
 #
 #   phi_2      weight on leisure           ->  mean h_p   (work; l = 1 - h - t)
 #   phi_3      parents' weight on skill    ->  mean t_p and mean e_p
-#   lambda_2   child's weight on skill     ->  mean i_c   (study time)
+#   lambda_2   child's weight on skill     ->  mean i_c   (child's time input)
 #   R_0        HC technology TFP           ->  mean log HC
 #   sigma_1_0  LEVEL of the t_p elasticity ->  mean t_p, ages 1-9
 #   sigma_1_1  SLOPE of the t_p elasticity ->  mean t_p, ages 10-17
@@ -151,8 +151,18 @@ const SMM_MOMENTS = ("mean_c_p", "mean_h_p",
 # them. Only the resulting HC level can. Before HC was put in the data's units there was
 # no such moment available.
 #
-# The child's own study time starts at t = T_CHILD_VOICE = 6; there is no child decision
+# The child's own time input starts at t = T_CHILD_VOICE = 6; there is no child decision
 # before that, so mean_i_c_early averages t = 6..9, not 1..9.
+#
+# i_c IS MATCHED ON `c_time_hrs`, NOT `study_hrs` (instruction 2026-09-07): the child's
+# whole time input to skill, median school hours by (Year, Age) plus own study, ~41 hrs/wk
+# from age 6 against own study's 3.4. The targets are 0.365 early and 0.387 late, up from
+# 0.039 and 0.050. Two consequences worth carrying:
+#   * The data variable is a CONVENTIONAL ZERO below age 6, exactly as the model's i_c is,
+#     so the two agree on that range by construction rather than by luck.
+#   * Its school component is a median by (Year, Age), identical across children of an
+#     age, so it carries the level and almost no cross-child variation. Target its mean;
+#     its SD is not comparable to study_hrs and must not be weighted in.
 
 # Moments that are MEANS OF LOGS. Their residual is already a proportional error -- a
 # log difference of 0.05 IS a 5% error in the level -- so it must NOT be divided by the
@@ -332,8 +342,8 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
     # columns -- the same ages the generator selects on Child_Age in the data.
     early = SMM_AGE_LO:SMM_AGE_SPLIT
     late  = (SMM_AGE_SPLIT + 1):SMM_AGE_HI
-    # The child only chooses study time from T_CHILD_VOICE; before that sim_i is not a
-    # decision. Match the generator, which selects Child_Age >= 6 for the early group.
+    # The child only chooses its time input from T_CHILD_VOICE; before that sim_i is not
+    # a decision. Match the generator, which selects Child_Age >= 6 for the early group.
     early_i = T_CHILD_VOICE:SMM_AGE_SPLIT
     # HC is observed from age 3 only -- see SMM_AGE_HC_LO.
     early_hc = SMM_AGE_HC_LO:SMM_AGE_SPLIT
