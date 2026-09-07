@@ -1018,6 +1018,41 @@ const FINAL_REPORT = say_report(Z_FINAL)
 # or be the output of searches that all ran out of budget.
 const N_INVALID_FINAL = FINAL_REPORT.violations.total
 
+# ---- did anything land on a box edge? ---------------------------------------
+# A parameter pinned to its bound is NOT a converged estimate -- it is the model saying
+# "I cannot reach this target from inside the admissible region". Position is measured in
+# SEARCH coordinates, because a log-linked parameter sits somewhere quite different on the
+# linear scale.
+#
+# THIS IS PART OF ACCEPTANCE, not a footnote. It was printed but not gated on, and then I
+# dropped it entirely while rewriting the acceptance block on 2026-09-06 -- so the
+# 2026-09-06_183119 run reported `accepted = true` with sigma_4_0 at -5.985 against a lower
+# bound of -6.0, i.e. 0.3% into its own box. A bound-pinned parameter and a converged
+# search are different claims and both have to hold.
+const PINNED = let (lo_s, hi_s) = search_bounds(), est_ = unpack(Z_FINAL)
+    out = NamedTuple[]
+    for (i, q) in enumerate(SMM_PARAMS)
+        pos = (Z_FINAL[i] - lo_s[i]) / (hi_s[i] - lo_s[i])
+        (pos < 0.02 || pos > 0.98) &&
+            push!(out, (name = q.name, value = getfield(est_, q.name),
+                        which = pos < 0.02 ? "LOWER" : "UPPER",
+                        pos = pos, lo = q.lo, hi = q.hi))
+    end
+    out
+end
+if isempty(PINNED)
+    say("\nall parameters interior to their boxes")
+else
+    say("\n!! PARAMETERS ON A BOUND -- these are not converged estimates:")
+    for p_ in PINNED
+        sayf("  %-10s = %10.4f  pinned to its %s bound [%.3f, %.3f]  (%.1f%% into the box)\n",
+             p_.name, p_.value, p_.which, p_.lo, p_.hi, 100 * p_.pos)
+    end
+    say("The model could not reach the target from inside the box. Either the box is too")
+    say("narrow, or the target is outside what this specification can produce. Widen the")
+    say("box and re-run, or report the bound AS a bound -- never as an estimate.")
+end
+
 # A2. ACCEPTANCE IS A STATEMENT ABOUT THE RETAINED WINNER, NOT ABOUT THE POPULATION.
 #
 # The previous test was `N_CONVERGED > 0` -- "some restart converged". That says nothing
@@ -1036,7 +1071,7 @@ const N_INVALID_FINAL = FINAL_REPORT.violations.total
 const WINNER_CONVERGED = ret_class(result.winner_ret) === :converged
 const REFINE_OK        = REFINE.status in (:skipped, :improved, :no_improvement) &&
                          (REFINE.status === :skipped || ret_class(REFINE.ret) !== :other)
-const ACCEPTED = WINNER_CONVERGED && REFINE_OK &&
+const ACCEPTED = WINNER_CONVERGED && REFINE_OK && isempty(PINNED) &&
                  (result.n_exception == 0) && (N_INVALID_FINAL == 0) &&
                  isfinite(Q_FINAL) && (Q_FINAL < SMM_PENALTY)
 
@@ -1051,6 +1086,8 @@ sayf("  no objective exceptions %s  (%d)\n", result.n_exception == 0 ? "yes" : "
      result.n_exception)
 sayf("  final sim in domain     %s  (%d invalid cells)\n",
      N_INVALID_FINAL == 0 ? "yes" : "NO ", N_INVALID_FINAL)
+sayf("  no parameter on a bound %s  (%s)\n", isempty(PINNED) ? "yes" : "NO ",
+     isempty(PINNED) ? "all interior" : join((String(p_.name) for p_ in PINNED), ", "))
 sayf("  objective finite        %s  (Q = %.6g)\n",
      (isfinite(Q_FINAL) && Q_FINAL < SMM_PENALTY) ? "yes" : "NO ", Q_FINAL)
 sayf("  (for context: %d of %d restarts converged, %d hit a budget, %d other)\n",
@@ -1107,6 +1144,9 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "n_ret_other   = ", N_OTHER)
     println(io, "n_exception   = ", result.n_exception, "   # >0 means a BUG in the objective")
     println(io, "n_invalid_final = ", N_INVALID_FINAL, "   # off-domain cells at the final point")
+    println(io, "params_on_bound = [",
+            join(("\"$(p_.name)\"" for p_ in PINNED), ", "),
+            "]   # pinned within 2% of a box edge -- NOT converged estimates")
     println(io, "accepted      = ", ACCEPTED,
             "   # converged restarts, no exceptions, and a feasible final simulation")
     print(io, "ret_tally  = {")

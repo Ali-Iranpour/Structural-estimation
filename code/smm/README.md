@@ -364,7 +364,7 @@ not administered earlier. See `SMM_AGE_HC_LO` and `AGE_HC_LO`.
 | `sigma_1_1` | **age slope** of that elasticity → late `t_p` | [−0.20, 0.05] | level | -0.14134183 |
 | `sigma_2_0` | **level** of HC elasticity to *money* → early `e_p` | [−5.0, −0.5] | level | -3.75506167 |
 | `sigma_2_1` | **age slope** of that elasticity → late `e_p` | [−0.10, 0.05] | level | -0.04998108 |
-| `sigma_4_0` | HC elasticity to the child's *own study* → `i_c` | [−8.0, −1.0] | level | -5.98521880 |
+| `sigma_4_0` | HC elasticity to the child's *school plus study* → `i_c` | [−6.0, −1.0] | level | -5.98521880 |
 
 `phi_1` and `lambda_1` are **normalised to 1** — utility is defined only up to relative
 weights, so two of the five must be pinned. `sigma_4_1 = 0.02` and `mu_1 = −0.04` are held

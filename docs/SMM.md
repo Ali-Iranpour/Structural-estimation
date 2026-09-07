@@ -148,7 +148,7 @@ Preference weights are **time-invariant**: the `_1` slopes and per-period vector
 | `sigma_1_1` | its age slope → `t_p` early vs late | `[−0.20, 0.05]` | level |
 | `sigma_2_0` | elasticity of HC to **money** → `e_p` level | `[−5.0, −0.5]` | level |
 | `sigma_2_1` | its age slope → `e_p` early vs late | `[−0.10, 0.05]` | level |
-| `sigma_4_0` | elasticity of HC to the child's **own study** → `i_c` | `[−8.0, −1.0]` | level |
+| `sigma_4_0` | elasticity of HC to the child's **school plus study** → `i_c` | `[−6.0, −1.0]` | level |
 
 Source of truth: [`moments.jl:506`](../code/smm/moments.jl#L506). Strictly-positive weights
 are searched **in logs**, so a step can never propose a negative weight — and the log link
@@ -262,9 +262,10 @@ not comparable**. Two properties of the variable, both from `Input/CODEBOOK.md`:
   It therefore carries the level and almost no cross-child variation: target its mean, and
   do not weight its SD, which is not comparable to `study_hrs`.
 
-Measured at the fitted baseline, the model reaches 0.3655 early against the 0.3649 target
-at `sigma_4_0 ≈ −3.0` — interior to its `[−8.0, −1.0]` box, so the switch does not push the
-parameter onto a bound.
+Measured at the fitted baseline, the full-grid model reaches 0.3664 early against the 0.3649 target
+at `sigma_4_0 ≈ −3.0`, inside the pilot box `[−6.0, −1.0]`. This is a
+conditional probe with other parameters fixed, not evidence that the joint optimum
+will be interior. Refit all nine before deciding whether to add a tenth parameter.
 
 **Ages are matched on both sides, and each side is weighted the same way.** The targets are
 means **over child ages**, equally weighted, because the simulation is — an

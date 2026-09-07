@@ -23,7 +23,7 @@ const SNAP=TOML.parsefile(joinpath(REPO,"Input/parent_baseline_9param.toml"))
     @test !smm_feasible((sigma_1_0=-0.1,sigma_1_1=0.05))
     @test !smm_feasible((sigma_2_0=-0.5,sigma_2_1=0.05))
     for (name,expected) in SNAP["source_sha256"]
-        path=name=="targets" ? joinpath(REPO,"Input/smm_targets_baseline.toml") : joinpath(REPO,SNAP["source_run"],name)
+        path=name=="targets" ? joinpath(REPO,SNAP["targets_file"]) : joinpath(REPO,SNAP["source_run"],name)
         @test bytes2hex(sha256(read(path)))==expected
     end
 end
@@ -42,7 +42,7 @@ p.V_child_interp=V
 redirect_stdout(devnull) do
     solve_model!(p;verbose=false);simulate_model!(p)
 end
-m=model_moments(p);tg=load_targets(joinpath(REPO,"Input/smm_targets_baseline.toml"))
+m=model_moments(p);tg=load_targets(joinpath(REPO,SNAP["targets_file"]))
 Q=sum(((getproperty(m,Symbol(k))-tg[k].mean)/moment_scale(k,tg[k].mean))^2 for k in SMM_MOMENTS)
 @testset "Full-grid fit and handoff" begin
     @test Q ≈ SNAP["Q_final"] atol=1e-9 rtol=0

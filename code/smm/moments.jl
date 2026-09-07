@@ -554,10 +554,12 @@ struct SMMParam
 end
 
 # The nine-parameter run 2026-09-06_183119 is frozen with its ORIGINAL bounds.
-# These are exploration bounds for FUTURE runs (2026-09-07): give the three
-# near-bound coefficients room. Widening a box is not evidence that its new edge
-# is an optimum. Joint profiles and feasibility checks still apply; see
-# docs/BASELINE_9PARAM.md and the controlled probes in output/smm_diagnostics/.
+# Exploration bounds for the school-plus-study target pilot (2026-09-07).
+# Keep the expanded parental-time/money limits. sigma_4_0 returns to [-6,-1]:
+# retain the old incumbent while covering the higher child-time region near -3,
+# without spending Sobol points on the old homework-only extension to -8.
+# These are pilot choices, not confidence intervals; reassess after a joint fit.
+# See docs/BASELINE_9PARAM.md and docs/REVIEW_TRIAGE.md.
 const SMM_PARAMS = [
     SMMParam(:phi_2,     0.01, 20.0, :log),
     SMMParam(:phi_3,     0.05, 20.0, :log),
@@ -567,10 +569,10 @@ const SMM_PARAMS = [
     SMMParam(:sigma_1_1, -0.20, 0.05, :level),
     SMMParam(:sigma_2_0, -5.0, -0.5,  :level),
     SMMParam(:sigma_2_1, -0.10, 0.05, :level), # lower limit was -0.05
-    SMMParam(:sigma_4_0, -8.0, -1.0,  :level), # lower limit was -6.0
+    SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # school + study pilot; old incumbent retained
     # sigma_4_1 = 0.02 and mu_1 = -0.04 stay fixed at PARENT_DEFAULTS.
-    # sigma_4_1 is the first candidate for a later ten-parameter pilot. Historical
-    # calibration Jacobians do not establish identification at the fitted point.
+    # Reassess extra parameters after fitting the changed child-time targets.
+    # Homework-only probes do not establish their priority for these targets.
 ]
 
 # Over-identification is now DELIBERATE (ten moments, nine parameters) and is explained

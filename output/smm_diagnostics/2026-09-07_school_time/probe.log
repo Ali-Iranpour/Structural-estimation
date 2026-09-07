@@ -1,0 +1,11 @@
+Test Summary:                                           | Pass  Total  Time
+Frozen nine-parameter baseline and future search bounds |   24     24  0.1s
+Checking fitted baseline at grid 30 / simN 2000
+Test Summary:             | Pass  Total  Time
+Full-grid fit and handoff |    5      5  2.1s
+Reproduced Q=0.2500261422642604; invalid cells=0
+sigma_4_0=-5.985218799082873 Q_current=1.6495643445176547 i_early=0.05116366407430283 i_late=0.031892355602683956 invalid=0
+sigma_4_0=-6.0 Q_current=1.6548502904621314 i_early=0.050493943649288615 i_late=0.031445961231922163 invalid=0
+sigma_4_0=-3.0 Q_current=0.11111385354131582 i_early=0.3663976892726163 i_late=0.34230295558333695 invalid=0
+sigma_4_0=-2.0 Q_current=0.5270248416411135 i_early=0.5078231640240877 i_late=0.5359851529059595 invalid=0
+sigma_4_0=-1.0 Q_current=1.9745316354651845 i_early=0.6533397590220478 i_late=0.7151972177477444 invalid=0

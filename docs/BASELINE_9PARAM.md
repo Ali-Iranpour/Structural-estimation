@@ -6,6 +6,10 @@ They retain their original estimates, bounds, logs and metadata without rewritin
 [`Input/parent_baseline_9param.toml`](../Input/parent_baseline_9param.toml) records the
 full-precision estimates recovered from the final checkpoint, original boxes, fixed
 parameters, target checksum and SHA-256 checksums of every original run file.
+The original targets are now preserved separately in
+[`Input/smm_targets_9param_frozen.toml`](../Input/smm_targets_9param_frozen.toml);
+`targets_file` in the snapshot points the regression test there. The live target file
+changed to school-plus-study time in `4cf0121` and is used for new estimations.
 
 `PARENT_DEFAULTS` now uses these nine fitted values. The model constructor, SMM incumbent
 seed, and notebook code that reads `PARENT_DEFAULTS` therefore start from the fitted
@@ -23,14 +27,16 @@ presentation in `estimates.toml`.
 | `sigma_1_1` | −0.14134183 | [−0.2, 0.05] | [−0.2, 0.05] |
 | `sigma_2_0` | −3.75506167 | [−5, −0.5] | [−5, −0.5] |
 | `sigma_2_1` | −0.04998108 | [−0.05, 0.05] | **[−0.1, 0.05]** |
-| `sigma_4_0` | −5.98521880 | [−6, −1] | **[−8, −1]** |
+| `sigma_4_0` | −5.98521880 | [−6, −1] | **[−6, −1]** |
 
-The three expanded limits give near-bound parameters room for future joint searches.
-They are exploration choices, not evidence that the expanded box improves the fit, nor
-new estimates. The original nine-parameter result still belongs to its original box.
+The parental-time and money limits retain the earlier expansions. For the changed
+school-plus-study targets, `sigma_4_0` returns from [−8,−1] to [−6,−1], retaining
+the old incumbent while avoiding extra low-elasticity search space motivated by the
+homework-only targets. This is a provisional pilot box, not a confidence interval or
+evidence about the jointly re-estimated optimum. The original nine-parameter result still belongs to its original box.
 Existing feasibility checks reject combinations with parental-time or money elasticities
-at or above one. Asset/HC grid ranges, node counts, random seed and moment definitions
-are unchanged. Start a fresh run for the new bounds; do not resume the preserved run.
+at or above one. Asset/HC grid ranges, node counts and random seed are unchanged. The two live
+child-time targets have changed; all other targeted means are unchanged. Start a fresh run for the new bounds; do not resume the preserved run.
 
 The Jacobian's optional candidate boxes are also corrected: `sigma_4_1` uses
 [−0.05, 0.15] to include the inspected slope range, and `mu_1` uses [−0.08, −0.005]
@@ -63,8 +69,10 @@ original `simN=2000`, seed 1234. The reference objective is **0.2500261422642604
 zero invalid cells and two households above the asset ceiling at the handoff.
 
 The [run inspection](../output/smm_diagnostics/2026-09-06_183119/inspection_notes.md)
-remains the interpretation record: study-time misfit dominates, the asset tail needs
-numerical sensitivity checks, and fitted-point identification/inference is unfinished.
+remains the interpretation record for the original homework-only targets. Its recommendation
+to add `sigma_4_1` must be reassessed after a nine-parameter fit to the new targets.
+The asset tail still needs numerical sensitivity checks, and identification/inference
+at the new fitted point remains unfinished.
 The original `run_record.toml` contains a malformed child-grid entry and a completion-time
 code stamp; those known provenance limitations are retained and described in the inspection,
 not silently repaired in the archived evidence. Promoting the fit does not remove them.

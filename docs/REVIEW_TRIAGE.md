@@ -1,5 +1,84 @@
 # Estimation review — current status and remaining work
 
+## School-plus-study input review and pilot bounds — 7 September 2026
+
+Reviewed input commit `4cf0121` against baseline commit `79bac8c`.
+
+- `mean_i_c_early` now uses `c_time_hrs/112` (school plus own study), moving
+  **0.039290 → 0.364873**, or **4.40 → 40.87 hours/week**; nonmissing N is
+  **171 → 476**. Ages remain 6–9, equally weighted.
+- `mean_i_c_late` changes **0.049594 → 0.387210**, or **5.55 → 43.37 hours/week**;
+  N is **584 → 1,500**. Ages remain 10–17, equally weighted.
+- The other eight targeted means are unchanged. Child-time standard errors,
+  covariance and correlations are regenerated; covariance still uses 1,633 families.
+- Both by-age CSVs use the new time definition and add the **untargeted** reference
+  `l_c = 1 - t_p - i_c`. The four Stata files are newly tracked in this commit;
+  the previous commit has no tracked versions against which to compare their contents.
+- Validation: ran `tools/make_smm_targets.py` against symlinks to the current Stata
+  files in a temporary directory. All target/covariance content matches exactly after
+  excluding generation date and Git stamp; both CSVs match byte for byte. Independently
+  recomputed the two equal-age means and sample counts from the microdata. Covariance
+  is symmetric positive definite and its reported SEs/correlations agree. CSV leisure
+  identities hold to rounding; values are in [0.205,0.578] for all families and
+  [0.170,0.561] for the cohort sample.
+
+**Pilot bounds:** `sigma_4_0` changes from [−8,−1] to **[−6,−1]**. The old incumbent
+−5.9852 remains feasible and the region near −3 remains inside the box. The extension
+below −6 was motivated by homework-only residuals; removing it concentrates this pilot's
+Sobol coverage. This is a provisional search choice, not a claim about the joint optimum.
+Full-grid conditional probes (grid 30, N=2,000, seed 1234; other eight parameters
+fixed) produced the following. All five simulations had zero invalid cells.
+
+| `sigma_4_0` | Q against new targets | Early child time | Late child time |
+|---:|---:|---:|---:|
+| −5.985219 (old fit) | 1.649564 | 0.051164 | 0.031892 |
+| −6 | 1.654850 | 0.050494 | 0.031446 |
+| −3 | 0.111114 | 0.366398 | 0.342303 |
+| −2 | 0.527025 | 0.507823 | 0.535985 |
+| −1 | 1.974532 | 0.653340 | 0.715197 |
+| **Data targets** | | **0.364873** | **0.387210** |
+
+[Probe script, log and CSV](../output/smm_diagnostics/2026-09-07_school_time/)
+preserve the evidence. These slices do not establish joint optimality or grid coverage
+at the future fitted point. The early match near −3 leaves a late-time shortfall.
+
+All eight other ranges retain the values in [BASELINE_9PARAM.md](BASELINE_9PARAM.md).
+No extra parameter is added. The old recommendation to add `sigma_4_1` needs a fresh
+assessment after jointly fitting the nine parameters to the changed targets.
+
+**Baseline regression repaired:** the original targets are recovered byte for byte from
+`79bac8c` into `Input/smm_targets_9param_frozen.toml`, matching the original SHA-256.
+`Input/parent_baseline_9param.toml` now names that file, and
+`tools/test_smm_baseline.jl` uses it for both integrity and Q reproduction. Live targets
+continue to feed new runs. Original run outputs and fitted defaults are unchanged.
+Boundary/Jacobian checks pass (189 assertions); the frozen baseline checks pass
+(29 assertions), reproducing Q = 0.2500261422642604 with zero invalid cells.
+
+**Interpretation caveat:** `par_time_tot` includes nearby presence that can overlap
+child leisure. The new `l_c` is an accounting reference built from separate means,
+not an independently measured exclusive leisure allocation. Keep it untargeted.
+The model chooses all of `i_c`, whereas the data includes a school component; the
+new mapping is the user's specification, not a newly validated schooling-choice model.
+
+For another full-grid test estimation with the previous run's budget, start a fresh
+run in tmux from the repository root:
+
+```sh
+tmux new-session -s smm-school-test -c /srv/project/speech/apps/Structural-estimation \
+  'julia +1.11 --threads=1 --project=. code/smm/run_smm.jl --temp school_time --grid 30 --sobol 2000 --restarts 5 --local-evals 400 --polish-evals 400 --procs 20; exec sh'
+```
+
+This uses 2,000 simulated households and seed 1234. `--temp` selects timestamped
+output under `temp/`; it does not reduce numerical accuracy. `--quick` is a different
+smoke mode (12-node grids, 300 households) and is unsuitable for comparing fitted
+moments with the full-grid baseline. Detach with Ctrl-b then d; reattach with
+`tmux attach -t smm-school-test`. Monitor `temp/latest/run.log`.
+Do not resume the original run: its targets and bounds differ. Inspect the new fit,
+termination, invalid evaluations, grid coverage and runtime before expanding restarts.
+No new estimation has been launched by this review.
+
+---
+
 ## Baseline promotion and boundary fixes — 7 September 2026
 
 The accepted nine-parameter run is preserved in Git and promoted, at full checkpoint
