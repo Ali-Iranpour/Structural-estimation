@@ -101,7 +101,7 @@ At asset ceilings 300, no household remains above the asset grid, but Q rises **
 
 ## Next steps
 
-1. Preserve this run and full-precision candidate separately from the historical baseline. The snapshot is `Input/parent_candidate_school_time.toml`; model defaults remain unchanged because acceptance is false.
+1. Preserve this run and full-precision candidate separately from the historical baseline. The snapshot is `output/smm_runs/2026-09-07_114138/candidate.toml`; model defaults remain unchanged because acceptance is false.
 2. Investigate the `sigma_2_1` boundary with a **joint local re-optimization**, initially exploring a provisional lower limit −0.15 instead of −0.10 and retaining upper 0.05. Re-optimize the other eight parameters too. Single-coordinate slices cannot settle a correlated boundary. Monitor `lambda_2` against 20. Do not alter the acceptance gate just to obtain a pass.
 3. Check the asset-grid sensitivity and use the same selected grid for comparisons. Once this is settled, run a fresh nine-parameter pilot with 1,000 Sobol points, 6–10 restarts, and 1,000 local/polish evaluations as an initial budget. Monitor actual termination; no budget guarantees convergence. Changed bounds require a fresh run, not `--resume` of this one.
 4. If the child-time age slope remains the dominant miss, `sigma_4_1` is the first structural extension to evaluate jointly with all nine. Compare the controlled probes below their stated fixed-parameter assumptions; do not call them fitted ten-parameter models. R_1 and mu_1 require a distinct economic/identification rationale, not just another degree of freedom. With ten moments, add at most one parameter without adding moments.

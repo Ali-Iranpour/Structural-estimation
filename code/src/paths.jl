@@ -99,3 +99,43 @@ function __print_paths()
         println(rpad("  " * n, 12), "= ", d, isdir(d) ? "" : "   (not created yet)")
     end
 end
+
+"""Newest timestamped SMM target snapshot, or an explicitly selected target file.
+
+Input/ contains source data only. A --at estimate selects targets alongside that
+estimate; --targets explicitly overrides it. Directory aliases such as latest are
+excluded from discovery, so their per-machine state cannot affect selection.
+"""
+function smm_targets_file(source::AbstractString=""; at::AbstractString="", root::AbstractString=ROOT)
+    if !isempty(source) || !isempty(at)
+        path = isempty(source) ? joinpath(dirname(abspath(at)), "targets.toml") : abspath(source)
+        isfile(path) || error("SMM targets not found: $path. Pass --targets PATH to a saved targets.toml.")
+        return realpath(path)
+    end
+    runs = joinpath(root, "output", "smm_runs")
+    dirs = isdir(runs) ? sort(filter(n -> occursin(r"^\d{4}-\d{2}-\d{2}_\d{6}(?:_|$)", n) &&
+        !islink(joinpath(runs,n)) && isfile(joinpath(runs,n,"targets.toml")), readdir(runs))) : String[]
+    isempty(dirs) && error("No timestamped SMM targets found. Run tools/make_smm_targets.py first.")
+    return realpath(joinpath(runs,last(dirs),"targets.toml"))
+end
+
+"""Freeze targets inside a run directory; never overwrite an existing snapshot.
+
+A resume always uses its saved targets. An explicit conflicting source is refused.
+"""
+function freeze_smm_targets(run_dir::AbstractString; source::AbstractString="", resume::Bool=false,
+                            at::AbstractString="", root::AbstractString=ROOT)
+    target = abspath(joinpath(run_dir,"targets.toml"))
+    if isfile(target)
+        if !isempty(source) || (!resume && !isempty(at))
+            read(smm_targets_file(source;at,root)) == read(target) ||
+                error("Saved run targets differ from the selected source; start a fresh run.")
+        end
+        return realpath(target)
+    end
+    resume && error("Cannot resume without $target; restore the original target snapshot first.")
+    selected = smm_targets_file(source;at,root)
+    mkpath(dirname(target))
+    cp(selected,target;force=false)
+    return realpath(target)
+end

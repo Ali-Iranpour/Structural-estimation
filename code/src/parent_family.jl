@@ -112,7 +112,7 @@ HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
 # Promoted 2026-09-07 from run 2026-09-06_183119, full-precision checkpoint.
-# Frozen values and original search bounds: Input/parent_baseline_9param.toml.
+# Frozen values and original search bounds: output/smm_runs/2026-09-06_183119/baseline.toml.
 # This is the fitted nine-parameter baseline; R_1, sigma_4_1 and mu_1 remain fixed.
 const PARENT_DEFAULTS = (
     # phi and lambda are TIME-INVARIANT by instruction (2026-08-30): they are

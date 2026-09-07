@@ -46,7 +46,7 @@ banner(s) = (println(); println("="^78); println(s); println("="^78))
 
 # -----------------------------------------------------------------------------
 banner("Setting up a small solved baseline")
-const TARGETS = load_targets(joinpath(REPO_, "Input", "smm_targets_baseline.toml"))
+const TARGETS = load_targets(smm_targets_file())
 ch = ConSavLaborCollege_AR1(; Na = 12, Nk = 12, Nt = 3, rho = 1.5, psi_terminal = 0.0,
                               kappa_terminal = 5.0, omega = 0.3, a_max = 100.0, w = 20.0,
                               simN = 200, seed = 1234)

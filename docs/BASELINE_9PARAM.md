@@ -3,16 +3,16 @@
 The newer school-plus-study run `2026-09-07_114138` is a separate provisional result
 (Q = 0.011580631181773578, acceptance false because of `sigma_2_1`). It has not
 replaced the defaults described here. See its [inspection](../output/smm_diagnostics/2026-09-07_114138/inspection_notes.md)
-and [candidate snapshot](../Input/parent_candidate_school_time.toml).
+and [candidate snapshot](../output/smm_runs/2026-09-07_114138/candidate.toml).
 
 The accepted run `2026-09-06_183119` is the baseline as of 7 September 2026.
 Its original outputs are tracked under [`output/smm_runs/2026-09-06_183119`](../output/smm_runs/2026-09-06_183119).
 They retain their original estimates, bounds, logs and metadata without rewriting them.
-[`Input/parent_baseline_9param.toml`](../Input/parent_baseline_9param.toml) records the
+[`output/smm_runs/2026-09-06_183119/baseline.toml`](../output/smm_runs/2026-09-06_183119/baseline.toml) records the
 full-precision estimates recovered from the final checkpoint, original boxes, fixed
 parameters, target checksum and SHA-256 checksums of every original run file.
 The original targets are now preserved separately in
-[`Input/smm_targets_9param_frozen.toml`](../Input/smm_targets_9param_frozen.toml);
+[`output/smm_runs/2026-09-06_183119/targets.toml`](../output/smm_runs/2026-09-06_183119/targets.toml);
 `targets_file` in the snapshot points the regression test there. The live target file
 changed to school-plus-study time in `4cf0121` and is used for new estimations.
 

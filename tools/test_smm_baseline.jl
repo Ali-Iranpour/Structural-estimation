@@ -8,7 +8,7 @@ for f in ("paths.jl","manifest.jl","diagnostics.jl","child_lifecycle.jl","parent
     include(joinpath(REPO,"code/src",f))
 end
 include(joinpath(REPO,"code/smm/moments.jl"))
-const SNAP=TOML.parsefile(joinpath(REPO,"Input/parent_baseline_9param.toml"))
+const SNAP=TOML.parsefile(joinpath(REPO,"output/smm_runs/2026-09-06_183119/baseline.toml"))
 @testset "Frozen nine-parameter baseline and future search bounds" begin
     @test length(SMM_PARAMS)==9
     for (name,value) in SNAP["parameters"]

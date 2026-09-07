@@ -1,5 +1,30 @@
 # Estimation review — current status and remaining work
 
+## Source-data-only Input layout
+
+By user instruction, `Input/` now contains only the Stata files, CSVs and codebook.
+The baseline snapshot and its exact targets live in
+`output/smm_runs/2026-09-06_183119/{baseline,targets}.toml`; the provisional candidate
+and current targets live in `output/smm_runs/2026-09-07_114138/{candidate,targets}.toml`.
+The duplicate live Input target file was byte-identical to the current snapshot and
+was removed. Original run logs/metadata still record their historical input paths;
+those archived statements are not rewritten.
+
+The target generator writes a new timestamped output folder, and the runner freezes
+selected targets in each run before evaluation. `--targets PATH` selects an explicit
+snapshot; otherwise the newest timestamped target snapshot is used. Resume uses its
+own saved targets and rejects conflicts. Throwaway `--temp` runs also stay in output.
+Consumers, reproduction scripts and report links use the relocated files. This is a
+storage change, not a change to targets, fitted parameters, bounds or acceptance.
+
+Validated: 13 target-discovery/freezing/resume checks; 29 baseline checks with exact
+Q=0.2500261422642604 reproduction; unchanged regenerated targets/covariance and both
+CSVs; and a grid-12 report-only run on the master plus two worker processes. The
+run record points to its own frozen output target file. Original run evidence and
+source data bytes are unchanged.
+
+---
+
 ## Completed school-plus-study run — 7 September 2026, 19:42
 
 **Current result: provisional, not accepted.** Run `2026-09-07_114138` reproduces
@@ -12,7 +37,7 @@ its upper edge in log search coordinates and should also be monitored.
 The [complete inspection](../output/smm_diagnostics/2026-09-07_114138/inspection_notes.md)
 contains all nine estimates and bound distances, all ten targets/model moments/residuals,
 restart gains, evaluation counts, handoff states, grid coverage and controlled probes.
-The full-precision [candidate snapshot](../Input/parent_candidate_school_time.toml)
+The full-precision [candidate snapshot](../output/smm_runs/2026-09-07_114138/candidate.toml)
 preserves the provisional estimates, fixed parameters, original boxes and source hashes.
 The [original run files](../output/smm_runs/2026-09-07_114138/) are preserved unchanged,
 with a separate frozen target copy. `PARENT_DEFAULTS` remains the historical baseline;
@@ -116,8 +141,8 @@ No extra parameter is added. The old recommendation to add `sigma_4_1` needs a f
 assessment after jointly fitting the nine parameters to the changed targets.
 
 **Baseline regression repaired:** the original targets are recovered byte for byte from
-`79bac8c` into `Input/smm_targets_9param_frozen.toml`, matching the original SHA-256.
-`Input/parent_baseline_9param.toml` now names that file, and
+`79bac8c` into `output/smm_runs/2026-09-06_183119/targets.toml`, matching the original SHA-256.
+`output/smm_runs/2026-09-06_183119/baseline.toml` now names that file, and
 `tools/test_smm_baseline.jl` uses it for both integrity and Q reproduction. Live targets
 continue to feed new runs. Original run outputs and fitted defaults are unchanged.
 Boundary/Jacobian checks pass (189 assertions); the frozen baseline checks pass
@@ -138,10 +163,10 @@ tmux new-session -s smm-school-test -c /srv/project/speech/apps/Structural-estim
 ```
 
 This uses 2,000 simulated households and seed 1234. `--temp` selects timestamped
-output under `temp/`; it does not reduce numerical accuracy. `--quick` is a different
+output under `output/smm_runs/<timestamp>_temp_school_time/`; it does not reduce numerical accuracy. `--quick` is a different
 smoke mode (12-node grids, 300 households) and is unsuitable for comparing fitted
 moments with the full-grid baseline. Detach with Ctrl-b then d; reattach with
-`tmux attach -t smm-school-test`. Monitor `temp/latest/run.log`.
+`tmux attach -t smm-school-test`. Monitor `output/smm_runs/latest/run.log`.
 Do not resume the original run: its targets and bounds differ. Inspect the new fit,
 termination, invalid evaluations, grid coverage and runtime before expanding restarts.
 No new estimation has been launched by this review.

@@ -1,7 +1,7 @@
 # From repository root: julia --threads=1 --project=. output/smm_diagnostics/2026-09-07_school_time/probe.jl
 # Conditional full-grid slices; other eight parameters fixed at the preserved fit.
 include(joinpath(@__DIR__,"../../../tools/test_smm_baseline.jl"))
-const CURRENT=load_targets(joinpath(REPO,"Input/smm_targets_baseline.toml"))
+const CURRENT=load_targets(joinpath(REPO,"output/smm_runs/2026-09-07_114138/targets.toml"))
 function score_current(model, intercept)
     mm=model_moments(model)
     qq=sum(((getproperty(mm,Symbol(k))-CURRENT[k].mean)/moment_scale(k,CURRENT[k].mean))^2 for k in SMM_MOMENTS)

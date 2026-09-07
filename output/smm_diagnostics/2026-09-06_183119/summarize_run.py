@@ -13,7 +13,7 @@ assert len(fit)==10 and len(probes)==25 and len(restarts)==5
 assert all(not r['error'] and int(r['invalid'])==0 for r in probes)
 assert math.isclose(sum(float(r['Q_contribution']) for r in fit),est['Q_final'],abs_tol=1e-12)
 assert d['Q_reproduced']==est['Q_final']
-assert hashlib.sha256((REPO/'Input/smm_targets_baseline.toml').read_bytes()).hexdigest()[:16]==ck['targets_sha']
+assert hashlib.sha256((REPO/'output/smm_runs/2026-09-06_183119/targets.toml').read_bytes()).hexdigest()[:16]==ck['targets_sha']
 lines=['# Inspection of estimation 2026-09-06_183119','',
 '**Assessment: useful converged initial fit; substantial age-profile misfit remains. Investigate `sigma_4_1` before paying for a much larger search.**','',
 'This run used **2,000 Sobol points, five restarts, 400 evaluations per local search, and a 400-evaluation polish cap**. Both parent grids are 30; child grids are 30×30×5, simulation size 2,000, seed 1234. The saved winner was reproduced exactly: **Q = 0.2500261422642604**. The input target hash also matches.','',

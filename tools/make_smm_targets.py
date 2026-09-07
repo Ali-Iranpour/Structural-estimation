@@ -4,7 +4,7 @@ Build the SMM target file from the Stata moment files.
 
     python3 tools/make_smm_targets.py
 
-Writes Input/smm_targets_baseline.toml. Julia never reads .dta: the targets are
+Writes output/smm_runs/<timestamp>_targets/targets.toml. Julia never reads .dta: the targets are
 frozen into a small, readable, version-controlled file so a run is reproducible
 and a change in targets shows up as a diff.
 
@@ -43,12 +43,12 @@ averaged in.
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 import subprocess
 
 REPO = Path(__file__).resolve().parents[1]
 MICRO = REPO / "Input" / "SMM_Moments_Micro.dta"
-OUT = REPO / "Input" / "smm_targets_baseline.toml"
+OUT = REPO / "output" / "smm_runs" / (datetime.now().strftime("%Y-%m-%d_%H%M%S_%f") + "_targets") / "targets.toml"
 # One by-age file per SAMPLE. Both are plotted, because they differ enough to matter:
 # the cohort restriction moves assets by -28% and monetary investment by -17.8%.
 BY_AGE_SOURCES = {
@@ -430,7 +430,9 @@ def main():
     print(f"\nmoment correlations: min {off.min():+.3f}  max {off.max():+.3f}  "
           f"|corr|>0.3 in {int((np.abs(off) > 0.3).sum())} of {len(off)} pairs")
 
-    OUT.write_text("\n".join(lines))
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    with OUT.open("x") as target_file:  # immutable snapshot; never rewrite an older run
+        target_file.write("\n".join(lines))
     print(f"\nwrote {OUT.relative_to(REPO)}")
     write_by_age()
 

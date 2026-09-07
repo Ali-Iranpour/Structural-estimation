@@ -90,7 +90,8 @@ sayf("workers  %d\n", max(0, nprocs() - 1))
     include(joinpath(REPO_, "code", "smm", "moments.jl"))
 end
 
-@everywhere const TARGETS = load_targets(joinpath(REPO_, "Input", "smm_targets_baseline.toml"))
+const TARGETS_FILE = freeze_smm_targets(OUTDIR; source=argstr("--targets", ""), at=AT_FILE)
+@everywhere const TARGETS = load_targets($TARGETS_FILE)
 @everywhere function build_child_value()
     ch = ConSavLaborCollege_AR1(; Na = 30, Nk = 30, Nt = 5, rho = 1.5, psi_terminal = 0.0,
                                   kappa_terminal = 5.0, omega = 0.3, a_max = 100.0, w = 20.0,
@@ -301,7 +302,7 @@ open(joinpath(OUTDIR, "jacobian.toml"), "w") do io
     println(io, "generated   = \"", Dates.format(now(), "yyyy-mm-dd HH:MM"), "\"")
     println(io, "git_commit  = \"", git_sha(), "\"")
     println(io, "point_file  = \"", isempty(AT_FILE) ? "PARENT_DEFAULTS" : relpath(AT_FILE, REPO), "\"")
-    println(io, "targets     = \"Input/smm_targets_baseline.toml\"")
+    println(io, "targets     = \"", relpath(TARGETS_FILE, REPO), "\"")
     println(io, "grid_Na     = ", GRID)
     println(io, "grid_Nhc    = ", GRID)
     println(io, "grid_Nk     = 2")

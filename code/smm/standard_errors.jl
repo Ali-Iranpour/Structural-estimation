@@ -19,7 +19,7 @@
 #
 #     V = (G'G)^-1 G' Omega G (G'G)^-1.
 #
-# Omega comes from Input/smm_targets_baseline.toml, [moment_cov]: a CLUSTER-ROBUST
+# Omega comes from the Jacobian run's frozen targets.toml, [moment_cov]: a CLUSTER-ROBUST
 # covariance of the ten targeted data moments, clustered on the family, built by
 # tools/make_smm_targets.py from the micro file. It is the covariance of the MEANS, so it
 # already carries the 1/n; it is not the cross-sectional SD, which is 12-48x larger and is
@@ -72,9 +72,13 @@ isempty(JDIR) && error("""
     have to travel with the matrix, and that is what jacobian.jl saves.""")
 
 const JMETA = TOML.parsefile(joinpath(JDIR, "jacobian.toml"))
-const TGT   = TOML.parsefile(joinpath(REPO, "Input", "smm_targets_baseline.toml"))
+const TARGETS_FILE = let override=argstr("--targets", "")
+    isempty(override) ? joinpath(REPO, JMETA["targets"]) : abspath(override)
+end
+isfile(TARGETS_FILE) || error("Saved Jacobian targets are unavailable. Pass --targets PATH to its original snapshot; do not substitute current targets.")
+const TGT = TOML.parsefile(TARGETS_FILE)
 haskey(TGT, "moment_cov") || error("""
-    Input/smm_targets_baseline.toml has no [moment_cov] block. Regenerate it:
+    The selected targets.toml has no [moment_cov] block. Regenerate it:
         uv run --with pandas --with numpy python tools/make_smm_targets.py""")
 const MC = TGT["moment_cov"]
 

@@ -27,6 +27,10 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
 
 ## Hard constraints
 
+- **Input contains source data only (user instruction)**: only `.dta`, `.csv`, and
+  codebook files belong in `Input/`. Store target/calibration TOMLs beside their
+  timestamped runs under `output/`. Never create new TOMLs in `Input/`.
+
 - **Grid caps by instruction**: assets and human capital `<= 30` nodes, shock
   discretization `<= 5` (`Np`, `Nt`). `Np` and `Nt` are fully converged at these sizes.
   The child's `Na`/`Nk` at 30 rather than 50 costs ~7pp on the **college share** and

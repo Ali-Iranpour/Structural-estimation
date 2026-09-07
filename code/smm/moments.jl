@@ -112,7 +112,7 @@
 using TOML, Printf, Statistics
 
 # -----------------------------------------------------------------------------
-# Scale constants -- see Input/smm_targets_baseline.toml for the derivation
+# Scale constants -- see the selected run folder's targets.toml for the derivation
 # -----------------------------------------------------------------------------
 const DOLLARS_PER_MODEL_UNIT = 10_000.0
 const HOURS_PER_WEEK         = 112.0

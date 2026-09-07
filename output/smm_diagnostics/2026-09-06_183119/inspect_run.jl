@@ -6,7 +6,7 @@ const RUN = joinpath(REPO,"output/smm_runs/2026-09-06_183119")
 const OUT = @__DIR__
 const CK = TOML.parsefile(joinpath(RUN,"checkpoint.toml"))
 const EST = TOML.parsefile(joinpath(RUN,"estimates.toml"))
-@assert bytes2hex(sha256(read(joinpath(REPO,"Input/smm_targets_baseline.toml"))))[1:16] == CK["targets_sha"]
+@assert bytes2hex(sha256(read(joinpath(REPO,"output/smm_runs/2026-09-06_183119/targets.toml"))))[1:16] == CK["targets_sha"]
 @assert strip(read(`git -C $REPO rev-parse --short HEAD`,String)) == EST["git_commit"] "Run this diagnostic at the estimation's code revision"
 const BASE = Dict(Symbol(n)=>(link=="log" ? exp(z) : z) for (n,link,z) in zip(CK["param_names"], CK["param_link"], CK["search_vector"]["z"]))
 addprocs(4; exeflags=`--threads=1 --project=$REPO`)
@@ -20,7 +20,7 @@ addprocs(4; exeflags=`--threads=1 --project=$REPO`)
         include(joinpath(REPO_,"code/src",file))
     end
     include(joinpath(REPO_,"code/smm/moments.jl"))
-    const TARGETS_ = load_targets(joinpath(REPO_,"Input/smm_targets_baseline.toml"))
+    const TARGETS_ = load_targets(joinpath(REPO_,"output/smm_runs/2026-09-06_183119/targets.toml"))
     const BASE_ = $BASE
     function child_value_()
         ch = ConSavLaborCollege_AR1(;Na=30,Nk=30,Nt=5,rho=1.5,psi_terminal=0.0,

@@ -1,6 +1,6 @@
 # Frozen nine-parameter baseline; original run files are preserved unchanged.
 source_run = "output/smm_runs/2026-09-06_183119"
-targets_file = "Input/smm_targets_9param_frozen.toml"
+targets_file = "output/smm_runs/2026-09-06_183119/targets.toml"
 source_code_reported = "bc02091"
 note = "Full precision recovered from checkpoint search coordinates. See docs/BASELINE_9PARAM.md."
 Q_final = 0.2500261422642604
