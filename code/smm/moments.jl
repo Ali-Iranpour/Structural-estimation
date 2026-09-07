@@ -568,7 +568,27 @@ const SMM_PARAMS = [
     SMMParam(:sigma_1_0, -4.0, -0.1,  :level), # upper limit was -0.2
     SMMParam(:sigma_1_1, -0.20, 0.05, :level),
     SMMParam(:sigma_2_0, -5.0, -0.5,  :level),
-    SMMParam(:sigma_2_1, -0.10, 0.05, :level), # lower limit was -0.05
+    # PROVISIONAL lower limit -0.15 (was -0.10, before that -0.05). sigma_2_1 has now
+    # been pinned at BOTH previous lower bounds -- -0.049981 against -0.05, then
+    # -0.099999 against -0.10 -- so widening has not yet freed it, it has only moved the
+    # wall. Widened once more to find out which of two things is true, and the answer is
+    # NOT decided by where this run lands:
+    #
+    #   (a) the box was genuinely binding, in which case Q keeps falling as sigma_2_1
+    #       goes more negative and the estimate eventually comes to rest interior;
+    #   (b) the objective is flat in this direction -- a ridge with sigma_2_0, whose
+    #       scaled Jacobian cosine is 0.869 -- in which case the optimizer simply slides
+    #       to whatever wall it is given and -0.15 will pin too.
+    #
+    # `code/smm/profile_param.jl` is what distinguishes them: it fixes sigma_2_1 at a
+    # ladder of values and JOINTLY re-optimizes the other eight at each, so the question
+    # is answered by the shape of Q, not by one more boundary hit.
+    #
+    # For scale: sigma_2_t = exp(sigma_2_0 + sigma_2_1*(t-1)), so -0.10 already means the
+    # money elasticity falls 80% over ages 1-17 and -0.15 means 91%. Note also that the
+    # e_p profile is already slightly OVER-steep (model 1.19x against data 1.14x), so the
+    # pressure is not coming from the moment this slope exists to fit.
+    SMMParam(:sigma_2_1, -0.15, 0.05, :level),
     SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # school + study pilot; old incumbent retained
     # sigma_4_1 = 0.02 and mu_1 = -0.04 stay fixed at PARENT_DEFAULTS.
     # Reassess extra parameters after fitting the changed child-time targets.
