@@ -24,7 +24,7 @@
 # It runs in about a minute on small grids and needs no worker processes.
 # =============================================================================
 
-using Printf, Random, NLopt, LinearAlgebra, Interpolations, DataFrames
+using Printf, Random, NLopt, LinearAlgebra, Interpolations, DataFrames, Logging
 using Statistics, Dates, ProgressMeter, Distributions, StatsBase
 using QuantEcon, FastGaussQuadrature, Parameters, Dierckx, TOML
 
@@ -130,10 +130,19 @@ let thrown = Ref(false)
     end
     check("tiktak RE-THROWS a coding error (on_error = :rethrow)", ok)
 end
+# `:discard` is SUPPOSED to warn -- that is the behaviour being tested. But it warns with
+# `exception =`, so Julia prints a full stack trace per discarded search, and this one
+# check was emitting ~100 lines of alarming-looking output for a test that PASSES. A
+# self-test whose passing output looks like a crash teaches people to stop reading it, so
+# the logger is silenced for the duration and the COUNT is checked instead.
 let boom2(x) = sum(x) < 0.5 ? throw(MethodError(+, (1, "a"))) : sum(x .^ 2)
-    r = tiktak(boom2, [0.0], [1.0]; N = 8, Nstar = 2, on_error = :discard,
+    r = Logging.with_logger(Logging.NullLogger()) do
+        tiktak(boom2, [0.0], [1.0]; N = 8, Nstar = 2, on_error = :discard,
                local_maxeval = 20, polish_maxeval = 20)
-    check("on_error = :discard still available and counts exceptions", r.n_exception >= 0)
+    end
+    check("on_error = :discard discards instead of throwing", r.f isa Float64)
+    check("  ... and counts what it discarded", r.n_exception >= 1,
+          "n_exception = $(r.n_exception)")
 end
 
 # -----------------------------------------------------------------------------
