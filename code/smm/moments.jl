@@ -606,7 +606,37 @@ const SMM_PARAMS = [
     # money elasticity falls 80% over ages 1-17 and -0.15 means 91%. Note also that the
     # e_p profile is already slightly OVER-steep (model 1.19x against data 1.14x), so the
     # pressure is not coming from the moment this slope exists to fit.
-    SMMParam(:sigma_2_1, -0.15, 0.05, :level),
+    # LOWER LIMIT -0.30 (was -0.15, before that -0.10, before that -0.05).
+    #
+    # FOURTH BOX, THIRD BOUNDARY HIT. The record:
+    #     box [-0.05, 0.05]   ->  -0.049981   pinned
+    #     box [-0.10, 0.05]   ->  -0.099999   pinned
+    #     box [-0.15, 0.05]   ->  -0.120616   INTERIOR (run 2026-09-07_205033)
+    #     box [-0.15, 0.05]   ->  -0.149997   pinned   (run 2026-09-08_100413)
+    #
+    # The one interior landing came before the baseline was promoted and the off-grid
+    # initial assets were resampled; with the new starting point and draw it went back to
+    # the wall. So a wider box has never yet produced a STABLE interior estimate, and each
+    # widening moves the rest of the vector with it -- sigma_1_0 -0.685 -> -1.246,
+    # sigma_2_0 -3.696 -> -4.274, lambda_2 20 -> 54 between the last two runs. Parameters
+    # sliding together like that is the signature of a ridge, not of nine separately
+    # determined numbers.
+    #
+    # The step is DELIBERATELY LARGE this time (0.05 -> 0.15 of extra room rather than
+    # another 0.05). Three small steps have each cost a full estimation and returned the
+    # same answer; a big step either finds an interior optimum or shows that none exists in
+    # any reasonable range, and either outcome is worth more than a fifth wall.
+    #
+    # WHAT IT ALREADY MEANS AT -0.15. sigma_2_t = exp(sigma_2_0 + sigma_2_1*(t-1)), so at
+    # the fitted sigma_2_0 = -4.274 the money elasticity runs
+    #     t=1  0.0139   t=9  0.0042   t=17  0.0013
+    # i.e. it falls 90.9% over the family stage and money is very nearly irrelevant to
+    # human capital by adolescence. At -0.30 it would fall 99.2%. Before widening again,
+    # ask whether that is a finding or a symptom: `code/smm/profile_param.jl` fixes
+    # sigma_2_1 at a ladder of values and jointly re-optimizes the other eight, which is
+    # what distinguishes a genuinely binding box from an optimizer sliding along a flat
+    # direction. It costs ~3 h against ~13 h for another blind estimation.
+    SMMParam(:sigma_2_1, -0.30, 0.05, :level),
     SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # school + study pilot; old incumbent retained
     # sigma_4_1 = 0.02 and mu_1 = -0.04 stay fixed at PARENT_DEFAULTS.
     # Reassess extra parameters after fitting the changed child-time targets.
