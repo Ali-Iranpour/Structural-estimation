@@ -111,17 +111,37 @@ sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity abo
 HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
-# Promoted 2026-09-07 from run 2026-09-06_183119, full-precision checkpoint.
-# Frozen values and original search bounds: output/smm_runs/2026-09-06_183119/baseline.toml.
+# Promoted 2026-09-08 from run 2026-09-07_205033, full-precision checkpoint search vector.
+# Previous baseline: run 2026-09-06_183119 (see its baseline.toml for those values).
 # This is the fitted nine-parameter baseline; R_1, sigma_4_1 and mu_1 remain fixed.
+#
+# THE SOURCE RUN WAS NOT ACCEPTED, and these values are promoted anyway -- deliberately,
+# and for one role only. The run reached Q = 0.007760 with all eight restarts converging
+# FTOL_REACHED and the polish returning SUCCESS, but `lambda_2` came back EXACTLY on its
+# ceiling of 20.0, so `accepted = false`.
+#
+# PARENT_DEFAULTS does two jobs and the distinction is what makes this safe:
+#   * it is the STARTING POINT of the next estimation, seeded into the Sobol pool. A
+#     start at Q = 0.0078 instead of 1.65 is unambiguously better, and lambda_2 = 20 is
+#     interior (78.8%) in the raised [0.05, 100] box, so it is a legitimate start.
+#   * it is the BASELINE CALIBRATION for the notebook and counterfactuals. In THAT role
+#     lambda_2 = 20.0 is a bound, not an estimate, and nothing built on it should be
+#     circulated until a run comes back accepted with lambda_2 interior.
+#
+# Two further caveats that travel with these numbers:
+#   * lambda_2 = 20 means the child weights skill twenty times its own leisure, which is
+#     how the model reproduces 41 hrs/wk of compulsory school through a taste parameter.
+#     See the note at SMMParam(:lambda_2) -- this may be a specification problem.
+#   * they were estimated BEFORE the initial-asset resampling below, so Q at these values
+#     will not reproduce 0.007760 exactly. Two households of 2,000 changed.
 const PARENT_DEFAULTS = (
     # phi and lambda are TIME-INVARIANT by instruction (2026-08-30): they are
     # preference weights, not age profiles, so the _1 slopes and the per-period
     # vectors are gone. phi_1 and lambda_1 are NORMALISED to 1 -- utility is only
     # defined up to the relative weights, so two of the five must be pinned.
     phi_1 = 1.0,              # NORMALISATION, not estimated
-    phi_2 = 0.14372193830057325, # estimated: mean hours of work
-    phi_3 = 1.020143373142503,  # estimated: parental time + monetary investment
+    phi_2 = 0.17812874444775145, # estimated: mean hours of work
+    phi_3 = 1.1028442100488014,  # estimated: parental time + monetary investment
     # -----------------------------------------------------------------------------
     # HUMAN CAPITAL IS IN THE DATA'S UNITS (PCA W-score), not model units
     # -----------------------------------------------------------------------------
@@ -144,15 +164,18 @@ const PARENT_DEFAULTS = (
 #
     # M = 753.4, the ratio of the new mean HC at age 0 (376.7, from the data) to the old
     # Uniform(0,1) mean of 0.5.
-    R_0 = 50.60319557962827,   R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
-    sigma_1_0 = -0.2232425708968751, sigma_1_1 = -0.14134183068950082,
-    sigma_2_0 = -3.755061670055589, sigma_2_1 = -0.049981076507371304,
+    R_0 = 48.611462893793188,  R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
+    sigma_1_0 = -0.68536861921223891, sigma_1_1 = -0.13056143669660542,
+    sigma_2_0 = -3.6962020626692289, sigma_2_1 = -0.12061594911572605,
     # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
     # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
     sigma_3_0 = -0.90, sigma_3_1 =  0.0,
-    sigma_4_0 = -5.985218799082873, sigma_4_1 =  0.02,
+    sigma_4_0 = -3.232442861407665, sigma_4_1 =  0.02,
     lambda_1 = 1.0,           # NORMALISATION, not estimated
-    lambda_2 = 8.679256726534701, # estimated: the child's own study time
+    # ON ITS OLD CEILING of 20.0 in the source run -- a bound, not an estimate. The box
+    # has since been raised to 100, where this value is interior, so the next run can move
+    # it. See the header of PARENT_DEFAULTS.
+    lambda_2 = 19.999999999999996, # estimated: the child's own study time
     mu_0 = 1.0,        mu_1 = -0.04,
     tau = 0.18,        y = 0.6,
 )
@@ -478,7 +501,44 @@ function Parent_child_interaction_age_specific_AR1(;
     rng_k  = MersenneTwister(seed + 1)
     rng_hc = MersenneTwister(seed + 2)
     rng_p  = MersenneTwister(seed + 3)
+    # INITIAL ASSETS: the fitted LogNormal, RESAMPLED where it lands above the grid.
+    #
+    # The distribution is unchanged below the ceiling -- this is the same LogNormal,
+    # conditioned on a_min <= a <= a_max -- and only the draws that fall outside get
+    # redrawn. Every other household keeps its original value bit for bit, so a run before
+    # and after this change differs in exactly the households that were off-grid.
+    #
+    # WHY, measured at seed = 1234, simN = 2000: the raw draw produces exactly TWO values
+    # above a_max = 100, at 136.4 and 214.4. Those two are the entire off-grid population
+    # the diagnostics have been reporting -- 2 households above in every period 1..17 and
+    # at the age-18 handoff, with a simulated maximum of 254 after they save. They are
+    # outliers of the fitted tail, not a feature of the data, and above the top node the
+    # policy is Flat()-extrapolated, so their whole path is the boundary policy repeated.
+    # P(X > 100) = 0.106%, i.e. 2.1 households of 2000 in expectation -- the tail this
+    # removes is a thousandth of the mass.
+    #
+    # RESAMPLED, NOT CLAMPED. Clamping would pile both households exactly on the top node
+    # and leave a spike in the wealth distribution that is an artefact of the grid;
+    # redrawing keeps the shape of the distribution below the ceiling exactly right. This
+    # is the standard rejection sampler for a truncated distribution and is exact, not an
+    # approximation.
+    #
+    # A CAP IS KEPT on the retries so a mis-specified a_max cannot spin forever: if the
+    # ceiling were ever set below the bulk of the distribution this fails loudly instead
+    # of hanging.
     sim_a_init = rand(rng_a, LogNormal(0.2962227, 1.401793), simN)
+    let d = LogNormal(0.2962227, 1.401793), n_redrawn = 0
+        for i in eachindex(sim_a_init)
+            tries = 0
+            while (sim_a_init[i] > a_max || sim_a_init[i] < a_min) && tries < 10_000
+                sim_a_init[i] = rand(rng_a, d); tries += 1; n_redrawn += 1
+            end
+            tries >= 10_000 && error(
+                "initial asset draw could not be placed inside [a_min, a_max] = " *
+                "[$a_min, $a_max] after 10,000 tries. The grid range is inconsistent " *
+                "with LogNormal(0.2962227, 1.401793); check a_max before changing this.")
+        end
+    end
     sim_k_init = Float64.(rand(rng_k, Bernoulli(0.3), simN))  # 70% zeros, 30% ones
     # Initial child HC, from the DATA rather than an arbitrary Uniform(0,1).
     #
