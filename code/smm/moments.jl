@@ -563,7 +563,25 @@ end
 const SMM_PARAMS = [
     SMMParam(:phi_2,     0.01, 20.0, :log),
     SMMParam(:phi_3,     0.05, 20.0, :log),
-    SMMParam(:lambda_2,  0.05, 20.0, :log),
+    # UPPER LIMIT RAISED 20 -> 100 (2026-09-08). lambda_2 has climbed across three runs
+    # under the school-time targets -- 8.68, then 16.80, then EXACTLY 20.0 -- so the
+    # ceiling is now what determines it, not the data.
+    #
+    # WHY IT CLIMBS, AND WHY THAT IS A SPECIFICATION QUESTION AND NOT ONLY A BOX ONE.
+    # `mean_i_c` became `c_time_hrs` (school + own study) and jumped from ~0.039 to ~0.365,
+    # i.e. from 4.4 to 41 hrs/wk. In this model the child CHOOSES i_c, trading it against
+    # its own leisure, so the only way to make a child voluntarily spend 41 hrs/wk is to
+    # make it value skill enormously relative to leisure -- which is what lambda_2 does.
+    # But school attendance is COMPULSORY, not chosen. Reproducing a mandate through a
+    # taste parameter fits the moment while attributing it to the wrong mechanism, and
+    # every counterfactual that moves the return to skill inherits that.
+    #
+    # So the box is raised to let the estimate come to rest and reveal where it actually
+    # wants to be -- but if it lands near 100, or the fit only holds at implausible values,
+    # the answer is a modelling change (a compulsory-schooling floor on i_c below age 16,
+    # say) rather than a wider box. Flag for Sahber either way: lambda_1 is normalised to
+    # 1, so lambda_2 = 20 already means the child weights skill twenty times its leisure.
+    SMMParam(:lambda_2,  0.05, 100.0, :log),
     SMMParam(:R_0,       0.5, 100.0, :log),
     SMMParam(:sigma_1_0, -4.0, -0.1,  :level), # upper limit was -0.2
     SMMParam(:sigma_1_1, -0.20, 0.05, :level),
