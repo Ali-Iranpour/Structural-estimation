@@ -133,6 +133,17 @@ So `sd_leis_hh` is the unweighted SD of household parental leisure in that age c
 | `psid_mon_invest_real_w99` | double | Observed monetary investment, winsorised at p99 (real 2015 USD/yr) |
 | `m_method2_final_w99` | double | Observed-or-imputed monetary investment, winsorised at p99 (real 2015 USD/yr) |
 
+## Own study and fixed school time (checked 9 September 2026)
+
+The current micro file also contains `med_school_ageyr`, `school_hrs`,
+`study_hrs_measured` and `school_hrs_measured`. `school_hrs` is median school time
+within `(Year, Child_Age)`, set to zero below age 6; `study_hrs` is own study,
+also set to zero below age 6. The `_measured` variants retain the unzeroed values.
+For future estimation, use `study_hrs / 112` as the chosen investment moment and
+freeze the age means of `school_hrs / 112` as the school schedule deducted from
+child leisure. Do not recover school by subtracting `study_hrs` from `c_time_hrs`:
+the latter also has imputed observations and different coverage.
+
 ## Human capital: levels vs logs
 
 Two of the four are **levels**, two are **logs**. Verified against the data:
@@ -157,7 +168,8 @@ because 112 of the 802 rows fall back to a 2-test or 1-test composite.
 1. **`c_time_hrs` is a conventional zero at ages 0-5**, not a measurement.
    `07` sets the child time input to zero below school age because the production
    function restricts beta^C to zero in G1. The same children record real study time
-   in `study_hrs`. Use **`study_hrs` for ages 0-5 and `c_time_hrs` from age 6**.
+   in `study_hrs`. For current own-study estimation, use **`study_hrs` at ages 6–17**; use
+   the `_measured` variant for descriptive study time below age 6.
 
 2. **`c_time_hrs` dispersion is not comparable to `study_hrs`.** Its school component
    is a median by (Year, Age), identical for all children of an age, so it moves the

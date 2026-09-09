@@ -139,7 +139,7 @@ let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n",
 @everywhere function solve_at(kw, a_max)
     p = Parent_child_interaction_age_specific_AR1(; Na = GS_GRID, Nk = 2, Nhc = GS_GRID,
                                                     a_max = a_max, simN = GS_SIMN,
-                                                    seed = GS_SEED, kw...)
+                                                    seed = GS_SEED, school_time = target_school_time(TARGETS), kw...)
     p.V_child_interp = V_CHILD
     redirect_stdout(devnull) do
         solve_model!(p; verbose = false); simulate_model!(p)

@@ -48,8 +48,8 @@ Specifically, $\tilde{\alpha}_1$ in \eqref{eq:alpha1} shows that the weight on t
 \begin{equation}
   \tilde{\mu}_{t} =
   \begin{cases}
-    1,                 & \text{if } t \le 7,\\[4pt]
-    1-\mu_{1}(t-5),    & \text{if } 5 < t \le 18,
+    1,                 & \text{if } t \le 5,\\[4pt]
+    1-\mu_{1}(t-5),    & \text{if } 5 < t \le 17,
   \end{cases}
   \label{eq:bargain-weight}
 \end{equation}
@@ -107,7 +107,7 @@ For the child, available time is allocated among study ($\tau_{c,t}$), time spen
     \log HC_{t+1} =
 \begin{cases}
 \log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t & \text{if } t \leq 5\\
-\log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t + \sigma_{4t} \log \tau_{c,t} & \text{if } 7< t \leq 17
+\log R_t + \sigma_{1t} \log \tau_{p,t} + \sigma_{2t} \log e_{p,t} + \sigma_{3t} \log HC_t + \sigma_{4t} \log \tau_{c,t} & \text{if } 5< t \leq 17
 \end{cases}
 \end{equation}
 Here, $R_t$ is a total factor of productivity, $\tau_{p,t}$ is the time spent with the parent, $e_{p,t}$ is the expenditure on the child by the parents, $HC_t$ is the child’s cognitive ability at the start of period $t$, and $\tau_{c,t}$ is the child’s own study time. We use time-specific parameters because the productivity of different inputs changes by the child's age. 
@@ -210,107 +210,285 @@ The optimal enrollment and transfer choice are:
 
 
 \subsection{Adulthood Problem}
+\label{sec:adulthood}
 
-Following the joint decision of work or college in the terminal period ($t=T_L$), the child embarks on their chosen life path, which extends until death at age 68, $T_D$. The financial transfer received from the parent, $tr$, becomes the child's initial asset endowment, $a_{T_L}$. The child's subsequent problem consists of choosing consumption, savings, and labor supply to maximize lifetime utility. The structure of this problem depends critically on whether the child enters the labor market directly or attends college.
+Following the joint decision taken at the half period ($t=T_L$), the child leaves the
+household and solves an individual life-cycle problem. It is convenient to re-index time
+from the child's point of view: let $s=1,\dots,T_D$ denote the periods of adulthood, with
+$s=1$ corresponding to biological age $18$ and, in general,
+\begin{equation}
+  \mathrm{age}(s) = 17 + s, \qquad s = 1,\dots,T_D,
+  \label{eq:age-index}
+\end{equation}
+so that $T_D = 51$ periods carry the individual from age $18$ to age $68$, at which point
+life ends. There is no retirement stage: the individual either studies or works in every
+period. Enrollment lasts $T_E = 4$ periods, $s = 1,\dots,4$ (ages $18$ to $21$); a graduate
+enters the labor market at $s = T_E+1$, that is at age $22$.\footnote{The four-year college
+and the age-$22$ entry are properties of the solved model, not of the display: the college
+problem is solved on $s=1,\dots,4$ and the graduate's working life on $s=5,\dots,51$.}
+
+\noindent\textbf{Inheritance at separation} \quad
+The individual enters adulthood with four objects fixed at the half period. The parental
+transfer becomes initial wealth, $a_1 = tr$. The stock of cognitive skill accumulated
+during childhood and adolescence is inherited as
+\begin{equation}
+  HC \equiv HC_{T_L},
+  \label{eq:theta-handoff}
+\end{equation}
+and, as explained below, remains \emph{constant for the rest of life}.\footnote{The
+implementation and the model documentation write this object as $\theta$. We keep the
+thesis's own symbol $HC$ for the child's cognitive skill, because $\theta$ already denotes
+the parent's welfare weight in the college--work decision of
+Section~\ref{sec:terminal-period-utility}, and no symbol should carry two meanings.
+Parameters indexed to skill are written with the subscript $\mathrm{HC}$ for the same
+reason.} The household type
+$\text{BothCollege}\in\{0,1\}$ is carried over from the family stage and enters only the
+psychic cost of enrollment. Finally, the persistent wage shock $z_1$ is drawn from the
+\emph{stationary} distribution of the process in \eqref{eq:z-adult}, which is the same
+distribution the transfer problem of Section~\ref{sec:terminal-period-utility} integrates
+over. We write $E\in\{0,1\}$ for the education indicator, equal to one for a college
+graduate and zero otherwise; $E$ is determined by the discrete choice $d^*$ at $T_L$ and is
+thereafter a fixed characteristic.
+
+The state vector in adulthood is therefore $(a_s, z_s)$, with $(HC, E,
+\text{BothCollege})$ fixed characteristics rather than state variables that evolve. In the
+work phase the individual chooses consumption and hours, $(c_s, h_s)$; during college the
+only choice is consumption, since students do not supply labor, $h_s \equiv 0$.
+
+\noindent\textbf{Preferences} \quad
+A worker's period utility is defined over consumption and hours,
+\begin{equation}
+U^W(c_s,h_s) = \frac{c_s^{1-\rho}}{1-\rho} - \varphi\,\frac{h_s^{1+\eta}}{1+\eta},
+\qquad
+U^W(c_s,h_s)\big|_{\rho=1} = \ln c_s - \varphi\,\frac{h_s^{1+\eta}}{1+\eta},
+\label{eq:util-work}
+\end{equation}
+where $\rho$ is the coefficient of relative risk aversion, $\eta$ governs the Frisch
+elasticity of labor supply, and $\varphi$ scales the disutility of work. The logarithmic
+case is the limit $\rho \to 1$ and is implemented explicitly, so $\rho = 1$ is admissible;
+the baseline uses $\rho = 1.5$. A student's period utility replaces the disutility of work
+with the psychic cost of enrollment defined in \eqref{eq:psychic},
+\begin{equation}
+U^E(c_s;HC) = \frac{c_s^{1-\rho}}{1-\rho} - \kappa_X(HC),
+\label{eq:util-college}
+\end{equation}
+with the same logarithmic case at $\rho = 1$.
+
+\noindent\textbf{Human capital after childhood} \quad
+Cognitive skill does not accumulate in adulthood:
+\begin{equation}
+  HC_{s+1} = HC_s = HC, \qquad s = 1,\dots,T_D .
+  \label{eq:hc-constant}
+\end{equation}
+This replaces the learning-by-doing law of motion of earlier versions of the model, in
+which skill grew with hours worked and received a fixed increment in each college year.
+Under \eqref{eq:hc-constant} the three distinct returns that a single stock previously had
+to carry---the return to childhood investment, the return to college, and the return to
+labor-market experience---are separated and priced independently in the wage equation
+below. Childhood skill $HC$ is rewarded through its own elasticity, college through the
+education indicator $E$, and experience through an education-specific age profile.
+
+\noindent\textbf{Wage determination} \quad
+The log hourly wage is linear in log childhood skill, in the education indicator, and in a
+quadratic in biological age, with education-specific slopes throughout:
+\begin{equation}
+\begin{aligned}
+\ln w_s
+&= \ln w_0 \;+\; \beta_E\,E
+ \;+\; \bigl(\alpha_{\mathrm{HC}} + \alpha_{\mathrm{HC}E}\,E\bigr)\bigl(\ln HC - m_{\mathrm{HC}}\bigr) \\[2pt]
+&\quad
+ +\; \bigl(\gamma_1 + \gamma_{1E}\,E\bigr)\,\mathrm{age}(s)
+ \;+\; \bigl(\gamma_2 + \gamma_{2E}\,E\bigr)\,\mathrm{age}(s)^2
+ \;+\; \ln z_s \;+\; \ln \Omega .
+\end{aligned}
+\label{eq:wage-adult}
+\end{equation}
+Here $\alpha_{\mathrm{HC}}$ is the \emph{elasticity} of the wage with respect to childhood human
+capital for a high-school worker and $\alpha_{\mathrm{HC}} + \alpha_{\mathrm{HC}E}$ the corresponding
+elasticity for a graduate; $\gamma_1,\gamma_2$ trace the hump-shaped age profile of a
+high-school worker and $\gamma_{1E},\gamma_{2E}$ the additional curvature enjoyed by
+graduates. Because the interaction terms enter the age polynomial, the college premium is
+not a single number but a profile that widens over the career.
+
+Two constants in \eqref{eq:wage-adult} carry no behavior. The centering constant $m_{\mathrm{HC}}$
+is set near the mean of $\ln HC$ produced by the family stage, so that $\ln w_0$ reads as
+the log wage of an individual of average childhood skill; any change in $m_{\mathrm{HC}}$ is offset
+exactly by $\ln w_0$. The scaling constant $\Omega$ converts the estimated hourly profile
+into the annual units in which the model's time endowment is normalized. Both are
+normalizations rather than estimated parameters, and neither affects any
+choice.\footnote{$\alpha_{\mathrm{HC}}$ is an elasticity and deliberately not a per-standard-deviation
+effect. Standardizing $\ln HC$ by its simulated dispersion makes the marginal return to
+childhood investment depend on the dispersion the model itself generates, which creates a
+fixed-point problem in the calibration and, in practice, unbounded parental investment.}
+
+The persistent component is a stationary AR(1) in logs,
+\begin{equation}
+  \ln z_s = \rho_z \ln z_{s-1} + \varepsilon^z_s,
+  \qquad \varepsilon^z_s \sim \mathcal{N}(0,\sigma_z^2),
+  \qquad |\rho_z| < 1,
+  \label{eq:z-adult}
+\end{equation}
+with $\ln z_1$ drawn from the stationary distribution.\footnote{We write $\rho_z$ for the
+persistence of the wage shock to keep it distinct from the coefficient of relative risk
+aversion $\rho$ in \eqref{eq:util-work}; earlier drafts used $\rho$ for both. Stationarity
+($\rho_z<1$) is what makes the ergodic distribution in \eqref{eq:theta-handoff}'s companion
+draw well defined, and is a deliberate approximation to the permanent-plus-transitory
+process estimated on the data.}
+
+\noindent\textbf{Taxes, transfers and budget constraints} \quad
+Labor income is taxed by the same progressive schedule as in the family stage: gross labor
+income $w_s h_s$ yields net income
+\begin{equation}
+  T\!\left(w_s h_s\right) \;=\; \lambda\,(w_s h_s)^{1-\tau},
+  \label{eq:tax-adult}
+\end{equation}
+where $\tau$ governs progressivity and $\lambda$ the level. Every individual also receives
+the government benefit $b$ in each period of adulthood. A worker's assets then evolve as
+\begin{equation}
+  a_{s+1} = (1+r)\,a_s + \lambda\,(w_s h_s)^{1-\tau} + b - c_s,
+  \qquad a_{s+1} \ge 0 ,
+  \label{eq:budget-work}
+\end{equation}
+and a student's as
+\begin{equation}
+  a_{s+1} = (1+r)\,a_s - c_s - c_{\text{college}} + b ,
+  \qquad a_{s+1} \ge \underline{a}_{s+1} ,
+  \label{eq:budget-college}
+\end{equation}
+where $c_{\text{college}}$ is the direct annual cost of attendance. Borrowing is prohibited
+throughout adulthood, exactly as in the family stage.
+
+The bound $\underline{a}_{s+1}$ in \eqref{eq:budget-college} is stronger than
+non-negativity, and the difference is economic rather than numerical. Because students
+cannot borrow and cannot work, a student must hold enough wealth at every point to fund the
+\emph{remaining} years of college. Let $\underline{c}$ denote a minimum consumption level.
+The requirement is the backward recursion
+\begin{equation}
+  \underline{a}_{T_E+1} = 0,
+  \qquad
+  \underline{a}_{s} = \frac{\underline{a}_{s+1} + \underline{c} + c_{\text{college}} - b}{1+r},
+  \qquad s = T_E,\dots,1 ,
+  \label{eq:areq}
+\end{equation}
+so that $\underline{a}_1$ is the wealth needed at age $18$ to complete a degree. Enrollment
+is infeasible for an individual who would receive less than $\underline{a}_1$, and this
+feasibility threshold---not the psychic cost---is what excludes the poorest households from
+college in the model.
+
+\noindent\textbf{The psychic cost of college} \quad
+Each enrolled year carries a utility cost that falls with the child's own ability and with
+parental education:
+\begin{equation}
+  \kappa_X(HC) = \kappa_0 + \kappa_{\mathrm{HC}} \ln HC + \kappa_{\mathrm{ParEd}}\,\text{BothCollege},
+  \qquad \kappa_{\mathrm{HC}} < 0, \quad \kappa_{\mathrm{ParEd}} < 0 .
+  \label{eq:psychic}
+\end{equation}
+The log-linear form and the signs follow \citet{Colas2021} and \citet{Daruich2024}: abler
+children, and children of college-educated parents, find enrollment less costly. This
+replaces the earlier reciprocal-power specification $\kappa/(HC+1)^{2}$, which had no
+counterpart in either paper and no parental-education term.
+
+Because $HC$ is constant over the college years and the parental-education term does not
+interact with consumption, the $\kappa_{\mathrm{ParEd}}$ component is additively separable
+and constant across enrolled periods. It therefore shifts the value of the college path by
+the closed-form annuity $-\kappa_{\mathrm{ParEd}}\,\text{BothCollege}\sum_{j=0}^{T_E-1}\beta^{j}$
+and leaves every college policy function unchanged. This is an exact restatement, not an
+approximation, and it means parental education operates on the enrollment margin without
+adding a state variable.
+
+\noindent\textbf{The preference shock and its timing} \quad
+The taste shock $\epsilon_0$ is drawn once, at the half period $T_L$, and is observed by the
+family \emph{before} the enrollment and transfer decisions are taken, which is what makes
+those decisions condition on it. It is a shock to the value of \emph{attending college}
+only: it enters the student's first period and has no counterpart on the work path. It is
+neither persistent nor redrawn---there is a single realization, valued once at $s=1$. We
+take $\epsilon_0 \sim \mathcal{N}(0,\sigma_\epsilon^2)$.
 
 \subsubsection{Work Path}
-\noindent\textbf{Preferences} \quad 
-If the child chooses the work path, they maximize lifetime utility defined over consumption and leisure, subject to their budget and human capital accumulation constraints. Per-period utility takes the form:
+
+An individual in the labor market---whether a high-school worker from age $18$ or a graduate
+from age $22$---solves a standard consumption, saving and labor-supply problem. Both
+education groups solve the \emph{same} problem, but at different wages: $E$ enters
+\eqref{eq:wage-adult} through the intercept, the skill elasticity and the age profile, so
+the two working lives are genuinely distinct and are solved separately.\footnote{In earlier
+versions the graduate's working life was copied from the high-school solution, so that a
+graduate and a high-school worker holding the same stock faced an identical wage and college
+paid only through the stock increment it added. That increment no longer exists, so the two
+problems must be, and are, solved independently.} The Bellman equation is
 \begin{equation}
-U^W(c_t,h_t) = \frac{c_t^{1-\rho}}{1-\rho} - \varphi\frac{h_t^{1+\eta}}{1+\eta},
+V^W_s(a_s, z_s; HC, E) = \max_{c_s,\,h_s}
+\left\{ U^W(c_s,h_s)
++ \beta\, \mathbb{E}_{z_{s+1}\mid z_s} \bigl[ V^W_{s+1}(a_{s+1}, z_{s+1}; HC, E) \bigr]
+\right\},
+\label{eq:bellman-work}
 \end{equation}
-where $c_t$ denotes consumption, $h_t$ denotes hours of labor supplied, $\rho$ is the coefficient of relative risk aversion, and $\eta$ governs the Frisch elasticity of labor supply. The parameter $\varphi$ scales the disutility of labor.
-
-\noindent\textbf{Budget Constraints} \quad 
-The budget constraint governs the law of motion for assets:
+subject to \eqref{eq:wage-adult}, \eqref{eq:budget-work} and $h_s \in [0,1]$, with $HC$
+fixed by \eqref{eq:hc-constant}. The terminal condition is that the individual works, holds
+no bequest motive, and consumes the entire budget in the last period of life:
 \begin{equation}
-a_{t+1} = (1 + r)a_t + - T(w_t\, h_t) - c_t + b_t
+V^W_{T_D}(a_{T_D}, z_{T_D}; HC, E) = \max_{h_{T_D}}
+\; U^W\!\bigl(a_{T_D} + \lambda (w_{T_D} h_{T_D})^{1-\tau} + b,\; h_{T_D}\bigr),
+\qquad V^W_{T_D+1} \equiv 0 .
+\label{eq:terminal-adult}
 \end{equation}
-This constraint connects today’s asset choice to tomorrow’s state variables, combining returns on savings with net labor income and transfers. The wage, $w_t$, is endogenous and depends on the stock of human capital and a multiplicative, stochastic (AR1) shock, $z_t$:
-\begin{equation}
-w_t = w_0 \cdot (1 + \alpha \cdot HC_t) \cdot z_t
-\end{equation}
-
-\noindent\textbf{Human Capital Production} \quad 
-Human capital evolves through a learning-by-doing process, where it accumulates with labor supplied:
-\begin{equation}
-HC_{t+1} = HC_t + h_t
-\end{equation}
-
-
-
-
-\noindent\textbf{Value Function} \quad Based on above equations, an individual in the labor force—either a high school graduate from the outset or a college graduate—solves a standard life-cycle consumption, savings, and labor supply problem. The state variables for an individual are their assets, $a_t$, their stock of human capital, $HC_t$, and a stochastic wage shock, $z_t$. The value function for an individual in the workforce, $V^W_t$, is given by the Bellman equation:
-\begin{equation}
-V^W_t(a_t, HC_t, z_t) = \max_{c_t, h_t} \left\{ 
-U^W(c_t,h_t)
-+ \beta\, \mathbb{E}_{z_{t+1}} \big[ V^W_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \big] 
-\right\}.
-\end{equation}
-
-
 
 \subsubsection{College Path}
 
-\noindent\textbf{Preferences} \quad 
-If the child chooses to attend college, they solve a different optimization problem for the first $T_E$ periods of adulthood, corresponding to the four years of college. During this stage, the child maximizes utility defined over consumption, subject to a budget constraint and human capital accumulation. Unlike in the work path, there is no labor supply decision. Instead, per-period utility depends on consumption and a psychic cost of enrollment:
+A student consumes and saves out of the transfer and the benefit, pays the cost of
+attendance, and supplies no labor. For $s = 1,\dots,T_E$ the value of enrollment is
 \begin{equation}
-U^E(c_t, HC_t) = \frac{c_t^{1-\rho}}{1-\rho} - \kappa_X,
+V^E_s(a_s, z_s; HC, \epsilon_0) =
+\max_{c_s}
+\left\{ U^E(c_s;HC) + \mathbf{1}\{s=1\}\,\epsilon_0
+      + \beta\, \mathbb{E}_{z_{s+1}\mid z_s}\bigl[ \mathcal{V}_{s+1} \bigr] \right\},
+\label{eq:bellman-college}
 \end{equation}
-where $\kappa_X$ represents the psychic cost of attending college, which decreases with the child’s human capital stock.
+subject to \eqref{eq:budget-college} and \eqref{eq:areq}, where the continuation value
+switches to the graduate's working life in the final college year:
 \begin{equation}
-\kappa_{X} = \kappa\frac{1}{(HC + 1)^2}
-\end{equation}
-
-\noindent\textbf{Budget Constraint} \quad 
-During college, the budget constraint is:
-\begin{equation}
-a_{t+1} = (1 + r) a_t - c_t - c_{\text{college}} + b_t,
-\end{equation}
-where $a_t$ is asset holdings at the beginning of the period, $c_t$ is consumption, $c_{\text{college}}$ denotes direct college costs, $b_t$ represents transfers or non-labor income, and $a_{t+1}$ is next period’s assets.
-
-\noindent\textbf{Human Capital Production} \quad
-Under homogeneous beliefs, human capital evolves deterministically as
-\begin{equation}
-HC_{t+1} = HC_t + h^E,
-\end{equation}
-where $h^E$ is the fixed increment from each year of college. After graduation, the process transitions to learning-by-doing as in the work path.
-
-To allow for heterogeneity, we extend the baseline by introducing subjective beliefs $b_m$ about the annual increment to human capital, distinct from the true value $b^\star$. During college, perceived and actual human capital evolve as
-\begin{align}
-\text{Perceived:} \quad & \tilde{HC}_{t+1} = \tilde{HC}_t + b_m, \\
-\text{Actual:}    \quad & HC_{t+1} = HC_t + b^\star.
-\end{align}
-At graduation, the true increment $b^\star$ is revealed, and human capital is reconciled to close the gap between perceived and actual accumulation:
-\begin{equation}
-HC_{t+1} = \tilde{HC}_{t} + b^\star + (T_E - 1)(b^\star - b_m)\footnote{The multiplier $(T_E-1)$ reflects the cumulative misperception across all years of college, corrected at graduation.}.
-\end{equation}
-so that optimistic students ($b_m > b^\star$) face a downward revision, while pessimistic students ($b_m < b^\star$) receive a positive surprise. The homogeneous case is nested as the special case $b_m = b^\star$.
-
-Intuitively, this structure captures how beliefs shape family investment decisions during college, while ensuring that long-run outcomes are ultimately anchored to realized productivity upon entry into the labor market.
-
-\noindent\textbf{Value Function} \quad The recursive value function for a college student, $V^E_t$, is:
-\begin{equation}
-V^E_t(a_t, HC_t, \epsilon_0, z_t) =
+\mathcal{V}_{s+1} =
 \begin{cases}
-  \displaystyle
-  \max_{c_t}
-  \left\{U^E(c_t, HC_t)
-      + \epsilon_0
-      + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^E_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
-  \right\}, & t = 18 \\[5ex]
-
-  \displaystyle
-  \max_{c_t}
-  \left\{ U^E(c_t, HC_t)
-      + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^E_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
-  \right\}, & 18 < t < 21 \\[5ex]
-
-  \displaystyle
-  \max_{c_t}
-  \left\{U^E(c_t, HC_t)
-      + \beta\, \mathbb{E}_{z_{t+1}}\left[ V^W_{t+1}(a_{t+1}, HC_{t+1}, z_{t+1}) \mid b_m \right]
-  \right\}, & t = 21
+V^E_{s+1}(a_{s+1}, z_{s+1}; HC, \epsilon_0), & s < T_E, \\[4pt]
+V^W_{s+1}(a_{s+1}, z_{s+1}; HC, E=1), & s = T_E .
 \end{cases}
+\label{eq:college-continuation}
 \end{equation}
-At entry ($t=T_L$), a one-time preference shock $\epsilon_0$ is realized. In the terminal college year ($t=T_E$), the continuation value transitions into the work path.
+Graduation is therefore not an event in the law of motion of any stock: it is the point at
+which the individual begins to draw wages from the $E=1$ profile in \eqref{eq:wage-adult}.
+There is no human-capital increment from college, and consequently no reconciliation of a
+perceived stock with a true one at graduation---the object earlier drafts corrected with the
+term $\widetilde{HC}_{T_E} + b^{\star} + (T_E-1)(b^{\star}-b_m)$ has no counterpart in the
+current model.
+
+\noindent\textbf{Subjective beliefs about the return to college} \quad
+Under the baseline all families know the true wage process. In the subjective-expectations
+environment, a family of belief type $m$ misperceives \emph{one} object: the level of the
+college wage premium. Beliefs are elicited as a relative college earnings ratio $rce_m$---a
+single number for how much more a graduate earns over a career---and mapped into the model's
+premium by anchoring on the career average of the estimated premium profile:
+\begin{equation}
+  \beta_E^{m}
+  = \ln(rce_m) \;-\; \frac{1}{T_D - T_E}\sum_{s=T_E+1}^{T_D}
+      \Bigl[\gamma_{1E}\,\mathrm{age}(s) + \gamma_{2E}\,\mathrm{age}(s)^2\Bigr].
+  \label{eq:belief-map}
+\end{equation}
+The true intercept cancels in \eqref{eq:belief-map}, so the mapping depends only on the
+education interactions: a believer's premium profile is the estimated profile shifted in
+parallel. Beliefs move the \emph{level} of the premium and leave its \emph{shape} at the
+estimated one. The homogeneous-belief baseline is the special case $\beta_E^m = \beta_E$.
+
+Beliefs matter for choices in exactly two places. First, they change the perceived value of
+the college path in \eqref{eq:bellman-college}, and therefore both the enrollment decision
+$d^*$ and the size of the transfer chosen at $T_L$; because the family anticipates that
+decision, beliefs also feed back into human-capital investment during childhood and
+adolescence. Second, they govern consumption and saving during the four college years, which
+are taken against the perceived graduate wage. On graduation the true premium is revealed:
+the individual re-optimizes against the true wage process from age $22$ onward, and realized
+wages, income and assets are always generated by the true $\beta_E$. An optimistic family
+therefore over-saves relative to what its child will earn and receives a downward surprise at
+labor-market entry; a pessimistic family receives an upward one.
+
+This replaces the earlier formulation in which beliefs concerned $b_m$, a subjective
+human-capital increment per year of college. That object no longer exists, and the belief is
+now stated in the units the underlying survey evidence actually measures: \citet{Bleemer2018}
+elicit beliefs about \emph{earnings} returns, not about a skill stock.

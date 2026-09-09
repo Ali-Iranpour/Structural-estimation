@@ -46,7 +46,7 @@ argval(flag, default) = (v = argstr(flag, nothing); v === nothing ? default : pa
 argflt(flag, default) = (v = argstr(flag, nothing); v === nothing ? default : parse(Float64, v))
 
 const AT_FILE  = argstr("--at", "")
-const EXTEND   = filter(!isempty, split(argstr("--extend", ""), ','))
+const EXTEND   = unique(filter(!isempty, split(argstr("--extend", ""), ',')))
 const GRID     = argval("--grid", 30)
 const SIM_N    = argval("--simN", 2000)
 const SEED     = argval("--seed", 1234)
@@ -136,7 +136,7 @@ const COLUMNS = vcat(
         hasproperty(PARENT_DEFAULTS, sym) ||
             error("--extend $nm is not a parent-block parameter; the child solve could not be reused.")
         Column(sym, c.lo, c.hi, c.link, false)
-    end for nm in EXTEND])
+    end for nm in EXTEND if Symbol(nm) ∉ getfield.(SMM_PARAMS, :name)])
 
 to_s(v, c::Column)   = c.link === :log ? log(v) : v
 from_s(z, c::Column) = c.link === :log ? exp(z) : z
@@ -169,7 +169,7 @@ end
 @everywhere function residuals_at(vals::Dict{Symbol,Float64}; Na, Nhc, simN, seed)
     kw = NamedTuple{Tuple(keys(vals))}(Tuple(values(vals)))
     p = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = 2, Nhc = Nhc,
-                                                    simN = simN, seed = seed, kw...)
+                                                    simN = simN, seed = seed, school_time = target_school_time(TARGETS), kw...)
     p.V_child_interp = V_CHILD
     redirect_stdout(devnull) do
         solve_model!(p; verbose = false); simulate_model!(p)

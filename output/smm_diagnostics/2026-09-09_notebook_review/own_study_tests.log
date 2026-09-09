@@ -1,0 +1,8 @@
+Test Summary:                              | Pass  Total  Time
+Own study specification and frozen targets |   16     16  0.9s
+Solving child and school-time parent for gradient/feasibility checks
+Solving working model...  18%|████▉                      |  ETA: 0:00:05[KSolving working model...  64%|█████████████████▎         |  ETA: 0:00:01[KSolving working model... 100%|███████████████████████████| Time: 0:00:03[K
+Solving graduate working model...  24%|████▎             |  ETA: 0:00:03[KSolving graduate working model...  59%|██████████▋       |  ETA: 0:00:01[KSolving graduate working model...  96%|█████████████████▎|  ETA: 0:00:00[KSolving graduate working model... 100%|██████████████████| Time: 0:00:03[K
+Test Summary:                         | Pass  Total  Time
+School-time gradients and simulations |   12     12  1.2s
+Own study checks passed

@@ -146,7 +146,7 @@ end
     smm_feasible(kw) || return SMM_PENALTY
     try
         p = Parent_child_interaction_age_specific_AR1(; Na = PGRID, Nk = 2, Nhc = PGRID,
-                                                        simN = PSIMN, seed = PSEED, kw...)
+                                                        simN = PSIMN, seed = PSEED, school_time = target_school_time(TARGETS), kw...)
         p.V_child_interp = V_CHILD
         redirect_stdout(devnull) do
             solve_model!(p; verbose = false); simulate_model!(p)

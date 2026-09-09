@@ -288,6 +288,7 @@ mutable struct Parent_child_interaction_age_specific_AR1
     lambda_1::Float64                            # Child's weight on OWN LEISURE (= 1, normalisation)
     lambda_2::Float64                            # Child's weight on own human capital
     mu_vector::Vector{Float64}                   # Welfare weight on the parent in the family problem
+    school_time::Vector{Float64}                 # Fixed school time / 112; separate from chosen own study
     rho::Float64                  # risk aversion
     eta::Float64                  # curvature of the parent's leisure CRRA (was: Frisch)
     # HSV/Benabou after-tax income is  tax_lambda * (w*h)^(1 - tau).
@@ -387,6 +388,9 @@ function Parent_child_interaction_age_specific_AR1(;
         hc_max::Float64=1500.0, hc_min::Float64=50.0, hc_focus::Float64=700.0, Nhc::Int=30 ,
         # --- simulation details ----
         simN::Int=5000, simT::Int=T, seed::Int=1234,
+        # Zero preserves the fitted legacy school-plus-study baseline. Future SMM
+        # calls pass the fixed age schedule frozen in their own targets.toml.
+        school_time::AbstractVector{<:Real}=zeros(T),
 
         # --- Slope/Intercept parameters for ALL age-specific variables ---
         # beta_0 = 0.98 (was 0.97), by instruction 2026-08-28. WHY: consumption was
@@ -443,6 +447,13 @@ function Parent_child_interaction_age_specific_AR1(;
     mc = rouwenhorst(Np, p_ar1, sigma_p)
     p_grid = exp.(mc.state_values)
     p_transition = mc.p
+
+    length(school_time) == T || throw(ArgumentError("school_time must have T entries"))
+    school_time = Float64.(school_time)
+    all(x -> isfinite(x) && 0 <= x < 1 - 2TIME_FLOOR, school_time) ||
+        throw(ArgumentError("school_time must be finite, nonnegative and leave time for study and parental care"))
+    all(iszero, school_time[1:min(T, T_CHILD_VOICE-1)]) ||
+        throw(ArgumentError("school_time must be zero before T_CHILD_VOICE"))
 
     # --- Age-specific parameter vectors ---
     beta_vector    = [beta_0 + beta_1 * (t-1) for t in 1:T]
@@ -582,7 +593,7 @@ function Parent_child_interaction_age_specific_AR1(;
     T,
     beta_vector, phi_1, phi_2, phi_3, R_vector,
     sigma_1_vector, sigma_2_vector, sigma_3_vector, sigma_4_vector,
-    lambda_1, lambda_2, mu_vector,
+    lambda_1, lambda_2, mu_vector, school_time,
     rho, eta, tax_lambda, tau, r, y, a_max, a_min, Na,
     k_max, k_min, Nk,
     hc_max, hc_min, Nhc,
@@ -627,9 +638,12 @@ end
 # Utility Functions
 # ------------------------------------------------
 
+# School is exogenous; the functional form of child leisure utility is unchanged.
+@inline child_leisure(model, t_p, i_c, t) = 1.0 - t_p - i_c - model.school_time[t]
+
 @inline function util_total(model::Parent_child_interaction_age_specific_AR1, c::Float64, h_p::Float64,
                             t_p::Float64, i_c::Float64, HC::Float64, t::Int)
-    leisure_c = 1.0 - t_p - i_c
+    leisure_c = child_leisure(model, t_p, i_c, t)
     # c and i_c are held positive by box bounds; leisure_c is not (see LEISURE_FLOOR).
     @assert c > 0.0 && i_c > 0.0 "util_total: box bounds violated (c=$c, i_c=$i_c)"
     rho = model.rho
@@ -834,7 +848,7 @@ end
     return (h_p + t_p) - 1.0
 end
 
-@inline function constraint_child_time(x::Vector, grad::Vector = [])
+@inline function constraint_child_time(x::Vector, grad::Vector = [], school::Real = 0.0)
     i_c = x[2]
     t_p = x[5]
     if !isempty(grad)
@@ -842,7 +856,20 @@ end
         grad[2] = 1.0
         grad[5] = 1.0
     end
-    return i_c + t_p - 1.0
+    return i_c + t_p + school - 1.0
+end
+
+# Preserve legacy starts exactly when school_time == 0. With fixed school,
+# shrink both child-time uses proportionally above their numerical floors.
+function school_feasible_start!(x, school)
+    school == 0 && return x
+    available = 1.0 - school - 1e-6
+    if x[2] + x[5] > available
+        scale = (available - 2TIME_FLOOR) / (x[2] + x[5] - 2TIME_FLOOR)
+        x[2] = TIME_FLOOR + scale * (x[2] - TIME_FLOOR)
+        x[5] = TIME_FLOOR + scale * (x[5] - TIME_FLOOR)
+    end
+    return x
 end
 
 # ===========================================================================
@@ -1122,7 +1149,7 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
                              assets, HC, capital, t, p_shock::Float64, V_child_interp, grad)
     # Calculate leisure
     leisure_p = 1.0 - h_p - t_p
-    leisure_c = 1.0 - t_p - i_c
+    leisure_c = child_leisure(model, t_p, i_c, t)
 
     # Wage and next period states
     w = wage_func(model, capital, t, p_shock)
@@ -1196,7 +1223,7 @@ end
     a_next = (1.0 + model.r) * assets + after_tax + model.y - c_p - e_p
     k_next = capital
     leisure_p = 1.0 - h_p - t_p
-    leisure_c = 1.0 - t_p - i_c
+    leisure_c = child_leisure(model, t_p, i_c, t)
     HC_next = HC_technology_full(model, t_p, e_p, HC, i_c, t)
     util_now = util_total(model, c_p, h_p, t_p, i_c, HC, t)
     
@@ -1419,7 +1446,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         upper_bounds!(opt, [bmax, 1.0, bmax, 1.0, 1.0])
         min_objective!(opt, obj_wrapper)
         inequality_constraint!(opt, constraint_min_leisure_full, TOL_CONSTR)
-        inequality_constraint!(opt, constraint_child_time, TOL_CONSTR)
+        inequality_constraint!(opt, (x, grad) -> constraint_child_time(x, grad, model.school_time[t]), TOL_CONSTR)
         inequality_constraint!(opt, (x, grad) -> asset_constraint_full(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
         inequality_constraint!(opt, (x, grad) -> asset_constraint_max(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
 
@@ -1433,6 +1460,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         init = clamp.([1.0, 0.7, 1.0, 0.7, 0.2],
                       [1e-4, TIME_FLOOR, 1e-4, TIME_FLOOR, TIME_FLOOR],
                       [bmax, 1.0, bmax, 1.0, 1.0])
+        school_feasible_start!(init, model.school_time[t])
         xtol_rel!(opt, 1e-4)
         maxeval!(opt, 5000)
         (minf, x_opt, ret) = optimize(opt, init)
@@ -1499,7 +1527,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
             lower_bounds!(opt, [0.01, TIME_FLOOR, 0.01, TIME_FLOOR, TIME_FLOOR])
             upper_bounds!(opt, [bmax, 1.0, bmax, 1.0, 1.0])
             inequality_constraint!(opt, constraint_min_leisure_full, TOL_CONSTR)
-            inequality_constraint!(opt, constraint_child_time, TOL_CONSTR)
+            inequality_constraint!(opt, (x, grad) -> constraint_child_time(x, grad, model.school_time[t]), TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_full(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
             inequality_constraint!(opt, (x, grad) -> asset_constraint_max(x, grad, model, capital, t, assets, p_shock), TOL_CONSTR)
 
@@ -1517,6 +1545,7 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
                 model.sol_h[t+1, i_a, i_k, i_hc, i_p],
                 model.sol_t[t+1, i_a, i_k, i_hc, i_p],
             ], lo, hi)
+            school_feasible_start!(init, model.school_time[t])
             xtol_rel!(opt, 1e-4)
             # 1000 was where the marginal counterfactual arms ran out: sigma_2_0 + 0.4 hit
             # 94.8% converged against a 95% floor -- short of iterations, not stuck. Only

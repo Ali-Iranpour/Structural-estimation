@@ -153,7 +153,7 @@ let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n",
     smm_feasible(kw) || return (_penalize!(:infeasible_sigma_2); SMM_PENALTY)
     try
         p = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = 2, Nhc = Nhc,
-                                                        simN = simN, seed = seed, kw...)
+                                                        simN = simN, seed = seed, school_time = target_school_time(BASE_TARGETS), kw...)
         p.V_child_interp = V_CHILD
         redirect_stdout(devnull) do
             solve_model!(p; verbose = false); simulate_model!(p)

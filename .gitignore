@@ -62,3 +62,10 @@ temp/latest
 # Provisional school-plus-study run: preserve evidence and its frozen targets.
 !output/smm_runs/2026-09-07_114138/
 !output/smm_runs/2026-09-07_114138/**
+
+# The ACTIVE own-study targets. These must be tracked or a fresh clone cannot run:
+# smm_targets_file() discovers the newest timestamped folder holding a targets.toml,
+# and every OTHER tracked snapshot predates `child_time_spec`, so load_targets would
+# reject it with a specification mismatch.
+!output/smm_runs/2026-09-09_113746_455854_targets/
+!output/smm_runs/2026-09-09_113746_455854_targets/**

@@ -1,32 +1,43 @@
 # SMM — ten parent moments
 
-Estimates **nine** parent-block parameters so the simulated model reproduces **ten**
-moments from PSID/CDS: consumption, work hours, parental time, monetary investment,
-the child's study time, and the level of child skill — the last four split by child
-age. Baseline only: nothing here touches the child lifecycle, the counterfactuals,
-or the belief machinery.
+Estimates **ten** parent parameters against **ten** moments. From 9 September 2026,
+child investment is **own study only** (`study_hrs / 112`), at ages 6–9 and 10–17.
+The HC moments are mean log HC at ages **3–9 and 12–17**. `sigma_4_1` is estimated
+in `[-0.05, 0.15]`; `mu_1` remains fixed. Equal parameter/moment counts do not
+establish identification: rerun the Jacobian after fitting the new specification.
 
-The design is **over-identified by one**, not just-identified. `Q` cannot reach zero,
-the weighting is a real assumption, and a residual gap is not by itself a bug.
+The fixed school schedule uses `school_hrs`, the median within `(Year, Child_Age)`,
+averaged over nonmissing rows at each child age and divided by 112. It is frozen
+in each run's `targets.toml`. The child's leisure is
+`1 - parental time - own study - fixed school`; its utility remains logarithmic.
+Only own study enters the child-time term in HC production. The overlap caveat
+for active-plus-nearby parental time remains.
 
-If this is your first time running an SMM, read *What SMM is doing here* at the
-bottom first — it is four paragraphs and the rest of this file will make more
-sense afterwards.
+`PARENT_DEFAULTS` remains the fitted **2026-09-09_003312** school-plus-study baseline.
+It is a starting vector, not an estimate under the new specification. A plain
+parent constructor preserves that legacy model with `school_time=zeros(T)`;
+every SMM objective, fit report, profile and sensitivity diagnostic explicitly
+loads the new school schedule. Old target files are rejected. Start a fresh run,
+rather than resuming a nine-parameter checkpoint.
 
-## Current result and preserved baseline
+Generate the new targets, then use the normal runner:
 
-The school-plus-study run `2026-09-07_114138` has Q = 0.011580631181773578 and a
-converged winning polish, but fails acceptance because `sigma_2_1` is at −0.10.
-Its full-precision estimates are preserved in
-[`parent_candidate_school_time.toml`](../../output/smm_runs/2026-09-07_114138/candidate.toml).
-See the [current inspection](../../output/smm_diagnostics/2026-09-07_114138/inspection_notes.md)
-for all moments, bounds and next steps.
+```sh
+python tools/make_smm_targets.py
+julia --threads=1 --project=. code/smm/run_smm.jl --report-only --serial
+# Use your usual run flags without --report-only to estimate.
+```
 
-`PARENT_DEFAULTS` and the runner's incumbent seed remain the historical
-`2026-09-06_183119` fit, Q = 0.2500261422642604 against its original homework-only
-targets. A default `--report-only` therefore evaluates that historical vector,
-not the provisional candidate. See [`BASELINE_9PARAM.md`](../../docs/BASELINE_9PARAM.md).
-The estimated set remains nine parameters; boundary and grid review precede promotion.
+The report-only command evaluates the starting vector; it does not estimate it.
+Validate the new time budget and gradients with:
+
+```sh
+julia --threads=1 --project=. tools/test_smm_own_study.jl
+julia --threads=1 --project=. code/smm/selftest.jl
+```
+
+The older run discussions below are historical; their fitted values and nine-
+parameter identification results do not apply to the new own-study specification.
 
 ## Run it
 

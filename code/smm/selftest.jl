@@ -58,7 +58,7 @@ const V_CHILD = terminal_value_spline(ch; s = 10.0)
 
 function solved_parent(; Na = 10, Nhc = 10, simN = 200)
     p = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = 2, Nhc = Nhc,
-                                                    simN = simN, seed = 1234)
+                                                    simN = simN, seed = 1234, school_time = target_school_time(TARGETS))
     p.V_child_interp = V_CHILD
     redirect_stdout(devnull) do
         solve_model!(p; verbose = false); simulate_model!(p)
@@ -230,10 +230,9 @@ end
 
 # -----------------------------------------------------------------------------
 banner("Specification is frozen as instructed")
-check("nine estimated parameters", length(SMM_PARAMS) == 9, "$(length(SMM_PARAMS))")
+check("ten estimated parameters", length(SMM_PARAMS) == 10, "$(length(SMM_PARAMS))")
 check("ten targeted moments", length(SMM_MOMENTS) == 10, "$(length(SMM_MOMENTS))")
-check("sigma_4_1 is NOT estimated and holds at 0.02",
-      !any(q -> q.name === :sigma_4_1, SMM_PARAMS) && PARENT_DEFAULTS.sigma_4_1 == 0.02)
+check("sigma_4_1 is estimated", any(q -> q.name === :sigma_4_1, SMM_PARAMS))
 check("mu_1 is NOT estimated and holds at -0.04",
       !any(q -> q.name === :mu_1, SMM_PARAMS) && PARENT_DEFAULTS.mu_1 == -0.04)
 let q = SMM_PARAMS[findfirst(x -> x.name === :R_0, SMM_PARAMS)]

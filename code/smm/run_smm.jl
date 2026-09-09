@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 # =============================================================================
-# run_smm.jl -- estimate NINE parent parameters against TEN data moments.
+# run_smm.jl -- estimate TEN parent parameters against TEN data moments.
 #
 #     cd code/smm && julia --project=../.. run_smm.jl --quick     # 2 min smoke test
 #     cd code/smm && julia --project=../.. run_smm.jl             # the real run
@@ -337,8 +337,7 @@ function write_run_record(result = nothing, q_final = NaN, q_search = NaN,
             @printf(io, "%-12s = %.10g   # starting value, natural units\n",
                     "start_" * String(q.name), getfield(PARENT_DEFAULTS, q.name))
         end
-        println(io, "fixed_note   = \"sigma_4_1 and mu_1 are NOT estimated; they hold at PARENT_DEFAULTS\"")
-        println(io, "sigma_4_1    = ", PARENT_DEFAULTS.sigma_4_1)
+        println(io, "fixed_note   = \"mu_1 is NOT estimated; it holds at PARENT_DEFAULTS\"")
         println(io, "mu_1         = ", PARENT_DEFAULTS.mu_1)
         println(io, "\n[numerical]")
         println(io, "seed         = 1234   # common random numbers, identical across evaluations")

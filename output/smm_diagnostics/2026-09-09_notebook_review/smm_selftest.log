@@ -1,0 +1,71 @@
+
+==============================================================================
+Setting up a small solved baseline
+==============================================================================
+  baseline solved: 200 households, T = 17, violations = 0
+
+==============================================================================
+A1 -- terminal human capital at the age-18 handoff (column T+1)
+==============================================================================
+  clean baseline has zero violations                         PASS
+  HC = NaN  at the handoff is refused                        PASS   total=1 nonfinite=1
+  HC = 0.0  at the handoff is refused                        PASS   total=1 hc_nonpositive=1
+  HC = -1.0 at the handoff is refused                        PASS   total=1 hc_nonpositive=1
+  HC = Inf  at the handoff is refused                        PASS   total=1 nonfinite=1
+  the objective's own gate would reject that draw            PASS
+  mid-stage HC <= 0 is still refused                         PASS
+
+==============================================================================
+A4 -- expected model failures are scored, coding errors are re-thrown
+==============================================================================
+  solver convergence refusal is a model failure              PASS
+  DomainError is a model failure                             PASS
+  AssertionError is a model failure                          PASS
+  InexactError is a model failure                            PASS
+  MethodError is NOT a model failure                         PASS
+  UndefVarError is NOT a model failure                       PASS
+  BoundsError is NOT a model failure                         PASS
+  a bare error("typo") is NOT a model failure                PASS
+  a DIFFERENT error() message is NOT a model failure         PASS
+  wrapped causes are unwrapped                               PASS
+  tiktak RE-THROWS a coding error (on_error = :rethrow)      PASS
+  on_error = :discard discards instead of throwing           PASS
+    ... and counts what it discarded                         PASS   n_exception = 3
+
+==============================================================================
+A2 -- acceptance follows the RETAINED WINNER
+==============================================================================
+  winner_stage is recorded                                   PASS   got :polish
+  winner_ret is a real return code                           PASS   XTOL_REACHED
+  winner's own code classifies as converged                  PASS   XTOL_REACHED
+  budget-starved run: winner did NOT converge                PASS   winner_ret=MAXEVAL_REACHED converged_restarts=0
+  ret_class buckets MAXEVAL_REACHED as :limit                PASS
+  ret_class buckets FTOL_REACHED as :converged               PASS
+
+==============================================================================
+A3 -- resume refuses an incompatible or finished run
+==============================================================================
+  a checkpoint records the current parameter names           PASS
+  a checkpoint records the current boxes                     PASS
+  R_0's box in the checkpoint is the CURRENT one [0.5, 100]  PASS   [0.5, 100.0]
+  stage is recorded so a finished run can be refused         PASS
+  objective_grid is recorded separately from grid_search     PASS
+  targets are identified by CONTENT hash, not by filename    PASS
+  a "refined" checkpoint is not resumable into the local stage PASS
+  the OLD R_0 box [5, 300] would be refused                  PASS
+  a changed search grid would be refused                     PASS
+  a changed targets file would be refused                    PASS
+  a dropped parameter would be refused                       PASS
+
+==============================================================================
+Specification is frozen as instructed
+==============================================================================
+  ten estimated parameters                                   PASS   10
+  ten targeted moments                                       PASS   10
+  sigma_4_1 is estimated                                     PASS
+  mu_1 is NOT estimated and holds at -0.04                   PASS
+  R_0 box is [0.5, 100.0], searched in logs                  PASS   [0.5, 100.0] :log
+
+==============================================================================
+ALL CHECKS PASS
+==============================================================================

@@ -1,0 +1,52 @@
+Q=19.98131155940706
+
+Parameters
+--------------------------------------------------------------
+  phi_2            0.1904   (was 0.1904)
+  phi_3            1.4071   (was 1.4071)
+  lambda_2        60.2529   (was 60.2529)
+  R_0             43.4481   (was 43.4481)
+  sigma_1_0       -1.2936   (was -1.2936)
+  sigma_1_1       -0.1594   (was -0.1594)
+  sigma_2_0       -4.3175   (was -4.3175)
+  sigma_2_1       -0.1552   (was -0.1552)
+  sigma_4_0       -4.0407   (was -4.0407)
+  sigma_4_1        0.0200   (was 0.0200)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.3874     3.1155      8.7%   cons_exhous_real_w99
+  mean_h_p       0.3365     0.3073      9.5%   (wh_mom + wh_dad)/2 / 112
+  mean_t_p_early     0.4259     0.4544     -6.3%   par_time_tot / 112, child ages 1-9
+  mean_t_p_late     0.2622     0.3333    -21.3%   par_time_tot / 112, child ages 10-17
+  mean_e_p_early     0.3688     0.3429      7.6%   m_method2_final_w99, child ages 1-9
+  mean_e_p_late     0.4176     0.3911      6.8%   m_method2_final_w99, child ages 10-17
+  mean_i_c_early     0.1777     0.0393    352.4%   study_hrs / 112 (own study only), child ages 6-9
+  mean_i_c_late     0.2245     0.0496    352.6%   study_hrs / 112 (own study only), child ages 10-17
+  mean_hc_early     6.0656     6.0737     -0.8%   x_gach (log PCA composite), child ages 3-9
+  mean_hc_late     6.2189     6.2589     -3.9%   x_gach (log PCA composite), child ages 12-17
+  Q                                 19.9813    (gap % is in LEVELS for log moments)
+
+  c_p           33874 USD/yr  vs data 31155
+  h_p            37.7 hrs/wk  vs data 34.4
+  t_p  1-9       47.7 hrs/wk  vs data 50.9
+  t_p 10-17      29.4 hrs/wk  vs data 37.3
+  e_p  1-9       3688 USD/yr  vs data 3429
+  e_p 10-17      4176 USD/yr  vs data 3911
+
+  t_p late/early  model 0.62x  vs data 0.73x
+  e_p late/early  model 1.13x  vs data 1.14x
+  l_p (residual)  model 35.2 hrs/wk  vs 33.1 implied by the h_p/t_p targets
+                  (measured leisure is 59.2 hrs/wk -- par_time_tot overlaps it)
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        5.0230  (50230 USD/yr)
+  implied saving rate       32.8%
+  terminal assets        41.8597  (418597 USD)
+  leisure l_p             0.3146  (35.2 hrs/wk)
+  invalid sim cells            0
+  assets above a_max=100  max 99.4  (households: 0 ever (0.00%), 0 at t=1, 0 at handoff)
+  HC in [50, 1500]      range 297.7 - 512.3  (households: 0 ever above, 0 ever below, 0 above at handoff)
+  every simulated state is inside both grids

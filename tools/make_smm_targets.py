@@ -87,6 +87,8 @@ AGE_SPLIT = 9
 # carried the same weight as age 5's 35 observations. Both sides now start at 3;
 # moments.jl has the matching SMM_AGE_HC_LO.
 AGE_HC_LO = 3
+AGE_HC_LATE_LO = 12
+CHILD_TIME_SPEC = "own_study_fixed_school_v1"
 
 
 
@@ -275,24 +277,16 @@ def main():
     # i_c: the child's OWN study time. It only exists in the model from t = T_CHILD_VOICE
     # = 6, so the early group starts at 6, not 1 -- averaging in ages 1-5, where the model
     # has no child decision at all, would target a number the model cannot produce.
-    # THE CHILD'S TIME INPUT IS `c_time_hrs`, NOT `study_hrs` (instruction 2026-09-07).
-    #
-    # `study_hrs` is own study alone -- homework, self-study, academic clubs -- averaging
-    # 3.4 hrs/wk. `c_time_hrs` is the child's whole time input to skill: median school
-    # hours by (Year, Age) PLUS own study, averaging ~41 hrs/wk from age 6. The model's
-    # i_c is the child's time devoted to producing human capital, and schooling is the
-    # overwhelming part of that, so `c_time_hrs` is the right counterpart. The target
-    # moves from 0.039 to ~0.37 of the 112h week -- a 9x change, not a relabelling.
-    #
-    # Two properties of the variable, from Input/CODEBOOK.md, both of which happen to
-    # suit the model rather than fight it:
-    #   * It is a CONVENTIONAL ZERO at ages 0-5, not a measurement. The model's i_c is
-    #     likewise identically zero before T_CHILD_VOICE = 6, so the two agree exactly on
-    #     that range and the early group starts at 6 on both sides regardless.
-    #   * Its school component is a median by (Year, Age), identical for every child of an
-    #     age, so it carries the LEVEL but almost no cross-child variation. Read its mean;
-    #     its SD is not comparable to study_hrs and must not be targeted.
-    r["i_share"] = r.c_time_hrs / HOURS_PER_WEEK
+    # Own study is chosen. School is fixed and separately deducted from leisure.
+    # Use the actual median-school variable, not c_time_hrs - study_hrs: the
+    # total input also contains imputed observations with different coverage.
+    r["i_share"] = r.study_hrs / HOURS_PER_WEEK
+    school = r.groupby("Child_Age").school_hrs.mean().reindex(range(AGE_LO, AGE_HI+1))
+    if school.isna().any() or not np.isfinite(school).all():
+        raise ValueError("Missing fixed school schedule: school_hrs is required at every age")
+    if (school.loc[1:5] != 0).any() or ((school < 0) | (school >= HOURS_PER_WEEK)).any():
+        raise ValueError("Invalid fixed school schedule")
+    school_share = school / HOURS_PER_WEEK
     # HC in LOGS. The model now carries HC in the data's own W-score units, so this is a
     # like-for-like comparison -- and it is what separates the VALUATION parameters
     # (phi_3, lambda_2) from the TECHNOLOGY parameters (R_0, sigma_1, sigma_2, sigma_4),
@@ -302,12 +296,12 @@ def main():
     moments += [
         dict(name="mean_i_c_early",
              series=r[(r.Child_Age >= 6) & (r.Child_Age <= AGE_SPLIT)].i_share,
-             source=f"c_time_hrs / 112 (school + own study), child ages 6-{AGE_SPLIT}",
+             source=f"study_hrs / 112 (own study only), child ages 6-{AGE_SPLIT}",
              units="share of the 112h non-sleep week",
              model=f"mean of sim_i over t = 6..{AGE_SPLIT}"),
         dict(name="mean_i_c_late",
              series=r[r.Child_Age > AGE_SPLIT].i_share,
-             source=f"c_time_hrs / 112 (school + own study), child ages {AGE_SPLIT+1}-{AGE_HI}",
+             source=f"study_hrs / 112 (own study only), child ages {AGE_SPLIT+1}-{AGE_HI}",
              units="share of the 112h non-sleep week",
              model=f"mean of sim_i over t = {AGE_SPLIT+1}..{AGE_HI}"),
         dict(name="mean_hc_early",
@@ -316,10 +310,10 @@ def main():
              units="log W-score; the model's HC is in the SAME units after the rescaling",
              model=f"mean of log(sim_hc) over t = {AGE_HC_LO}..{AGE_SPLIT}"),
         dict(name="mean_hc_late",
-             series=r[r.Child_Age > AGE_SPLIT].x_gach,
-             source=f"x_gach (log PCA composite), child ages {AGE_SPLIT+1}-{AGE_HI}",
+             series=r[r.Child_Age >= AGE_HC_LATE_LO].x_gach,
+             source=f"x_gach (log PCA composite), child ages {AGE_HC_LATE_LO}-{AGE_HI}",
              units="log W-score; the model's HC is in the SAME units after the rescaling",
-             model=f"mean of log(sim_hc) over t = {AGE_SPLIT+1}..{AGE_HI}"),
+             model=f"mean of log(sim_hc) over t = {AGE_HC_LATE_LO}..{AGE_HI}"),
     ]
 
     lines = [
@@ -334,6 +328,13 @@ def main():
         f'git_commit = "{git_sha()}"',
         f'source     = "Input/SMM_Moments_Micro.dta"',
         f'age_range  = [{AGE_LO}, {AGE_HI}]',
+        f'child_time_spec = "{CHILD_TIME_SPEC}"',
+        f'age_hc_early = [{AGE_HC_LO}, {AGE_SPLIT}]',
+        f'age_hc_late = [{AGE_HC_LATE_LO}, {AGE_HI}]',
+        'school_time = [' + ', '.join(f'{v:.17g}' for v in school_share) + ']',
+        'school_time_source = "school_hrs: median within Year/Age, averaged across nonmissing rows at each age; divided by 112"',
+        'school_time_role = "fixed time deducted from child leisure; HC production uses own study only"',
+
         f'age_split  = {AGE_SPLIT}   # early = {AGE_LO}..{AGE_SPLIT}, late = {AGE_SPLIT+1}..{AGE_HI}',
         f'dollars_per_model_unit = {DOLLARS_PER_MODEL_UNIT}',
         f'hours_per_week = {HOURS_PER_WEEK}',
@@ -465,8 +466,7 @@ def write_by_age():
 
     Units match the model's, so the notebook can plot these directly:
       c_p, e_p, a_p   model units (10k USD/yr)     t_p, h_p, i_c   share of the 112h week
-      x_gach, x_lw    LOG human capital -- comparable to log(model hc) up to an ADDITIVE
-                      constant log(M), the scale factor that was never applied.
+      x_gach, x_lw    mean LOG human capital in the same W-score units as the model.
     """
     # THIS STAGE IS OPTIONAL AND MUST NOT BLOCK THE TARGETS.
     #
@@ -496,7 +496,7 @@ def write_by_age():
         d = pd.read_stata(path)
         missing = [c for c in ("mu_cons_exhous_real_w99", "mu_m_method2_final_w99",
                                "mu_assets_real", "mu_leis_mom_wk", "mu_leis_dad_wk",
-                               "mu_par_time_tot", "mu_c_time_hrs", "mu_x_gach", "mu_x_lw")
+                               "mu_par_time_tot", "mu_c_time_hrs", "mu_study_hrs", "mu_school_hrs", "mu_x_gach", "mu_x_lw")
                    if c not in d.columns]
         if missing:
             print(f"  SKIP {dst}: {src} is missing {', '.join(missing)}. "
@@ -515,18 +515,13 @@ def write_by_age():
             "h_p": (((HOURS_PER_WEEK - d.mu_leis_mom_wk) +
                      (HOURS_PER_WEEK - d.mu_leis_dad_wk)) / 2.0) / HOURS_PER_WEEK,
             "t_p": d.mu_par_time_tot / HOURS_PER_WEEK,
-            "i_c": d.mu_c_time_hrs / HOURS_PER_WEEK,
-            # Child leisure, on the MODEL's identity l_c = 1 - tau_p - i_c, so the series
-            # is directly comparable to the simulated one. Note this is NOT 1 - i_c: the
-            # child's time also goes to the parent, and at age 6 the two differ by the
-            # whole of par_time_tot -- 0.229 against 0.649. Netting out only c_time_hrs
-            # would produce a line that looks like child leisure and cannot be plotted
-            # against the model's.
-            #
-            # par_time_tot is the active+nearby union, so this inherits the same overlap
-            # caveat the parent block carries: nearby presence is not exclusive of the
-            # child's own leisure, and l_c is correspondingly understated.
-            "l_c": (HOURS_PER_WEEK - d.mu_c_time_hrs - d.mu_par_time_tot) / HOURS_PER_WEEK,
+            "i_c": d.mu_study_hrs / HOURS_PER_WEEK,
+            "school_c": d.mu_school_hrs / HOURS_PER_WEEK,
+            "i_total": d.mu_c_time_hrs / HOURS_PER_WEEK,
+            # Same leisure identity: school, own study and parental time are
+            # deducted. These are by-age means with variable-specific coverage.
+            # Active+nearby parental time retains its pre-existing overlap caveat.
+            "l_c": (HOURS_PER_WEEK - d.mu_study_hrs - d.mu_school_hrs - d.mu_par_time_tot) / HOURS_PER_WEEK,
             "x_gach": d.mu_x_gach,
             "x_lw":   d.mu_x_lw,
         })
@@ -534,13 +529,11 @@ def write_by_age():
             f"# Per-child-age data means for the baseline figure. Sample: {note}.\n"
             f"# GENERATED by tools/make_smm_targets.py from {src} -- do not edit by hand.\n"
             "# c_p, e_p, a_p: model units (10k USD/yr). a_p EXCLUDES home equity.\n"
-            "# h_p, t_p, i_c, l_c: share of the 112h week.\n"
-            "# i_c is c_time_hrs (median school by age-year + own study), zero by\n"
-            "#   convention below age 6 -- as the model's i_c is.\n"
-            "# l_c = (112 - c_time_hrs - par_time_tot)/112, the model's identity\n"
-            "#   l_c = 1 - tau_p - i_c. UNTARGETED: a reference series, not a moment.\n"
-            "# x_gach / x_lw: LOG human capital (PCA composite / Letter-Word), comparable\n"
-            "#   to log(model hc) up to an ADDITIVE constant log(M).\n"
+            "# h_p, t_p, i_c, school_c, i_total, l_c: shares of the 112h week.\n"
+            "# i_c = own study; school_c = mean of the median-school variable by age.\n"
+            "# i_total = legacy school-plus-study input (includes imputations).\n"
+            "# l_c = 1 - t_p - i_c - school_c; untargeted, variable-specific coverage.\n"
+            "# x_gach / x_lw: mean LOG human capital in W-score units; no shift required.\n"
             + out.to_csv(index=False, float_format="%.6f"))
         print(f"wrote Input/{dst}  ({len(out)} ages, {key})")
 

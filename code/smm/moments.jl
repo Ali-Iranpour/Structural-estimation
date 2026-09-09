@@ -1,7 +1,7 @@
 # =============================================================================
 # moments.jl -- SMM on ten parent-block moments.
 #
-# Estimates NINE parent parameters against TEN data moments: household consumption,
+# Estimates TEN parent parameters against TEN data moments: household consumption,
 # parental WORK hours, parent TIME with the child, monetary investment, the child's own
 # study time, and the LEVEL OF CHILD SKILL -- the last four split by child age. Baseline
 # only; nothing here touches the child lifecycle, the counterfactuals or the belief
@@ -19,13 +19,12 @@
 # a likelihood; "simulated" because the model has no closed form, so the moments
 # come out of a simulation.
 #
-# TEN MOMENTS, NINE PARAMETERS: OVER-IDENTIFIED BY ONE
+# TEN MOMENTS, TEN PARAMETERS: LOCAL IDENTIFICATION MUST BE RECHECKED
 # ----------------------------------------------------
-# This is NOT the earlier just-identified design and must not be read as one. Q cannot
-# reach zero, the weighting is no longer irrelevant at the optimum, and a residual gap is
-# not by itself evidence of a bug. Counting nine against ten also establishes nothing
-# about identification -- see the residual-Jacobian note below. Each parameter still has
-# a moment it moves most:
+# Own study plus fixed school time, 2026-09-09. sigma_4_1 is now estimated;
+# the late HC moment covers ages 12-17 (early HC remains 3-9). Equal counts do
+# not establish identification or guarantee an exact fit. Earlier Jacobian
+# diagnostics below describe the previous nine-parameter specification only.
 #
 #   phi_2      weight on leisure           ->  mean h_p   (work; l = 1 - h - t)
 #   phi_3      parents' weight on skill    ->  mean t_p and mean e_p
@@ -36,6 +35,7 @@
 #   sigma_2_0  LEVEL of the e_p elasticity ->  mean e_p, ages 1-9
 #   sigma_2_1  SLOPE of the e_p elasticity ->  mean e_p, ages 10-17
 #   sigma_4_0  LEVEL of the i_c elasticity ->  mean i_c
+#   sigma_4_1  SLOPE of the i_c elasticity ->  child study and HC age profiles
 #
 # MEASURED at the incumbent (central differences, columns scaled to a full-box move):
 # the residual Jacobian has full column rank with condition number 49 and smallest
@@ -132,6 +132,8 @@ const SMM_AGE_SPLIT = 9
 # gives 6.6588, so the coverage mismatch alone was worth 0.110 log points, i.e. 23% of
 # the entire HC gap the estimation is trying to close. It has to match on both sides.
 const SMM_AGE_HC_LO = 3
+const SMM_AGE_HC_LATE_LO = 12
+const SMM_CHILD_TIME_SPEC = "own_study_fixed_school_v1"
 
 # The moments actually targeted, in report order. `mean_e_p` (the pooled
 # investment mean) is still computed and printed, but it is NOT in this tuple: it
@@ -144,25 +146,10 @@ const SMM_MOMENTS = ("mean_c_p", "mean_h_p",
                      "mean_i_c_early", "mean_i_c_late",
                      "mean_hc_early",  "mean_hc_late")
 
-# Ten moments against nine parameters -- over-identified by one, deliberately.
-# The two HC moments are what make the set identified at all: phi_3 and lambda_2 (how
-# much parent and child VALUE skill) and R_0, sigma_1, sigma_2, sigma_4 (how efficiently
-# skill is PRODUCED) both raise investment, so investment moments alone cannot separate
-# them. Only the resulting HC level can. Before HC was put in the data's units there was
-# no such moment available.
-#
-# The child's own time input starts at t = T_CHILD_VOICE = 6; there is no child decision
-# before that, so mean_i_c_early averages t = 6..9, not 1..9.
-#
-# i_c IS MATCHED ON `c_time_hrs`, NOT `study_hrs` (instruction 2026-09-07): the child's
-# whole time input to skill, median school hours by (Year, Age) plus own study, ~41 hrs/wk
-# from age 6 against own study's 3.4. The targets are 0.365 early and 0.387 late, up from
-# 0.039 and 0.050. Two consequences worth carrying:
-#   * The data variable is a CONVENTIONAL ZERO below age 6, exactly as the model's i_c is,
-#     so the two agree on that range by construction rather than by luck.
-#   * Its school component is a median by (Year, Age), identical across children of an
-#     age, so it carries the level and almost no cross-child variation. Target its mean;
-#     its SD is not comparable to study_hrs and must not be weighted in.
+# Ten parameters and ten moments. HC separates valuation from technology;
+# freeing sigma_4_1 requires a fresh Jacobian check under this specification.
+# Own study moments cover 6-9 and 10-17; HC covers 3-9 and 12-17.
+# School time is exogenous and deducted from leisure, not included in sim_i.
 
 # Moments that are MEANS OF LOGS. Their residual is already a proportional error -- a
 # log difference of 0.05 IS a 5% error in the level -- so it must NOT be divided by the
@@ -310,7 +297,19 @@ function load_targets(path::AbstractString)
             they must describe the same child ages.""")
     end
 
-    out = Dict{String,NamedTuple}()
+    get(raw, "child_time_spec", "") == SMM_CHILD_TIME_SPEC || error(
+        "Target specification mismatch: regenerate targets for own study plus fixed school time; " * path)
+    get(raw, "age_hc_early", []) == [SMM_AGE_HC_LO, SMM_AGE_SPLIT] ||
+        error("Early HC age window mismatch: regenerate targets; " * path)
+    get(raw, "age_hc_late", []) == [SMM_AGE_HC_LATE_LO, SMM_AGE_HI] ||
+        error("Late HC age window mismatch: expected ages 12-17; " * path)
+    school = Float64.(get(raw, "school_time", []))
+    length(school) == SMM_AGE_HI || error("Missing school_time schedule: " * path)
+    all(x -> isfinite(x) && 0 <= x < 1 - 2TIME_FLOOR, school) ||
+        error("Invalid school_time schedule: " * path)
+    all(iszero, school[1:T_CHILD_VOICE-1]) || error("School must be zero below age 6: " * path)
+
+    out = Dict{String,NamedTuple}("_spec" => (school_time=school,))
     for k in SMM_MOMENTS
         haskey(raw, k) || error("""
             target file $path is missing [$k].
@@ -322,6 +321,10 @@ function load_targets(path::AbstractString)
     end
     return out
 end
+
+# Metadata travels with the frozen targets to every solve, including diagnostics.
+# Fail on a missing schedule rather than silently reverting to the legacy model.
+target_school_time(targets) = targets["_spec"].school_time
 
 # -----------------------------------------------------------------------------
 # Model moments
@@ -384,7 +387,7 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
             mean_i_c_early = nanmean(vec(p.sim_i[:, early_i])),
             mean_i_c_late  = nanmean(vec(p.sim_i[:, late])),
             mean_hc_early  = loghc(early_hc),
-            mean_hc_late   = loghc(late),
+            mean_hc_late   = loghc(SMM_AGE_HC_LATE_LO:SMM_AGE_HI),
             n_nonfinite    = n_bad[])
 end
 
@@ -449,7 +452,7 @@ function simulation_violations(p::Parent_child_interaction_age_specific_AR1)
          t_outside_unit          = count(fin(unit), Tp),
          i_outside_unit          = count(fin(unit), I),
          parent_leisure_negative = count(fin(x -> x < -tol), 1.0 .- H .- Tp),
-         child_leisure_negative  = count(fin(x -> x < -tol), 1.0 .- Tp .- I),
+         child_leisure_negative  = count(fin(x -> x < -tol), 1.0 .- Tp .- I .- reshape(p.school_time[1:p.T], 1, :)),
          assets_below_min        = count(fin(x -> x < p.a_min - tol), A))
     return (total = sum(values(v)), v...)
 end
@@ -638,15 +641,13 @@ const SMM_PARAMS = [
     # direction. It costs ~3 h against ~13 h for another blind estimation.
     SMMParam(:sigma_2_1, -0.30, 0.05, :level),
     SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # school + study pilot; old incumbent retained
-    # sigma_4_1 = 0.02 and mu_1 = -0.04 stay fixed at PARENT_DEFAULTS.
-    # Reassess extra parameters after fitting the changed child-time targets.
-    # Homework-only probes do not establish their priority for these targets.
+    # Same candidate interval already used by jacobian.jl. This is a search box,
+    # not an identification result; reassess it after the first own-study fit.
+    SMMParam(:sigma_4_1, -0.05, 0.15, :level),
+    # mu_1 remains fixed at PARENT_DEFAULTS.
 ]
 
-# Over-identification is now DELIBERATE (ten moments, nine parameters) and is explained
-# in the header, so it is no longer warned about on every worker at every startup. What
-# would be a real error is the other direction: fewer moments than parameters cannot be
-# estimated at all, so that fails loudly.
+# A moment-count check is necessary but does not establish local identification.
 length(SMM_MOMENTS) >= length(SMM_PARAMS) || error("""
     SMM is UNDER-identified: $(length(SMM_PARAMS)) parameters against \
     $(length(SMM_MOMENTS)) moments. Add moments or drop parameters -- the search would
@@ -716,11 +717,9 @@ scaling, consumption (~3) would dominate leisure (~0.5) purely because of its si
 without the log exception, the two HC moments were shrunk 6.1x by the arbitrary level
 of a log W-score.
 
-Weights are otherwise EQUAL, and that is now a real assumption rather than a harmless
-one: the estimator is OVER-IDENTIFIED, ten moments against nine parameters, so Q cannot
-reach zero and the weighting does change the answer at the optimum. Equal weights are
-the choice that adds nothing unexamined, not a choice that is free. A covariance-based
-weighting matrix is the principled successor and is not implemented.
+Weights are otherwise EQUAL. Ten moments and ten parameters do not guarantee
+an exact fit; if residuals remain, their relative weights still affect the answer.
+A covariance-based weighting matrix is not implemented.
 
 Common random numbers: every model is built with the same `seed`, so the initial
 draws and shock paths are identical across evaluations. Without this the
@@ -755,7 +754,8 @@ function smm_objective(z::AbstractVector{Float64}, targets, V_child;
         # beta_bothcollege / beta_age / beta_age2 / ... times WAGE_SCALING_FACTOR.
         # Passing w = 12.5 here looked like it pinned the wage and pinned nothing.
         p = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = Nk, Nhc = Nhc,
-                                                        simN = simN, seed = seed, kw...)
+                                                        simN = simN, seed = seed,
+                                                        school_time = target_school_time(targets), kw...)
         p.V_child_interp = V_child
         # solve_model! prints "Solving period t ..." UNGATED by `verbose` (lines 645,
         # 725, 807 of parent_family.jl), and simulate_model! prints its own summary.
@@ -836,7 +836,8 @@ function report_fit(z::AbstractVector{Float64}, targets, V_child;
                     out::IO = stdout)
     kw = unpack(z)
     p = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = Nk, Nhc = Nhc,
-                                                    simN = simN, seed = seed, kw...)   # no `w` -- see smm_objective
+                                                    simN = simN, seed = seed,
+                                                        school_time = target_school_time(targets), kw...)   # no `w` -- see smm_objective
     p.V_child_interp = V_child
     redirect_stdout(devnull) do            # see smm_objective
         solve_model!(p; verbose = false)
