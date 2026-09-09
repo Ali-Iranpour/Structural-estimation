@@ -49,23 +49,21 @@ output/figures/
 # Server-local MCP config
 .mcp.json
 
-# SMM run outputs: logs, checkpoints and per-run estimates are reproducible artefacts
-output/smm_runs/*
-# Frozen, reviewed nine-parameter baseline (keep original evidence in clones).
-!output/smm_runs/2026-09-06_183119/
-!output/smm_runs/2026-09-06_183119/**
+# SMM run outputs are TRACKED IN FULL (instruction 2026-09-10). Every run directory --
+# logs, checkpoints, restarts.csv, estimates.toml, targets.toml, run_record.toml -- is
+# real evidence for whichever estimate it produced, promoted or not, and is small (a
+# few hundred KB each; the whole tree is a few MB). This replaced a selective allow-list
+# that un-ignored one reviewed run at a time (2026-09-06_183119, 2026-09-07_114138,
+# 2026-09-09_113746_455854_targets): every run promoted into PARENT_DEFAULTS after that
+# list was last touched -- 2026-09-07_205033, 2026-09-08_100413, 2026-09-09_003312,
+# 2026-09-09_123333 -- was cited in a baseline-promotion commit but its OWN run
+# directory was never added to the allow-list, so `git push` never actually sent it:
+# the code changed, the evidence for it did not. Nothing here is ignored any more, so
+# that gap cannot recur silently.
 
-# The `latest` symlink run_smm.jl re-points at every run. Per-machine, not shared.
+# The `latest` symlink run_smm.jl re-points at every run. Per-machine, not shared: it
+# is a mutable pointer to "the most recent run on THIS machine", not content of its
+# own, and re-pointing it would otherwise make every run's commit touch an unrelated
+# file. temp/ is separately ignored below and keeps the same exception.
 output/smm_runs/latest
 temp/latest
-
-# Provisional school-plus-study run: preserve evidence and its frozen targets.
-!output/smm_runs/2026-09-07_114138/
-!output/smm_runs/2026-09-07_114138/**
-
-# The ACTIVE own-study targets. These must be tracked or a fresh clone cannot run:
-# smm_targets_file() discovers the newest timestamped folder holding a targets.toml,
-# and every OTHER tracked snapshot predates `child_time_spec`, so load_targets would
-# reject it with a specification mismatch.
-!output/smm_runs/2026-09-09_113746_455854_targets/
-!output/smm_runs/2026-09-09_113746_455854_targets/**

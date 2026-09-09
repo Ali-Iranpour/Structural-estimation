@@ -1,0 +1,34 @@
+# Written after each restart by code/smm/run_smm.jl. Safe to read
+# while the run is going; rewritten atomically.
+# Resume with:  julia --project=../.. run_smm.jl --resume <this dir>
+stage         = "final"
+restarts_done = 8
+param_names   = ["phi_2", "phi_3", "lambda_2", "R_0", "sigma_1_0", "sigma_1_1", "sigma_2_0", "sigma_2_1", "sigma_4_0"]
+param_lo      = [0.01, 0.05, 0.05, 0.5, -4.0, -0.2, -5.0, -0.3, -6.0]
+param_hi      = [20.0, 20.0, 100.0, 100.0, -0.1, 0.05, -0.5, 0.05, -1.0]
+param_link    = ["log", "log", "log", "log", "level", "level", "level", "level", "level"]
+targets_sha   = "294021573c9c2151"
+seed          = 1234
+sim_n         = 2000
+restarts_total= 8
+Q_best        = 0.0018194657786328996
+objective_grid= 30   # the grid Q_best was computed at
+Q_incumbent   = 0.001961797825383801   # at grid_search
+grid_search   = 30
+grid_report   = 30
+minutes       = 627.8
+updated       = "2026-09-09 11:02:26"
+
+[search_vector]
+z = [-1.6588549093493572, 0.34151470445405885, 4.0985514933806497, 3.7715662721974383, -1.2936073985011984, -0.15939141202695176, -4.3174970122018772, -0.15518453946681088, -4.0407087624299001]
+
+[parameters]
+phi_2      = 0.19035683
+phi_3      = 1.40707728
+lambda_2   = 60.25294756
+R_0        = 43.44806306
+sigma_1_0  = -1.29360740
+sigma_1_1  = -0.15939141
+sigma_2_0  = -4.31749701
+sigma_2_1  = -0.15518454
+sigma_4_0  = -4.04070876

@@ -1,0 +1,110 @@
+
+============================================================================
+SMM: parent-block moments   [QUICK -- smoke test, not an estimate]
+============================================================================
+started    2026-09-07 20:17:05
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 1.3
+workers    2 of 112 cores (2%) -- capped by shared-server budget
+budget     12 Sobol points, 2 restarts (<= 60 evals each, polish 120)
+grids      Na=Nhc=12 for both the search and the report
+writing to output/smm_runs/2026-09-07_201704_temp_input_layout_check
+           (also reachable as output/smm_runs/latest -- tail that, no timestamp needed)
+7.3s
+running on 3 process(es): 1 master + 2 worker(s), 1 BLAS thread each
+9.1s
+16.8s (all processes at once)
+
+============================================================================
+Targets  (output/smm_runs/2026-09-07_201704_temp_input_layout_check/targets.toml)
+============================================================================
+10 moments, 9 parameters -- OVER-identified, Q cannot reach 0 and weights matter
+parameters: phi_2, phi_3, lambda_2, R_0, sigma_1_0, sigma_1_1, sigma_2_0, sigma_2_1, sigma_4_0
+moment           mean         sd        N   source
+mean_c_p       3.1155     1.6993     6742   cons_exhous_real_w99
+mean_h_p       0.3073     0.0999    15665   (wh_mom + wh_dad)/2 / 112
+mean_t_p_early     0.4544     0.1656      475   par_time_tot / 112, child ages 1-9
+mean_t_p_late     0.3333     0.1669      590   par_time_tot / 112, child ages 10-17
+mean_e_p_early     0.3429     0.4794     8178   m_method2_final_w99, child ages 1-9
+mean_e_p_late     0.3911     0.6638     7182   m_method2_final_w99, child ages 10-17
+mean_i_c_early     0.3649     0.0389      476   c_time_hrs / 112 (school + own study), child ages 6-9
+mean_i_c_late     0.3872     0.0517     1500   c_time_hrs / 112 (school + own study), child ages 10-17
+mean_hc_early     6.0737     0.1081      252   x_gach (log PCA composite), child ages 3-9
+mean_hc_late     6.2508     0.0323      549   x_gach (log PCA composite), child ages 10-17
+
+SDs are shown but NOT targeted: the model's cross-sectional dispersion comes
+from a 5-node wage shock plus initial draws and cannot reach the data's
+(leisure SD is 7.4x too small). Targeting them would distort the means.
+
+settings written to output/smm_runs/2026-09-07_201704_temp_input_layout_check/run_record.toml  (status = started)
+8.0s
+
+projected runtime
+  sobol stage       13 evals /  2 workers  =    0.9 min   (parallel)
+  local stage      330 evals, sequential    =   44.1 min   (cannot be parallelised)
+  total                                      44.9 min
+
+The local stage dominates because TikTak's restarts are sequential by
+construction. More workers shorten the first line only -- to use a wide
+machine well, raise --sobol (better seeds), not --restarts.
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 1.661858
+
+Parameters
+--------------------------------------------------------------
+  phi_2            0.1437   (was 0.1437)
+  phi_3            1.0201   (was 1.0201)
+  lambda_2         8.6793   (was 8.6793)
+  R_0             50.6032   (was 50.6032)
+  sigma_1_0       -0.2232   (was -0.2232)
+  sigma_1_1       -0.1413   (was -0.1413)
+  sigma_2_0       -3.7551   (was -3.7551)
+  sigma_2_1       -0.0500   (was -0.0500)
+  sigma_4_0       -5.9852   (was -5.9852)
+
+Targeted moments
+----------------------------------------------------------------------------
+  moment          model       data     gap %   source
+  mean_c_p       3.3356     3.1155      7.1%   cons_exhous_real_w99
+  mean_h_p       0.3037     0.3073     -1.2%   (wh_mom + wh_dad)/2 / 112
+  mean_t_p_early     0.5271     0.4544     16.0%   par_time_tot / 112, child ages 1-9
+  mean_t_p_late     0.3230     0.3333     -3.1%   par_time_tot / 112, child ages 10-17
+  mean_e_p_early     0.2969     0.3429    -13.4%   m_method2_final_w99, child ages 1-9
+  mean_e_p_late     0.4525     0.3911     15.7%   m_method2_final_w99, child ages 10-17
+  mean_i_c_early     0.0508     0.3649    -86.1%   c_time_hrs / 112 (school + own study), child ages 6-9
+  mean_i_c_late     0.0319     0.3872    -91.8%   c_time_hrs / 112 (school + own study), child ages 10-17
+  mean_hc_early     6.0239     6.0737     -4.9%   x_gach (log PCA composite), child ages 3-9
+  mean_hc_late     6.3012     6.2508      5.2%   x_gach (log PCA composite), child ages 10-17
+  Q                                  1.6619    (gap % is in LEVELS for log moments)
+
+  c_p           33356 USD/yr  vs data 31155
+  h_p            34.0 hrs/wk  vs data 34.4
+  t_p  1-9       59.0 hrs/wk  vs data 50.9
+  t_p 10-17      36.2 hrs/wk  vs data 37.3
+  e_p  1-9       2969 USD/yr  vs data 3429
+  e_p 10-17      4525 USD/yr  vs data 3911
+
+  t_p late/early  model 0.61x  vs data 0.73x
+  e_p late/early  model 1.52x  vs data 1.14x
+  l_p (residual)  model 29.7 hrs/wk  vs 33.1 implied by the h_p/t_p targets
+                  (measured leisure is 59.2 hrs/wk -- par_time_tot overlaps it)
+
+Untargeted -- does the fit stay believable?
+--------------------------------------------------------------
+  after-tax income        4.7319  (47319 USD/yr)
+  implied saving rate       30.5%
+  terminal assets        36.1660  (361660 USD)
+  leisure l_p             0.2652  (29.7 hrs/wk)
+  invalid sim cells            0
+  assets above a_max=100  max 87.4  (households: 0 ever (0.00%), 0 at t=1, 0 at handoff)
+  HC in [50, 1500]      range 329.5 - 603.8  (households: 0 ever above, 0 ever below, 0 above at handoff)
+  every simulated state is inside both grids
+
+============================================================================
+--report-only: stopping before the search
+============================================================================
+wrote output/smm_runs/2026-09-07_201704_temp_input_layout_check/run_record.toml
+wrote output/smm_runs/2026-09-07_201704_temp_input_layout_check/run.log
