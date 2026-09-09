@@ -33,10 +33,23 @@ p = Parent_child_interaction_age_specific_AR1(Na=12, Nhc=12, simN=200, school_ti
         @test_throws ErrorException load_targets(path)
     end
     # School changes the time cost, not the production function at fixed own study.
-    legacy = Parent_child_interaction_age_specific_AR1(Na=12,Nhc=12,simN=200)
+    # `legacy` must now ask for zeros EXPLICITLY: the default is the real schedule.
+    legacy = Parent_child_interaction_age_specific_AR1(Na=12,Nhc=12,simN=200,school_time=zeros(17))
     @test HC_technology_full(p,0.2,0.3,500.0,0.05,12) ==
           HC_technology_full(legacy,0.2,0.3,500.0,0.05,12)
     @test child_leisure(legacy,0.2,0.05,12) ≈ 0.75
+
+    # The DEFAULT is the real median-school schedule, and it is the same schedule the
+    # frozen targets carry. A default of zeros silently solved PARENT_DEFAULTS -- which
+    # were fitted WITH school -- against a budget that has none, and no test caught it.
+    defaulted = Parent_child_interaction_age_specific_AR1(Na=12,Nhc=12,simN=200)
+    @test defaulted.school_time == SCHOOL_TIME_BY_AGE
+    @test defaulted.school_time ≈ school
+    @test all(iszero, SCHOOL_TIME_BY_AGE[1:T_CHILD_VOICE-1])
+    @test all(0.3 .< SCHOOL_TIME_BY_AGE[T_CHILD_VOICE:end] .< 0.4)
+    @test default_school_time(17) == SCHOOL_TIME_BY_AGE
+    @test length(default_school_time(20)) == 20            # longer horizon repeats age 17
+    @test default_school_time(20)[18:20] == fill(SCHOOL_TIME_BY_AGE[end], 3)
 end
 println("Solving child and school-time parent for gradient/feasibility checks"); flush(stdout)
 ch=ConSavLaborCollege_AR1(Na=30,Nk=30,Nt=5,rho=1.5,psi_terminal=0.0,

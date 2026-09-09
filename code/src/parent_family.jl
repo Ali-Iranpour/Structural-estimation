@@ -231,6 +231,48 @@ boundary meant finding all of them.
 # ~1 in Cunha-Heckman-Schennach -- are in docs/ERRORS.md, P11.
 const T_CHILD_VOICE = 6
 
+# Fixed school time by child age, as a share of the 112h non-sleep week.
+#
+# School is COMPULSORY at ages 6-17, so it is not a choice: it is subtracted from the
+# child's leisure and from the time available to allocate, exactly as own study is, but
+# the child cannot trade it away. Below T_CHILD_VOICE it is identically zero -- the same
+# convention `study_hrs` uses, and the same range over which the model gives the child no
+# decision at all.
+#
+# SOURCE: mean over observations of `school_hrs / 112` within each Child_Age, from
+# Input/SMM_Moments_Micro.dta. `school_hrs` is itself the MEDIAN school time within
+# (Year, Child_Age), so this is a median-school schedule averaged to the age level.
+# VERIFIED 2026-09-10 to reproduce the frozen schedule in
+# output/smm_runs/2026-09-09_123333/targets.toml to 0.0e+00 -- the estimation and this
+# default are the same numbers, so a notebook run and an SMM run solve the same model.
+#
+# THIS IS THE DEFAULT, not an opt-in. It used to default to zeros(T) to preserve the
+# pre-2026-09-09 school-plus-study calibration, but PARENT_DEFAULTS has since been
+# refitted WITH school present: sigma_4_0 = -5.77 was chosen so that a child already
+# losing a third of its week to school still studies ~0.05. Solving those parameters
+# against a zero schedule silently mixes a calibration from one time budget into another.
+# MEASURED: the notebook did exactly that, and its chosen study came out 0.127 against a
+# 0.039 target -- Q = 2.09 rather than 0.0019. Callers that genuinely want the legacy
+# behaviour must now ask for `school_time = zeros(T)` explicitly.
+const SCHOOL_TIME_BY_AGE = [
+    0.0, 0.0, 0.0, 0.0, 0.0,                       # ages 1-5: before school, zero by convention
+    0.3160584935, 0.3306361565, 0.3359894079,      # ages 6-8
+    0.3367848822, 0.3354439923, 0.3377380950,      # ages 9-11
+    0.3444408981, 0.3452324589, 0.3494698613,      # ages 12-14
+    0.3448271324, 0.3402822060, 0.3219866019,      # ages 15-17
+]
+
+"""
+    default_school_time(T) -> Vector{Float64}
+
+`SCHOOL_TIME_BY_AGE` fitted to a horizon of `T` periods. The family stage is 17 periods,
+so the common case is an exact copy; a longer horizon repeats the age-17 value rather
+than falling off the end of the schedule.
+"""
+default_school_time(T::Int) =
+    T == length(SCHOOL_TIME_BY_AGE) ? copy(SCHOOL_TIME_BY_AGE) :
+    [SCHOOL_TIME_BY_AGE[min(t, length(SCHOOL_TIME_BY_AGE))] for t in 1:T]
+
 # Initial child HC at CHILD AGE 1, in W-score units: log HC_1 ~ N(HC0_MEAN_LOG, HC0_SD_LOG).
 # Fitted log-linearly on ages 3-17 of the PCA composite and extrapolated back, because the
 # test is not administered before age 3. Derivation in the constructor.
@@ -400,9 +442,10 @@ function Parent_child_interaction_age_specific_AR1(;
         hc_max::Float64=1500.0, hc_min::Float64=50.0, hc_focus::Float64=700.0, Nhc::Int=30 ,
         # --- simulation details ----
         simN::Int=5000, simT::Int=T, seed::Int=1234,
-        # Zero preserves the fitted legacy school-plus-study baseline. Future SMM
-        # calls pass the fixed age schedule frozen in their own targets.toml.
-        school_time::AbstractVector{<:Real}=zeros(T),
+        # Defaults to the real median-school schedule -- see SCHOOL_TIME_BY_AGE. An SMM
+        # run passes the copy frozen in its own targets.toml; the two are identical.
+        # Pass zeros(T) explicitly for the pre-2026-09-09 school-plus-study behaviour.
+        school_time::AbstractVector{<:Real}=default_school_time(T),
 
         # --- Slope/Intercept parameters for ALL age-specific variables ---
         # beta_0 = 0.98 (was 0.97), by instruction 2026-08-28. WHY: consumption was
