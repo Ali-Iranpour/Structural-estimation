@@ -640,7 +640,35 @@ const SMM_PARAMS = [
     # what distinguishes a genuinely binding box from an optimizer sliding along a flat
     # direction. It costs ~3 h against ~13 h for another blind estimation.
     SMMParam(:sigma_2_1, -0.30, 0.05, :level),
-    SMMParam(:sigma_4_0, -6.0, -1.0,  :level), # school + study pilot; old incumbent retained
+    # LOWER LIMIT -10.0 (was -6.0, which was a leftover from the school-plus-study pilot).
+    #
+    # THE FLOOR BOUND UNDER THE OWN-STUDY SPECIFICATION. 3636d43 recorded this as open and
+    # estimated the requirement at about -6.3. MEASURED here at grid 30, simN 2000, every
+    # other parameter held at PARENT_DEFAULTS and sigma_4_1 at 0.02, that estimate is well
+    # short -- at -6.3 the model still produces nearly three times the study target:
+    #
+    #     sigma_4_0   i_c early   gap     i_c late   gap        Q
+    #        -6.000     0.1421   +262%      0.1157  +133%    6.04
+    #        -6.300     0.1153   +193%      0.0907   +83%    3.06
+    #        -6.500     0.0994   +153%      0.0766   +54%    1.81
+    #        -7.000     0.0666    +70%      0.0492    -1%    0.38
+    #        -7.500     0.0432    +10%      0.0310   -38%    0.23   <- univariate minimum
+    #        -8.000     0.0274    -30%      0.0192   -61%    0.51
+    #
+    # So the univariate optimum is near -7.5, not -6.3, and Q is U-shaped around it. The
+    # model solves cleanly with zero violations all the way to -12, so the floor is a
+    # modelling choice rather than a numerical limit.
+    #
+    # -10.0 IS DELIBERATELY GENEROUS, and the reason is sigma_2_1: it was widened three
+    # times in 0.05 steps, pinned each time, and cost a full estimation on each occasion
+    # before a large step finally let it settle at -0.155. A floor 2.5 below the univariate
+    # optimum should not need revisiting.
+    #
+    # The joint optimum will differ from the sweep above. The other nine parameters move,
+    # and sigma_4_1 is now ESTIMATED, so the early/late tilt that the sweep cannot resolve
+    # -- early wants about -7.5 while late wants about -7.0 -- is exactly what the slope is
+    # there to absorb.
+    SMMParam(:sigma_4_0, -10.0, -1.0,  :level),
     # Same candidate interval already used by jacobian.jl. This is a search box,
     # not an identification result; reassess it after the first own-study fit.
     SMMParam(:sigma_4_1, -0.05, 0.15, :level),
