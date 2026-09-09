@@ -111,38 +111,48 @@ sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity abo
 HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
-# Promoted 2026-09-09 from run 2026-09-09_003312, full-precision checkpoint search vector.
-# Previous baseline: run 2026-09-08_100413.
-# This is the fitted nine-parameter baseline; R_1, sigma_4_1 and mu_1 remain fixed.
+# Promoted 2026-09-10 from run 2026-09-09_123333, full-precision checkpoint search vector.
+# Previous baseline: run 2026-09-09_003312 -- SUPERSEDED, not merely updated: that
+# baseline was fitted under the SCHOOL-PLUS-STUDY specification (child choosing
+# c_time_hrs, ~41 hrs/wk). 3636d43 respecified the child's time so it chooses OWN STUDY
+# only (study_hrs, ~4-6 hrs/wk) with school as an exogenous time cost, and froze
+# sigma_4_1 as a tenth ESTIMATED parameter rather than holding it at 0.02. The two
+# baselines are not comparable point for point; this one is a fresh fit, not a
+# refinement of the old one.
 #
-# THE SOURCE RUN WAS ACCEPTED -- the first one that was. Every condition held:
+# THE SOURCE RUN WAS ACCEPTED. Every condition held:
 #
 #   winner came from the polish, its own return code FTOL_REACHED (converged)
-#   8 of 8 restarts converged, 0 hit a budget, 0 other
+#   1 of 5 restarts converged, 4 hit a budget, 0 other -- the winning restart converged;
+#     acceptance is about the RETAINED WINNER, not the other four (see run_smm.jl)
 #   0 objective exceptions, 0 invalid simulation cells
 #   NO parameter on a bound, and none even within 5% of one
-#   Q = 0.00181947
+#   Q = 0.0016389 (against Q = 19.98 at the stale nine-parameter incumbent)
 #
-# So these are estimates rather than, as in the previous two promotions, a vector
-# carrying a value that the optimizer had been stopped against by its box.
+# FIT is close on every targeted moment -- worst gap 3.6% (mean_c_p), most under 0.5%:
+#   mean_i_c_early   0.0393 vs 0.0393   (-0.1%)   the moment sigma_4_0's floor exists for
+#   mean_i_c_late    0.0496 vs 0.0496   ( 0.0%)
+#   mean_t_p_late    0.3334 vs 0.3333   ( 0.0%)
+#   mean_e_p_late    0.3913 vs 0.3911   ( 0.1%)
+#   mean_hc_early    6.0745 vs 6.0737   ( 0.1%)
 #
-# WHAT SETTLED THE sigma_2_1 QUESTION. It had pinned at -0.05, at -0.10 and at -0.15,
-# which looked from outside like a ridge -- an optimizer sliding to whatever wall it was
-# given. Widening to -0.30 answered it: sigma_2_1 came to rest at -0.15518, INTERIOR at
-# 41.4% of the box, only just past the old wall. It was a binding box after all, and the
-# margin says how narrowly: Q improved only 7% (0.0019618 -> 0.0018195) for all that
-# extra room, which is why three smaller widenings could not tell the difference.
+# THE sigma_4_0 FLOOR WIDENING (579b8f7, this session) DID ITS JOB. sigma_4_0 landed at
+# -5.771, interior at 47.0% of [-10.0, -1.0] -- nowhere near either the old -6.0 floor
+# (which pinned) or the new one. sigma_4_1 is now estimated at +0.133, interior at 91.4%
+# of [-0.05, 0.15]; not flagged (the near-bound threshold is 95%) but the highest position
+# of any parameter in this run and worth re-checking next time the box is touched.
 #
-# STILL WORTH WATCHING, and neither is a bound problem:
-#   * lambda_2 = 60.25, at 93.3% of its box and higher than the 54.13 before it. It is
-#     interior and not flagged, but it has climbed at every opportunity. It means the
-#     child weights skill SIXTY times its own leisure, which is how the model reproduces
-#     41 hrs/wk of compulsory school through a taste parameter. See SMMParam(:lambda_2):
-#     this is a specification question, not a bounds question, and it is for Sahber.
-#   * sigma_2_1 = -0.155 makes the money elasticity fall 91.3% over the family stage, so
-#     money is very nearly irrelevant to human capital by adolescence. That is now a
-#     result rather than an artefact of a wall, but it is a strong claim and should be
-#     stated as one.
+# sigma_2_1 = -0.0830, interior at 62.0% of [-0.30, 0.05] -- well clear of the -0.15 wall
+# it pinned against under the old specification. lambda_2 = 10.67, interior at 70.6% of
+# [0.05, 100] -- an order of magnitude below the 60.25 the old specification needed to
+# make a child choose 41 hrs/wk of "study"; with school now exogenous, the taste
+# parameter no longer has to explain a legal requirement, which is the specification fix
+# working as intended.
+#
+# UNTARGETED, for context: implied saving rate 31.2%, terminal assets 37.60 model units
+# ($376,030) against the data's mean 17.56 / median 3.04 at child age 17 -- still a large
+# untargeted gap, unaffected by this specification change. 0 households off the asset
+# grid (max simulated 93.8 against a_max = 100).
 #
 const PARENT_DEFAULTS = (
     # phi and lambda are TIME-INVARIANT by instruction (2026-08-30): they are
@@ -150,8 +160,8 @@ const PARENT_DEFAULTS = (
     # vectors are gone. phi_1 and lambda_1 are NORMALISED to 1 -- utility is only
     # defined up to the relative weights, so two of the five must be pinned.
     phi_1 = 1.0,              # NORMALISATION, not estimated
-    phi_2 = 0.19035683117576727, # estimated: mean hours of work
-    phi_3 = 1.4070772834572107,  # estimated: parental time + monetary investment
+    phi_2 = 0.18966337502260514, # estimated: mean hours of work
+    phi_3 = 1.247773975252876,   # estimated: parental time + monetary investment
     # -----------------------------------------------------------------------------
     # HUMAN CAPITAL IS IN THE DATA'S UNITS (PCA W-score), not model units
     # -----------------------------------------------------------------------------
@@ -174,18 +184,20 @@ const PARENT_DEFAULTS = (
 #
     # M = 753.4, the ratio of the new mean HC at age 0 (376.7, from the data) to the old
     # Uniform(0,1) mean of 0.5.
-    R_0 = 43.448063063292487,  R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
-    sigma_1_0 = -1.2936073985011984, sigma_1_1 = -0.15939141202695176,
-    # sigma_2_1 is now INTERIOR at 41.4% of [-0.30, 0.05] -- the box was binding, not a ridge.
-    sigma_2_0 = -4.3174970122018772, sigma_2_1 = -0.15518453946681088,
+    R_0 = 50.451874986448765,  R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
+    sigma_1_0 = -0.73742469047958237, sigma_1_1 = -0.08508122744006319,
+    # sigma_2_1 is INTERIOR at 62.0% of [-0.30, 0.05], well clear of the old -0.15 wall.
+    sigma_2_0 = -3.6232611097640031, sigma_2_1 = -0.082970149883598854,
     # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
     # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
     sigma_3_0 = -0.90, sigma_3_1 =  0.0,
-    sigma_4_0 = -4.0407087624299001, sigma_4_1 =  0.02,
+    # sigma_4_1 is now ESTIMATED (own-study respecification, 3636d43), not fixed at 0.02.
+    # sigma_4_0 is INTERIOR at 47.0% of its widened [-10.0, -1.0] floor -- see 579b8f7.
+    sigma_4_0 = -5.7706831937452918, sigma_4_1 =  0.1327287728066934,
     lambda_1 = 1.0,           # NORMALISATION, not estimated
-    # Interior at 93.3% of [0.05, 100] and higher again than the 54.13 before it. Not
-    # flagged, but it has climbed at every opportunity. See the header of PARENT_DEFAULTS.
-    lambda_2 = 60.252947562943881, # estimated: the child's own study time
+    # Interior at 70.6% of [0.05, 100] -- an order of magnitude below what the old
+    # school-plus-study specification needed. See the header of PARENT_DEFAULTS.
+    lambda_2 = 10.672227279089897, # estimated: the child's own study time
     mu_0 = 1.0,        mu_1 = -0.04,
     tau = 0.18,        y = 0.6,
 )
