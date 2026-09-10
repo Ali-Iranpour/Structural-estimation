@@ -1,0 +1,39 @@
+moment,block,measure,estimate,se,n_obs,n_clusters,n_clusters_system
+k0_entry,kappa_0,four-year entry,.6162120630042259,.01156410379675,2603,1203,1481
+k0_complete,kappa_0,four-year completion,.3226272103933598,.0114671914682076,2771,1232,1481
+kth_lw17_t1_e,kappa_theta,four-year entry,.459016393442623,.0443379332470901,122,114,1481
+kth_lw17_t1_c,kappa_theta,four-year completion,.128,.0298985754078052,125,117,1481
+kth_lw17_t2_e,kappa_theta,four-year entry,.6704545454545454,.0534332276266686,88,78,1481
+kth_lw17_t2_c,kappa_theta,four-year completion,.3777777777777778,.0559392275663493,90,78,1481
+kth_lw17_t3_e,kappa_theta,four-year entry,.8100000000000001,.0397009352126213,100,95,1481
+kth_lw17_t3_c,kappa_theta,four-year completion,.5294117647058824,.0507734091409657,102,97,1481
+kth_lw18_t1_e,kappa_theta,four-year entry,.293103448275862,.0570616560003682,58,54,1481
+kth_lw18_t1_c,kappa_theta,four-year completion,.0517241379310345,.0291994215494274,58,54,1481
+kth_lw18_t2_e,kappa_theta,four-year entry,.5769230769230769,.0703094750062243,52,51,1481
+kth_lw18_t2_c,kappa_theta,four-year completion,.25,.0604521679262923,52,51,1481
+kth_lw18_t3_e,kappa_theta,four-year entry,.825,.0607324295439497,40,38,1481
+kth_lw18_t3_c,kappa_theta,four-year completion,.475,.0749314932053705,40,38,1481
+kth_ga17_t1_e,kappa_theta,four-year entry,.4313725490196079,.046849896607174,102,94,1481
+kth_ga17_t1_c,kappa_theta,four-year completion,.1132075471698113,.0304247216881271,106,98,1481
+kth_ga17_t2_e,kappa_theta,four-year entry,.5904761904761905,.0474672820059672,105,98,1481
+kth_ga17_t2_c,kappa_theta,four-year completion,.2452830188679245,.0417844402398045,106,98,1481
+kth_ga17_t3_e,kappa_theta,four-year entry,.8737864077669902,.0327822433045321,103,95,1481
+kth_ga17_t3_c,kappa_theta,four-year completion,.6285714285714286,.0479042398849636,105,97,1481
+kth_ga18_t1_e,kappa_theta,four-year entry,.24,.0566781181857785,50,47,1481
+kth_ga18_t1_c,kappa_theta,four-year completion,.02,.0198299146118563,50,47,1481
+kth_ga18_t2_e,kappa_theta,four-year entry,.5490196078431373,.0669111019097698,51,49,1481
+kth_ga18_t2_c,kappa_theta,four-year completion,.1568627450980392,.0513116902035855,51,49,1481
+kth_ga18_t3_e,kappa_theta,four-year entry,.8163265306122449,.0544532581344484,49,47,1481
+kth_ga18_t3_c,kappa_theta,four-year completion,.5306122448979592,.0683457258804871,49,47,1481
+kpe_g0_e,kappa_ParEd,four-year entry,.5269168026101142,.0163635883307889,1226,683,1481
+kpe_g0_c,kappa_ParEd,four-year completion,.2107657316148597,.0127959401647475,1319,713,1481
+kpe_g1_e,kappa_ParEd,four-year entry,.8461538461538461,.0129901153950603,871,534,1481
+kpe_g1_c,kappa_ParEd,four-year completion,.6013143483023001,.0184297331942175,913,548,1481
+kpe_gu_e,kappa_ParEd,four-year entry,.4381338742393509,.0223066915422392,493,301,1481
+kpe_gu_c,kappa_ParEd,four-year completion,.1254752851711027,.0140766027158259,526,313,1481
+kterm_x_loose,kappa_term,net worth excl. home (2015 USD),430420.7769023514,63334.54963320013,980,606,1481
+kterm_i_loose,kappa_term,net worth incl. home (2015 USD),600110.4243541412,70424.81495279985,980,606,1481
+kterm_x_strict,kappa_term,net worth excl. home (2015 USD),429803.0562628839,78056.38103621725,737,486,1481
+kterm_i_strict,kappa_term,net worth incl. home (2015 USD),586413.7780351478,85052.56611285442,737,486,1481
+kterm_x_broad,kappa_term,net worth excl. home (2015 USD),443396.8916111272,84603.15445728114,679,455,1481
+kterm_i_broad,kappa_term,net worth incl. home (2015 USD),598805.0542536794,92095.67005663912,679,455,1481
