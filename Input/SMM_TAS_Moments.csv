@@ -1,39 +1,33 @@
 moment,block,measure,estimate,se,n_obs,n_clusters,n_clusters_system
-k0_entry,kappa_0,four-year entry,.6162120630042259,.01156410379675,2603,1203,1481
-k0_complete,kappa_0,four-year completion,.3226272103933598,.0114671914682076,2771,1232,1481
-kth_lw17_t1_e,kappa_theta,four-year entry,.459016393442623,.0443379332470901,122,114,1481
-kth_lw17_t1_c,kappa_theta,four-year completion,.128,.0298985754078052,125,117,1481
-kth_lw17_t2_e,kappa_theta,four-year entry,.6704545454545454,.0534332276266686,88,78,1481
-kth_lw17_t2_c,kappa_theta,four-year completion,.3777777777777778,.0559392275663493,90,78,1481
-kth_lw17_t3_e,kappa_theta,four-year entry,.8100000000000001,.0397009352126213,100,95,1481
-kth_lw17_t3_c,kappa_theta,four-year completion,.5294117647058824,.0507734091409657,102,97,1481
-kth_lw18_t1_e,kappa_theta,four-year entry,.293103448275862,.0570616560003682,58,54,1481
-kth_lw18_t1_c,kappa_theta,four-year completion,.0517241379310345,.0291994215494274,58,54,1481
-kth_lw18_t2_e,kappa_theta,four-year entry,.5769230769230769,.0703094750062243,52,51,1481
-kth_lw18_t2_c,kappa_theta,four-year completion,.25,.0604521679262923,52,51,1481
-kth_lw18_t3_e,kappa_theta,four-year entry,.825,.0607324295439497,40,38,1481
-kth_lw18_t3_c,kappa_theta,four-year completion,.475,.0749314932053705,40,38,1481
-kth_ga17_t1_e,kappa_theta,four-year entry,.4313725490196079,.046849896607174,102,94,1481
-kth_ga17_t1_c,kappa_theta,four-year completion,.1132075471698113,.0304247216881271,106,98,1481
-kth_ga17_t2_e,kappa_theta,four-year entry,.5904761904761905,.0474672820059672,105,98,1481
-kth_ga17_t2_c,kappa_theta,four-year completion,.2452830188679245,.0417844402398045,106,98,1481
-kth_ga17_t3_e,kappa_theta,four-year entry,.8737864077669902,.0327822433045321,103,95,1481
-kth_ga17_t3_c,kappa_theta,four-year completion,.6285714285714286,.0479042398849636,105,97,1481
-kth_ga18_t1_e,kappa_theta,four-year entry,.24,.0566781181857785,50,47,1481
-kth_ga18_t1_c,kappa_theta,four-year completion,.02,.0198299146118563,50,47,1481
-kth_ga18_t2_e,kappa_theta,four-year entry,.5490196078431373,.0669111019097698,51,49,1481
-kth_ga18_t2_c,kappa_theta,four-year completion,.1568627450980392,.0513116902035855,51,49,1481
-kth_ga18_t3_e,kappa_theta,four-year entry,.8163265306122449,.0544532581344484,49,47,1481
-kth_ga18_t3_c,kappa_theta,four-year completion,.5306122448979592,.0683457258804871,49,47,1481
-kpe_g0_e,kappa_ParEd,four-year entry,.5269168026101142,.0163635883307889,1226,683,1481
-kpe_g0_c,kappa_ParEd,four-year completion,.2107657316148597,.0127959401647475,1319,713,1481
-kpe_g1_e,kappa_ParEd,four-year entry,.8461538461538461,.0129901153950603,871,534,1481
-kpe_g1_c,kappa_ParEd,four-year completion,.6013143483023001,.0184297331942175,913,548,1481
-kpe_gu_e,kappa_ParEd,four-year entry,.4381338742393509,.0223066915422392,493,301,1481
-kpe_gu_c,kappa_ParEd,four-year completion,.1254752851711027,.0140766027158259,526,313,1481
-kterm_x_loose,kappa_term,net worth excl. home (2015 USD),430420.7769023514,63334.54963320013,980,606,1481
-kterm_i_loose,kappa_term,net worth incl. home (2015 USD),600110.4243541412,70424.81495279985,980,606,1481
-kterm_x_strict,kappa_term,net worth excl. home (2015 USD),429803.0562628839,78056.38103621725,737,486,1481
-kterm_i_strict,kappa_term,net worth incl. home (2015 USD),586413.7780351478,85052.56611285442,737,486,1481
-kterm_x_broad,kappa_term,net worth excl. home (2015 USD),443396.8916111272,84603.15445728114,679,455,1481
-kterm_i_broad,kappa_term,net worth incl. home (2015 USD),598805.0542536794,92095.67005663912,679,455,1481
+k0_complete,kappa_0,"share completing a bachelor's or higher by age 25, on CF",.3226272103933598,.0114671914681807,2771,1232,1481
+kth_ga17_t1_c,kappa_theta,completion by tertile 1 of g_ACH within A17,.1132075471698113,.0304247216881576,106,98,1481
+kth_ga17_t2_c,kappa_theta,completion by tertile 2 of g_ACH within A17,.2452830188679245,.0417844402398463,106,98,1481
+kth_ga17_t3_c,kappa_theta,completion by tertile 3 of g_ACH within A17,.6285714285714286,.0479042398846869,105,97,1481
+kth_ga17_gap,kappa_theta,"mean ln(g_ACH) among completers minus non-completers, A17",.0311661522976987,.0031387526024571,317,275,1481
+kth_ga17_mean_c,kappa_theta,"mean ln(g_ACH) among completers, A17",6.284338172223236,.0024158979377327,104,96,1481
+kth_ga17_mean_n,kappa_theta,"mean ln(g_ACH) among non-completers, A17",6.253172019925537,.002208280259068,213,191,1481
+kpe_g0_c,kappa_ParEd,"completion, both parents observed below 16 years",.2107657316148597,.0127959401647326,1319,713,1481
+kpe_g1_c,kappa_ParEd,"completion, at least one parent with 16+ years",.6013143483023001,.0184297331941036,913,548,1481
+kpe_gu_c,kappa_ParEd,"completion, one parent unobserved and the other below 16",.1254752851711027,.0140766027158198,526,313,1481
+kterm_x_strict,kappa_term,"mean parental net worth excl. home, strict terminal, 2015 USD",429803.0562628839,78056.38103541158,737,486,1481
+sd_ga17,sigma_eta,sample SD of ln(g_ACH) on A17,.0329082252814275,.001865510217731,317,275,1481
+kse_w_gap,sigma_eps,"mean W99 among completers minus non-completers, W, 10,000 USD",36.84306749307406,7.490057588751506,665,448,1481
+k0_w_c,sigma_eps,completion on W,.393984962406015,.0223148127895681,665,448,1481
+kse_w_t1_c,sigma_eps,completion by wealth tertile 1 of W99 within W,.2072072072072072,.0292846607181791,222,166,1481
+kse_w_t2_c,sigma_eps,completion by wealth tertile 2 of W99 within W,.3574660633484163,.0340001945309597,221,174,1481
+kse_w_t3_c,sigma_eps,completion by wealth tertile 3 of W99 within W,.6171171171171171,.0383066260697413,222,160,1481
+sd_ga_age3,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 3",.0826982629343491,.0093758413433591,20,19,1825
+sd_ga_age4,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 4",.0529263776311657,.0049723885540323,44,44,1825
+sd_ga_age5,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 5",.0441067637198373,.005670404813059,35,34,1825
+sd_ga_age6,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 6",.0535756741758639,.0051624943487489,40,40,1825
+sd_ga_age7,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 7",.0594980339834969,.0071093096164202,43,42,1825
+sd_ga_age8,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 8",.0450891651796872,.0069823501619828,41,41,1825
+sd_ga_age9,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 9",.0310040351218868,.0049632627815585,29,27,1825
+sd_ga_age10,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 10",.0225803811047117,.0016523857881327,44,44,1825
+sd_ga_age11,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 11",.0296962132531478,.0027329951541264,46,45,1825
+sd_ga_age12,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 12",.0286931089451192,.00492328782186,57,57,1825
+sd_ga_age13,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 13",.0276435946953199,.0026604859745102,61,61,1825
+sd_ga_age14,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 14",.0211690262805563,.0024723294447063,62,62,1825
+sd_ga_age15,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 15",.0218911753348426,.0017981152626894,79,78,1825
+sd_ga_age16,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 16",.0301275793253107,.0023062180171938,108,106,1825
+sd_ga_age17,sigma_eta,"sample SD of ln(g_ACH), CDS panel, child age 17",.0313329175051923,.0028847823994483,92,87,1825
