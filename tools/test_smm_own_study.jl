@@ -10,8 +10,17 @@ targets = load_targets(smm_targets_file())
 school = target_school_time(targets)
 p = Parent_child_interaction_age_specific_AR1(Na=12, Nhc=12, simN=200, school_time=school)
 @testset "Own study specification and frozen targets" begin
-    @test length(SMM_PARAMS) == length(SMM_MOMENTS) == 10
+    # Was `== 10 == 10` for the square parent-only design. The specification is now
+    # fourteen parameters against seventeen moments, so this pins BOTH counts AND the
+    # split, which is the part that can go wrong silently: a child parameter that
+    # accidentally reports itself as parent-owned would still give 14 and 17.
+    @test length(SMM_PARAMS) == 14
+    @test length(SMM_MOMENTS) == 17
+    @test length(SMM_PARENT_PARAMS) == 10 && length(SMM_CHILD_PARAMS) == 4
+    @test length(SMM_PARENT_MOMENTS) == 10 && length(SMM_TAS_MOMENTS) == 7
+    @test collect(SMM_MOMENTS) == vcat(collect(SMM_PARENT_MOMENTS), collect(SMM_TAS_MOMENTS))
     @test :sigma_4_1 in getfield.(SMM_PARAMS, :name)
+    @test Set(SMM_CHILD_PARAMS) == Set((:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal))
     @test SMM_AGE_HC_LATE_LO == 12
     @test all(iszero, school[1:5])
     @test all(0.3 .< school[6:17] .< 0.4)

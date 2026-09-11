@@ -130,6 +130,8 @@ it starts purely from `s₁`. Polish is BOBYQA at `1e-10`
 
 ### The nine parameters
 
+**Over-identified by three (since 2026-09-10)**: seventeen moments against fourteen parameters. Historically ten against nine; the paragraph below was written then and its argument carries over unchanged.
+
 **Over-identified by one**: ten moments against nine parameters. That is deliberate, and it
 changes two things from the earlier just-identified design — `Q` **cannot** reach zero, and
 the weighting matrix is **not** irrelevant at the optimum. A residual gap is therefore not
@@ -583,17 +585,49 @@ parental-education channels do operate. Open Tier-0 item; it will move the estim
 
 ## Why a run is affordable
 
-The estimated parameters are **all** parent-block, so the child lifecycle, its transfer stage
-and the terminal value spline depend on none of them. They are solved **once per process** at
-startup and reused for every evaluation — exact, not an approximation. Each evaluation is
-then just: build the parent, backward-induct, simulate. 98% of that is `solve_model!`.
+**SUPERSEDED 2026-09-10 — read this before quoting the old invariant below.**
 
-This invariant is load-bearing, so it is **enforced**: `moments.jl` errors at load time if any
-name in `SMM_PARAMS` is not a field of `PARENT_DEFAULTS`. Adding a child parameter (`rho`,
-`omega`, `psi_terminal`, `kappa_terminal`, …) would silently keep reusing a stale child solve
-and report a converged fit for a model it never solved — wrong answers, no error. If a child
-parameter genuinely has to be estimated, the fix is to move `build_child_value()` inside
-`smm_objective` and pay a full child solve per evaluation, not to delete the guard.
+Until 2026-09-10 every estimated parameter was a parent-block parameter, so the child
+lifecycle, its transfer stage and the terminal value spline depended on none of them. They
+were solved **once per process** and reused, which was exact rather than approximate, and
+`moments.jl` enforced it by erroring at load time if any `SMM_PARAMS` name was not a field
+of `PARENT_DEFAULTS`.
+
+**That invariant is now false by design.** Four child parameters are estimated —
+`kappa_0`, `kappa_theta`, `kappa_ParEd`, `kappa_terminal` — and every one of them changes
+the child solve. The guard was **not deleted**; it was replaced, because deleting it is
+precisely what would produce a converged fit for a model that was never solved.
+
+### What replaced it
+
+The child solve has four stages, and the four parameters do not touch all of them:
+
+| stage | cost (grid 30, warm) | reads any of the four? |
+|---|---|---|
+| `solve_model_work!` (high-school path) | 6.31 s | **no** |
+| `solve_model_college!` stage 1 (graduate life, E=1) | ~5.8 s | **no** |
+| `solve_model_college!` stage 2 (the `t_college` study years) | ~0.5 s | `kappa_0`, `kappa_theta`, `m_psychic` |
+| `optimal_transfer_work!` + `optimal_transfer_college!` | 0.50 s | `kappa_terminal` |
+| `terminal_value_spline` | ~0.00 s | `kappa_ParEd` |
+
+So 12.1 s of the 12.9 s is invariant across the whole search and only ~1.2 s has to be
+redone per evaluation. `build_child_solution` in `moments.jl` caches the two invariant
+stages under a **complete dependency key** (`child_config`, which contains every
+non-estimated child setting and no estimated one) and rebuilds the rest.
+
+**This is exact, and it was verified rather than argued.** Refreshing from the cached work
+and graduate blocks reproduces a full re-solve **bit-identically** — `max |diff| = 0.000e+00`
+on `sol_v_college`, `sol_c_college` and `sol_h_college`, with an identical NaN feasibility
+pattern — at 16.9× the speed. There is no tolerance to tune: the arrays are copied, not
+refitted. `tools/test_smm_tas.jl` group 4 is the standing regression on it.
+
+The cache stores **solution arrays, not a model object**, deliberately: a cached model
+would carry mutable `sim_*` state and any simulator touching it would contaminate every
+later evaluation with another draw's simulation. There is no cached object to simulate.
+
+Each evaluation is therefore: rebuild ~1.2 s of child solve, build the parent,
+backward-induct, simulate, hand off, resimulate the child, compute seventeen moments. The
+parent solve is still most of it.
 
 Only the Sobol stage parallelises; the restarts are sequential by construction. To spend a
 bigger machine on this problem, raise `--sobol`, not `--restarts`.

@@ -126,52 +126,58 @@ end
 const TARGETS_FILE = freeze_smm_targets(RUN_DIR; source=argstr("--targets", ""), resume=RESUMING, at=ATFILE)
 @everywhere const BASE_TARGETS = load_targets($TARGETS_FILE)
 
-# MOMENT SCALES ARE FROZEN AT THE BASELINE, once, here.
+# MOMENT WEIGHTS ARE FROZEN AT THE BASELINE, once, here.
 #
-# `moment_scale` divides a level moment by its own target. If the scale were recomputed at
-# the perturbed target, moving a target would change both the residual AND its weight, and
-# the curve would show the sum of the two. Freezing it isolates the thing being varied.
-@everywhere const FROZEN_SCALE =
-    Dict(k => moment_scale(k, BASE_TARGETS[k].mean) for k in SMM_MOMENTS)
+# The objective now weights by 1/se_j^2 rather than by the target's own level, but the
+# reason for freezing is unchanged and is if anything sharper: if the weight were
+# recomputed at the perturbed target, moving a target would change both the residual AND
+# its weight, and the curve would show the sum of the two. Freezing isolates the thing
+# being varied. The SEs come from the joint clustered covariance and do not move with a
+# hypothetical shift in a target's LEVEL in any case.
+@everywhere const FROZEN_W = moment_weights(BASE_TARGETS)
 
-@everywhere function build_child_value()
-    ch = ConSavLaborCollege_AR1(; Na = 30, Nk = 30, Nt = 5, rho = 1.5, psi_terminal = 0.0,
-                                  kappa_terminal = 5.0, omega = 0.3, a_max = 100.0, w = 20.0,
-                                  simN = 500, seed = 1234)
-    redirect_stdout(devnull) do; redirect_stderr(devnull) do
-        solve_model_work!(ch); solve_model_college!(ch)
-        optimal_transfer_work!(ch); optimal_transfer_college!(ch)
-    end end
-    return terminal_value_spline(ch; s = 10.0)
+# THE CHILD SOLVE IS NO LONGER A CONSTANT (2026-09-10). Four of the fourteen estimated
+# parameters are child parameters, so a fixed `V_CHILD` would answer for a model this
+# tool never solved -- and, for the Jacobian specifically, would produce four columns of
+# exact zeros in precisely the directions that were just added. The shared pipeline in
+# moments.jl rebuilds the child per evaluation and caches only the two stages that read
+# none of the four; that cache is warmed here so the first evaluation is not paying for it.
+print("warming the child solve on every process ... "); flush(stdout)
+let t0 = time()
+    @everywhere let cfg = child_config(BASE_TARGETS; Na = 30, Nk = 30, Nt = 5,
+                                                simN = $SIM_N, seed = $SEED)
+        child_base(cfg)
+    end
+    sayf("%.1fs\n", time() - t0)
 end
-print("solving the child value function on every process ... "); flush(stdout)
-let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n", time() - t) end
+check_psychic_centring(target_m_psychic(BASE_TARGETS))
 
 # The objective at a PERTURBED target vector, with everything else frozen.
 @everywhere function sens_objective(z, shifted::Dict{String,Float64}; Na, Nhc, simN, seed)
     kw = unpack(z)
     smm_feasible(kw) || return (_penalize!(:infeasible_sigma_2); SMM_PENALTY)
     try
-        p = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = 2, Nhc = Nhc,
-                                                        simN = simN, seed = seed, school_time = target_school_time(BASE_TARGETS), kw...)
-        p.V_child_interp = V_CHILD
-        redirect_stdout(devnull) do
-            solve_model!(p; verbose = false); simulate_model!(p)
-        end
-        m = model_moments(p)
-        v = simulation_violations(p)
+        # The SHARED pipeline -- the same one smm_objective uses. The child block is
+        # rebuilt per draw, so a perturbed target that moves a kappa moves the child
+        # solution too, which is the whole point of the exercise now that four child
+        # parameters are estimated.
+        r = run_pipeline(kw, BASE_TARGETS; Na = Na, Nk = 2, Nhc = Nhc, simN = simN,
+                         seed = seed, child_grid = (Na = 30, Nk = 30, Nt = 5),
+                         demo_sim = false)
+        m = model_moments(r, BASE_TARGETS)
+        v = simulation_violations(r.parent)
         v.total > 0 && return (_penalize!(:invalid_sim); SMM_PENALTY)
+        m.n_nonfinite > 0 && return (_penalize!(:invalid_sim_child_nonfinite); SMM_PENALTY)
         q = 0.0
-        for k in SMM_MOMENTS
+        for (j, k) in enumerate(SMM_MOMENTS)
             mj = getfield(m, Symbol(k))
             isfinite(mj) || return SMM_PENALTY
-            q += ((mj - shifted[k]) / FROZEN_SCALE[k])^2     # frozen scale, shifted target
+            q += FROZEN_W[j] * (mj - shifted[k])^2     # frozen weight, shifted target
         end
         return q
     catch err
         cause = _root_cause(err)
-        if cause isa ErrorException || cause isa DomainError ||
-           cause isa AssertionError || cause isa InexactError
+        if is_model_failure(cause)
             return (_penalize!(nameof(typeof(cause))); SMM_PENALTY)
         end
         rethrow()

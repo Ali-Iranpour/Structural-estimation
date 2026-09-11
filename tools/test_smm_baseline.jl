@@ -43,7 +43,15 @@ redirect_stdout(devnull) do
     solve_model!(p;verbose=false);simulate_model!(p)
 end
 m=model_moments(p);tg=load_targets(joinpath(REPO,SNAP["targets_file"]))
-Q=sum(((getproperty(m,Symbol(k))-tg[k].mean)/moment_scale(k,tg[k].mean))^2 for k in SMM_MOMENTS)
+# PARENT BLOCK ONLY, AND ON THE OLD PROPORTIONAL SCALE -- deliberately.
+#
+# The snapshot Q this test pins was produced by the ten-moment, moment_scale objective. It
+# is still a valid regression on the parent block: the same parameters must still give the
+# same parent moments and the same handoff. It is NOT a test of the seventeen-moment
+# objective, which weights by 1/se^2 and includes the TAS block, and pretending otherwise
+# by re-pinning the number here would throw away the only frozen reference to the parent
+# solve that exists. `code/smm/selftest.jl` covers the new specification.
+Q=sum(((getproperty(m,Symbol(k))-tg[k].mean)/moment_scale(k,tg[k].mean))^2 for k in SMM_PARENT_MOMENTS)
 @testset "Full-grid fit and handoff" begin
     @test Q ≈ SNAP["Q_final"] atol=1e-9 rtol=0
     @test simulation_violations(p).total==0

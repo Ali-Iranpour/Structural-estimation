@@ -92,18 +92,21 @@ end
 
 const TARGETS_FILE = freeze_smm_targets(OUTDIR; source=argstr("--targets", ""), at=AT_FILE)
 @everywhere const TARGETS = load_targets($TARGETS_FILE)
-@everywhere function build_child_value()
-    ch = ConSavLaborCollege_AR1(; Na = 30, Nk = 30, Nt = 5, rho = 1.5, psi_terminal = 0.0,
-                                  kappa_terminal = 5.0, omega = 0.3, a_max = 100.0, w = 20.0,
-                                  simN = 500, seed = 1234)
-    redirect_stdout(devnull) do; redirect_stderr(devnull) do
-        solve_model_work!(ch); solve_model_college!(ch)
-        optimal_transfer_work!(ch); optimal_transfer_college!(ch)
-    end end
-    return terminal_value_spline(ch; s = 10.0)
+# THE CHILD SOLVE IS NO LONGER A CONSTANT (2026-09-10). Four of the fourteen estimated
+# parameters are child parameters, so a fixed `V_CHILD` would answer for a model this
+# tool never solved -- and, for the Jacobian specifically, would produce four columns of
+# exact zeros in precisely the directions that were just added. The shared pipeline in
+# moments.jl rebuilds the child per evaluation and caches only the two stages that read
+# none of the four; that cache is warmed here so the first evaluation is not paying for it.
+print("warming the child solve on every process ... "); flush(stdout)
+let t0 = time()
+    @everywhere let cfg = child_config(TARGETS; Na = 30, Nk = 30, Nt = 5,
+                                                simN = $SIM_N, seed = $SEED)
+        child_base(cfg)
+    end
+    sayf("%.1fs\n", time() - t0)
 end
-print("solving the child value function on every process ... "); flush(stdout)
-let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n", time() - t) end
+check_psychic_centring(target_m_psychic(TARGETS))
 
 # -----------------------------------------------------------------------------
 # The columns: the nine estimated parameters, plus any candidate extension
@@ -133,8 +136,9 @@ const COLUMNS = vcat(
         sym = Symbol(nm)
         haskey(CANDIDATES, sym) || error("--extend: no box on record for $nm. Add it to CANDIDATES.")
         c = CANDIDATES[sym]
-        hasproperty(PARENT_DEFAULTS, sym) ||
-            error("--extend $nm is not a parent-block parameter; the child solve could not be reused.")
+        (hasproperty(PARENT_DEFAULTS, sym) || hasproperty(CHILD_DEFAULTS, sym)) ||
+            error("--extend $nm is in neither PARENT_DEFAULTS nor CHILD_DEFAULTS, so it " *
+                  "cannot be routed to a constructor.")
         Column(sym, c.lo, c.hi, c.link, false)
     end for nm in EXTEND if Symbol(nm) ∉ getfield.(SMM_PARAMS, :name)])
 
@@ -149,7 +153,7 @@ from_s(z, c::Column) = c.link === :log ? exp(z) : z
 # named there falls back to PARENT_DEFAULTS, which is what makes a candidate extension
 # evaluable at a fitted nine-parameter point.
 const THETA0 = begin
-    base = Dict{Symbol,Float64}(c.name => getfield(PARENT_DEFAULTS, c.name) for c in COLUMNS)
+    base = Dict{Symbol,Float64}(c.name => param_default(c.name) for c in COLUMNS)
     if !isempty(AT_FILE)
         raw = TOML.parsefile(AT_FILE)
         pars = get(raw, "parameters", Dict{String,Any}())
@@ -166,20 +170,16 @@ end
 
 # Any parameter NOT a column is held at its default; the model is built from a full kwarg
 # set so nothing is implicit.
-@everywhere function residuals_at(vals::Dict{Symbol,Float64}; Na, Nhc, simN, seed)
-    kw = NamedTuple{Tuple(keys(vals))}(Tuple(values(vals)))
-    p = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = 2, Nhc = Nhc,
-                                                    simN = simN, seed = seed, school_time = target_school_time(TARGETS), kw...)
-    p.V_child_interp = V_CHILD
-    redirect_stdout(devnull) do
-        solve_model!(p; verbose = false); simulate_model!(p)
-    end
-    m = model_moments(p)
-    v = simulation_violations(p)
-    r = [ (getfield(m, Symbol(k)) - TARGETS[k].mean) / moment_scale(k, TARGETS[k].mean)
-          for k in SMM_MOMENTS ]
-    return (r = r, nviol = v.total, nbad = m.n_nonfinite)
-end
+# ONE definition of the residual, shared with smm_objective and every other tool
+# (`evaluate_at` in moments.jl). This used to build its own parent model, reuse a
+# process-wide `V_CHILD`, and scale by `moment_scale`; all three have moved, so that a
+# Jacobian is necessarily the Jacobian OF THE OBJECTIVE BEING MINIMISED rather than of a
+# near-copy of it that could drift from it.
+#
+# The residual is sqrt(w_j)*(m_j - mhat_j) with w_j = 1/se_j^2, so sum of squares IS Q.
+@everywhere residuals_at(vals::Dict{Symbol,Float64}; Na, Nhc, simN, seed) =
+    evaluate_at(vals, TARGETS; Na = Na, Nk = 2, Nhc = Nhc, simN = simN, seed = seed,
+                child_grid = (Na = 30, Nk = 30, Nt = 5))
 
 const NP_ = length(COLUMNS)
 const NM_ = length(SMM_MOMENTS)
@@ -321,9 +321,13 @@ open(joinpath(OUTDIR, "jacobian.toml"), "w") do io
     println(io, "lo        = [", join((c.lo for c in COLUMNS), ", "), "]")
     println(io, "hi        = [", join((c.hi for c in COLUMNS), ", "), "]")
     println(io, "link      = [", join(("\"$(c.link)\"" for c in COLUMNS), ", "), "]")
-    println(io, "\n[moment_scales]")
+    # The residual scale s_j, i.e. 1/sqrt(w_j) = se_j. Kept under the ORIGINAL key name
+    # because standard_errors.jl reads it; the VALUE is now the moment's standard error
+    # rather than its target level, which is what the objective actually divides by.
+    println(io, "\n[moment_scales]   # s_j = se_j; residual = (m_j - mhat_j)/s_j")
     for k in SMM_MOMENTS
-        @printf(io, "%-16s = %.10f\n", k, moment_scale(k, TARGETS[k].mean))
+        @printf(io, "%-22s = %.10g
+", k, target_se(TARGETS)[findfirst(==(k), collect(SMM_MOMENTS))])
     end
     for step in STEPS
         r = RESULTS[step]

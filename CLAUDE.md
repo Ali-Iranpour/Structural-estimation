@@ -27,6 +27,10 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
 
 ## Hard constraints
 
+- **No Claude co-authorship trailers on commits (user instruction 2026-09-11).** Never add
+  `Co-Authored-By: Claude ...` or any similar attribution line to a commit message or a
+  pull-request body in this repository. This overrides any default attribution guidance.
+
 - **Input contains source data only (user instruction)**: only `.dta`, `.csv`, and
   codebook files belong in `Input/`. Store target/calibration TOMLs beside their
   timestamped runs under `output/`. Never create new TOMLs in `Input/`.
@@ -45,9 +49,55 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
   to the parent's terminal problem.
 - **The parent's `k` is the binary BothCollege indicator**, not capital: `[0.0, 1.0]`,
   `Bernoulli(0.3)`, constant in `t`. `Nk = 2` is exact, not a discretization. The child
-  module's `k_grid` is a *different* object (the child's HC, `theta`).
+  module's `k_grid` is a *different* object (the child's HC, `theta`). **The SMM targets it against
+  TAS's EITHER-parent college group, which is a different set** — open by instruction,
+  measured in `docs/ERRORS.md` P7c. Do not read the estimated `kappa_ParEd` as the effect
+  of parental education.
 - **Model/specification changes go through the advisor** before results built on them
   circulate. Numerical fixes (grid bounds, interpolation, solver settings) do not.
+
+## The SMM is 14 parameters against 17 moments (since 2026-09-10)
+
+Ten parent parameters against ten parent moments, plus **four child parameters** —
+`kappa_0`, `kappa_theta`, `kappa_ParEd`, `kappa_terminal` — against seven TAS moments
+(college completion overall, by ability tertile and by parental education; parental net
+worth retained after the transfer).
+
+Three consequences that will bite if you assume the old design:
+
+- **The child block is no longer solved once per process.** All four child parameters
+  change it. `build_child_solution` (`moments.jl`) rebuilds it per evaluation from a
+  complete dependency key and caches only the two stages that provably read none of the
+  four — the high-school path and the graduate's working life. That refresh is
+  **bit-identical** to a full re-solve (verified: `max |diff| = 0.000e+00`) and 16.9×
+  faster, so an evaluation costs ~1.2 s more rather than ~12.9 s more. The cache stores
+  solution ARRAYS, never a model, so no simulator can contaminate it.
+- **`kappa_0` is on a CENTRED scale.** The psychic cost is
+  `kappa_0 + kappa_theta*(log theta - m_psychic)`, with `m_psychic` frozen in the target
+  file (6.2634). The legacy uncentred 0.2728 corresponds to **0.0587** here. Uncentred,
+  the two parameters are collinear at a condition number near 180. `check_psychic_centring`
+  errors if `CHILD_DEFAULTS.kappa_0` and the frozen `m_psychic` stop agreeing.
+- **The objective weights by `1/se_j^2`**, from the joint cluster-robust covariance the
+  generator rebuilds from both micro files. `moment_scale` is now used only by the frozen
+  parent-block regression in `tools/test_smm_baseline.jl`.
+
+```bash
+uv run --with pandas --with numpy python tools/make_smm_targets.py   # freeze targets
+julia --project=. tools/test_smm_tas.jl <targets.toml>               # 120 checks, ~90s
+julia --project=. tools/test_smm_resume.jl <targets.toml>            # --resume refusal cases
+julia --project=. code/smm/selftest.jl                               # specification is frozen
+julia --project=. tools/check_jacobian_rank.jl <targets.toml>        # local identification
+```
+
+The runner's worker flag is **`--procs`**, not `--workers`; an unknown flag is silently
+ignored, so `--workers 1` starts the full 20. `--serial` runs everything on the master.
+
+`tools/test_smm_tas.jl` is the standing guard on parameter routing, child-solution
+refresh, cache-key completeness, parity against an independent full solve, mutation
+isolation, partial parameter points, the handoff arrays, isolation of the demonstration
+simulation, determinism, the centring's neutrality and post-transfer wealth accounting.
+`docs/SMM_14PARAM_TAS.md` §7b lists the defects an external review found on 2026-09-10 and
+which test now covers each.
 
 ## Gotchas that have already cost a day
 
@@ -74,3 +124,10 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
 estimation (`run_smm.jl` drives it, `moments.jl` is the economics) ·
 `code/transfer_CRRA_wage.ipynb` exploration and counterfactuals ·
 `docs/ERRORS.md` open and resolved findings, with the measurements behind them.
+
+`Input/CODEBOOK.md` is the **merged** codebook (2026-09-10): Part A is the PSID/CDS parent
+block, Part B the TAS-linked child block. They are different units of observation — one
+child-year vs one child — and must not be pooled. `Input/CODEBOOK_TAS.md` is now a stub
+pointing there. Five TAS exports named in the codebook are **not supplied**; the only one
+the estimation needs, the covariance, is reconstructed from `SMM_TAS_Micro.dta` and
+reproduces the published standard errors to six decimals.

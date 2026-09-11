@@ -145,19 +145,22 @@ end
     kw = free_unpack(z, fixed_value)
     smm_feasible(kw) || return SMM_PENALTY
     try
-        p = Parent_child_interaction_age_specific_AR1(; Na = PGRID, Nk = 2, Nhc = PGRID,
-                                                        simN = PSIMN, seed = PSEED, school_time = target_school_time(TARGETS), kw...)
-        p.V_child_interp = V_CHILD
-        redirect_stdout(devnull) do
-            solve_model!(p; verbose = false); simulate_model!(p)
-        end
-        m = model_moments(p)
-        simulation_violations(p).total > 0 && return SMM_PENALTY
+        # The SHARED pipeline. `fixed_value` may now be a CHILD parameter -- profiling
+        # kappa_theta or kappa_terminal is exactly the use this tool was built for, since
+        # both are suspected of sliding along a ridge -- so the child block has to be
+        # rebuilt at each ladder rung rather than held fixed.
+        r = run_pipeline(kw, TARGETS; Na = PGRID, Nk = 2, Nhc = PGRID,
+                         simN = PSIMN, seed = PSEED,
+                         child_grid = (Na = 30, Nk = 30, Nt = 5), demo_sim = false)
+        m = model_moments(r, TARGETS)
+        simulation_violations(r.parent).total > 0 && return SMM_PENALTY
+        m.n_nonfinite > 0 && return SMM_PENALTY
+        w = moment_weights(TARGETS)
         q = 0.0
-        for k in SMM_MOMENTS
+        for (j, k) in enumerate(SMM_MOMENTS)
             mj = getfield(m, Symbol(k))
             isfinite(mj) || return SMM_PENALTY
-            q += ((mj - TARGETS[k].mean) / moment_scale(k, TARGETS[k].mean))^2
+            q += w[j] * (mj - TARGETS[k].mean)^2
         end
         return q
     catch err
@@ -167,22 +170,25 @@ end
     end
 end
 
-@everywhere function build_child_value()
-    ch = ConSavLaborCollege_AR1(; Na = 30, Nk = 30, Nt = 5, rho = 1.5, psi_terminal = 0.0,
-                                  kappa_terminal = 5.0, omega = 0.3, a_max = 100.0, w = 20.0,
-                                  simN = 500, seed = 1234)
-    redirect_stdout(devnull) do; redirect_stderr(devnull) do
-        solve_model_work!(ch); solve_model_college!(ch)
-        optimal_transfer_work!(ch); optimal_transfer_college!(ch)
-    end end
-    return terminal_value_spline(ch; s = 10.0)
+# THE CHILD SOLVE IS NO LONGER A CONSTANT (2026-09-10). Four of the fourteen estimated
+# parameters are child parameters, so a fixed `V_CHILD` would answer for a model this
+# tool never solved -- and, for the Jacobian specifically, would produce four columns of
+# exact zeros in precisely the directions that were just added. The shared pipeline in
+# moments.jl rebuilds the child per evaluation and caches only the two stages that read
+# none of the four; that cache is warmed here so the first evaluation is not paying for it.
+print("warming the child solve on every process ... "); flush(stdout)
+let t0 = time()
+    @everywhere let cfg = child_config(TARGETS; Na = 30, Nk = 30, Nt = 5,
+                                                simN = $SIM_N, seed = $SEED)
+        child_base(cfg)
+    end
+    sayf("%.1fs\n", time() - t0)
 end
-print("solving the child value function on every process ... "); flush(stdout)
-let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n", time() - t) end
+check_psychic_centring(target_m_psychic(TARGETS))
 
 # ---- the starting point ------------------------------------------------------
 const START = begin
-    base = Dict{Symbol,Float64}(q.name => getfield(PARENT_DEFAULTS, q.name) for q in SMM_PARAMS)
+    base = Dict{Symbol,Float64}(q.name => param_default(q.name) for q in SMM_PARAMS)
     if !isempty(ATFILE)
         pars = TOML.parsefile(ATFILE)["parameters"]
         for (k, v) in pars

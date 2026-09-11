@@ -230,8 +230,24 @@ end
 
 # -----------------------------------------------------------------------------
 banner("Specification is frozen as instructed")
-check("ten estimated parameters", length(SMM_PARAMS) == 10, "$(length(SMM_PARAMS))")
-check("ten targeted moments", length(SMM_MOMENTS) == 10, "$(length(SMM_MOMENTS))")
+# 2026-09-10: was "ten and ten". Those two checks necessarily FAILED under the
+# fourteen-parameter specification, so this self-test could not pass at all -- and its
+# closing banner is "do not run the estimation", which would have been the standing advice.
+check("fourteen estimated parameters", length(SMM_PARAMS) == 14, "$(length(SMM_PARAMS))")
+check("seventeen targeted moments", length(SMM_MOMENTS) == 17, "$(length(SMM_MOMENTS))")
+check("ten parent + four child parameters",
+      length(SMM_PARENT_PARAMS) == 10 && length(SMM_CHILD_PARAMS) == 4,
+      "$(length(SMM_PARENT_PARAMS)) + $(length(SMM_CHILD_PARAMS))")
+check("ten parent + seven TAS moments",
+      length(SMM_PARENT_MOMENTS) == 10 && length(SMM_TAS_MOMENTS) == 7,
+      "$(length(SMM_PARENT_MOMENTS)) + $(length(SMM_TAS_MOMENTS))")
+check("the four child parameters are the kappas",
+      Set(SMM_CHILD_PARAMS) == Set((:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal)))
+check("moment order is parent block then TAS block",
+      collect(SMM_MOMENTS) == vcat(collect(SMM_PARENT_MOMENTS), collect(SMM_TAS_MOMENTS)))
+check("every estimated parameter routes to exactly one block",
+      all(q -> (q.owner === :parent) == hasproperty(PARENT_DEFAULTS, q.name) &&
+               (q.owner === :child)  == hasproperty(CHILD_DEFAULTS, q.name), SMM_PARAMS))
 check("sigma_4_1 is estimated", any(q -> q.name === :sigma_4_1, SMM_PARAMS))
 check("mu_1 is NOT estimated and holds at -0.04",
       !any(q -> q.name === :mu_1, SMM_PARAMS) && PARENT_DEFAULTS.mu_1 == -0.04)

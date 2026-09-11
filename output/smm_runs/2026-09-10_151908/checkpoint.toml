@@ -1,0 +1,44 @@
+# Written after each restart by code/smm/run_smm.jl. Safe to read
+# while the run is going; rewritten atomically.
+# Resume with:  julia --project=../.. run_smm.jl --resume <this dir>
+stage         = "final"
+restarts_done = 1
+param_names   = ["phi_2", "phi_3", "lambda_2", "R_0", "sigma_1_0", "sigma_1_1", "sigma_2_0", "sigma_2_1", "sigma_4_0", "sigma_4_1", "kappa_0", "kappa_theta", "kappa_ParEd", "kappa_terminal"]
+param_lo      = [0.01, 0.05, 0.05, 0.5, -4.0, -0.2, -5.0, -0.3, -10.0, -0.05, -2.0, -10.0, -3.0, 0.5]
+param_hi      = [20.0, 20.0, 100.0, 100.0, -0.1, 0.05, -0.5, 0.05, -1.0, 0.15, 5.0, 0.0, 0.0, 40.0]
+param_link    = ["log", "log", "log", "log", "level", "level", "level", "level", "level", "level", "level", "level", "level", "log"]
+targets_sha   = "bd09cc72912edace"
+source_sha    = "14b04d44b52427e6"   # child_lifecycle + parent_family + moments
+spec_version  = "smm14_tas7_centred_v1"
+m_psychic     = 6.263396877461691   # the psychic-cost centring this run used
+moment_names  = ["mean_c_p", "mean_h_p", "mean_t_p_early", "mean_t_p_late", "mean_e_p_early", "mean_e_p_late", "mean_i_c_early", "mean_i_c_late", "mean_hc_early", "mean_hc_late", "k0_complete", "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c", "kpe_g0_c", "kpe_g1_c", "kterm_x_strict_w99"]
+child_grid    = "12x12x3"
+seed          = 1234
+sim_n         = 300
+restarts_total= 1
+Q_best        = 2375.5808635080703
+objective_grid= 12   # the grid Q_best was computed at
+Q_incumbent   = 2429.1173321286883   # at grid_search
+grid_search   = 12
+grid_report   = 12
+minutes       = 5.7
+updated       = "2026-09-10 15:25:56"
+
+[search_vector]
+z = [-1.6962218190727998, 0.21460832004067434, 2.401161609874932, 3.920072482493528, -0.7369134870197791, -0.086522146945067366, -3.6010536813767677, -0.091344115181328997, -5.7617661988008617, 0.13276583401507569, 1.8656721924288446, -0.0086836026379741599, -0.0017812246046898866, 1.945384535390561]
+
+[parameters]
+phi_2      = 0.18337504
+phi_3      = 1.23937636
+lambda_2   = 11.03598845
+R_0        = 50.40409806
+sigma_1_0  = -0.73691349
+sigma_1_1  = -0.08652215
+sigma_2_0  = -3.60105368
+sigma_2_1  = -0.09134412
+sigma_4_0  = -5.76176620
+sigma_4_1  = 0.13276583
+kappa_0    = 1.86567219
+kappa_theta = -0.00868360
+kappa_ParEd = -0.00178122
+kappa_terminal = 6.99632167

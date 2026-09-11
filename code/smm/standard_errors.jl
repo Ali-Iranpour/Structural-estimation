@@ -119,6 +119,18 @@ end
 # ---- Omega, in the SCALED residual metric -----------------------------------
 # [moment_cov] is the covariance of the RAW moment means. The objective works in
 # r = (m - mhat)/s, so the covariance that matters is S^-1 Omega S^-1.
+#
+# SINCE 2026-09-10 s_j IS THE MOMENT'S OWN STANDARD ERROR, not its target level. Two
+# consequences, both of them improvements and neither of them automatic:
+#
+#   * S^-1 Omega S^-1 is now the CORRELATION matrix of the moment vector. The codebook
+#     warns that the raw covariance is ill-conditioned by construction because the vector
+#     mixes probabilities with dollars, and that one should "scale the moments
+#     consistently, or invert the correlation form, not the raw one". This is that form.
+#   * `W_EQ = I` in this metric is NOT equal weighting of the raw moments -- it is
+#     diagonal inverse-variance weighting, which is exactly the weight smm_objective
+#     minimises. The column labelled "equal W" below is therefore the standard error of
+#     the estimator actually being computed. It is relabelled accordingly.
 const MNAMES = String.(MC["names"])
 MNAMES == JROWS || error("""
     moment order differs between the Jacobian ($(join(JROWS, ", ")))
@@ -128,14 +140,39 @@ const SCALES = [Float64(JMETA["moment_scales"][m]) for m in MNAMES]
 const OMEGA = Diagonal(1 ./ SCALES) * OMEGA_RAW * Diagonal(1 ./ SCALES)
 
 # ---- the sandwich ------------------------------------------------------------
-sandwich(G, W, Omega) = begin
+# RANK-AWARE, by pseudo-inverse with an explicit tolerance, rather than `inv(G'WG)`.
+#
+# `A = G'WG` is exactly singular when the Jacobian is rank deficient, and that is not a
+# hypothetical here: MEASURED at the incumbent calibration, where the model's college share
+# is exactly zero and none of the six completion moments responds, the residual Jacobian has
+# rank 11 of 14 at a 2% finite-difference step and 12 of 14 at 5%
+# (`tools/check_jacobian_rank.jl`). `inv` on that either throws or -- worse, near but not at
+# singularity -- returns a huge finite matrix, and the standard errors that come out of it
+# look like numbers rather than like a warning.
+#
+# The pseudo-inverse zeroes the directions the data cannot resolve instead of inverting
+# them. A parameter whose standard error depends entirely on such a direction then reports
+# a `rank_deficient` flag rather than a confident interval, and `A_RANK` is printed.
+#
+# The tolerance is the LAPACK/Golub-Van Loan convention: max(size) * eps * largest singular
+# value. It is reported, so a rank call can be checked rather than trusted.
+function psd_pinv(A; label = "A")
+    F = svd(Symmetric(A))
+    tol = maximum(size(A)) * eps(Float64) * (isempty(F.S) ? 0.0 : F.S[1])
+    rk = count(>(tol), F.S)
+    Ai = F.V * Diagonal([sv > tol ? 1 / sv : 0.0 for sv in F.S]) * F.U'
+    return Ai, rk, tol
+end
+
+function sandwich(G, W, Omega)
     A = G' * W * G
-    Ai = inv(A)
-    Ai * (G' * W * Omega * W * G) * Ai
+    Ai, rk, tol = psd_pinv(A)
+    V = Ai * (G' * W * Omega * W * G) * Ai
+    return V, rk, tol
 end
 
 const W_EQ  = Matrix{Float64}(I, NM_, NM_)
-const V_EQ  = sandwich(G, W_EQ, OMEGA)
+const (V_EQ, A_RANK, A_TOL) = sandwich(G, W_EQ, OMEGA)
 const SE_EQ = sqrt.(max.(diag(V_EQ), 0.0))
 
 # Efficient weighting, for comparison only. Omega can be near-singular; a pseudo-inverse
@@ -145,7 +182,7 @@ const F_OM = svd(OMEGA)
 const OM_TOL = maximum(size(OMEGA)) * eps() * F_OM.S[1]
 const OM_RANK = count(>(OM_TOL), F_OM.S)
 const W_OPT = F_OM.V * Diagonal([s > OM_TOL ? 1/s : 0.0 for s in F_OM.S]) * F_OM.U'
-const V_OPT = sandwich(G, W_OPT, OMEGA)
+const (V_OPT, A_RANK_OPT, _) = sandwich(G, W_OPT, OMEGA)
 const SE_OPT = sqrt.(max.(diag(V_OPT), 0.0))
 
 # ---- report ------------------------------------------------------------------
@@ -162,13 +199,23 @@ sayf("grids        Na = Nhc = %d, simN = %d, seed = %d\n",
      JMETA["grid_Na"], JMETA["simN"], JMETA["seed"])
 sayf("moment cov   clustered on %s, %d clusters\n", MC["cluster_on"], MC["n_clusters"])
 sayf("Omega rank   %d of %d  (tolerance %.3g)\n", OM_RANK, NM_, OM_TOL)
+sayf("G'WG rank    %d of %d  (tolerance %.3g)\n", A_RANK, NP_, A_TOL)
+if A_RANK < NP_
+    say("!! THE JACOBIAN IS RANK DEFICIENT AT THIS POINT: " *
+        "$(NP_ - A_RANK) parameter direction(s) are not")
+    say("   identified by these moments. A pseudo-inverse is used, so the standard errors")
+    say("   below are conditional on the unidentified directions being fixed -- they are")
+    say("   NOT confidence intervals for those parameters. Check the point: at the")
+    say("   incumbent the model's college share is zero and the completion moments do not")
+    say("   respond, which loses three columns. tools/check_jacobian_rank.jl reproduces it.")
+end
 if OM_RANK < NM_
     say("!! Omega is rank deficient: the efficient-weight column below uses a pseudo-inverse")
     say("   and should not be read as an efficient estimator.")
 end
 
 # Is the point on a bound? A symmetric interval is meaningless there.
-say("\nparameter           estimate    se(equal W)   se(optimal W)     95% CI (equal W)")
+say("\nparameter           estimate    se(diag 1/V)  se(optimal W)    95% CI (diag 1/V)")
 say("-"^80)
 for j in 1:NP_
     th = Float64(POINT[CNAMES[j]])

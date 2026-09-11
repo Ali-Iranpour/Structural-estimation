@@ -117,18 +117,21 @@ sayf("targets  %s\n", relpath(TARGETS_FILE, REPO))
 @everywhere const TARGETS = load_targets($TARGETS_FILE)
 @everywhere const GS_GRID, GS_SIMN, GS_SEED = $GRID, $SIM_N, $SEED
 
-@everywhere function build_child_value()
-    ch = ConSavLaborCollege_AR1(; Na = 30, Nk = 30, Nt = 5, rho = 1.5, psi_terminal = 0.0,
-                                  kappa_terminal = 5.0, omega = 0.3, a_max = 100.0, w = 20.0,
-                                  simN = 500, seed = 1234)
-    redirect_stdout(devnull) do; redirect_stderr(devnull) do
-        solve_model_work!(ch); solve_model_college!(ch)
-        optimal_transfer_work!(ch); optimal_transfer_college!(ch)
-    end end
-    return terminal_value_spline(ch; s = 10.0)
+# THE CHILD SOLVE IS NO LONGER A CONSTANT (2026-09-10). Four of the fourteen estimated
+# parameters are child parameters, so a fixed `V_CHILD` would answer for a model this
+# tool never solved -- and, for the Jacobian specifically, would produce four columns of
+# exact zeros in precisely the directions that were just added. The shared pipeline in
+# moments.jl rebuilds the child per evaluation and caches only the two stages that read
+# none of the four; that cache is warmed here so the first evaluation is not paying for it.
+print("warming the child solve on every process ... "); flush(stdout)
+let t0 = time()
+    @everywhere let cfg = child_config(TARGETS; Na = 30, Nk = 30, Nt = 5,
+                                                simN = $SIM_N, seed = $SEED)
+        child_base(cfg)
+    end
+    sayf("%.1fs\n", time() - t0)
 end
-print("solving the child value function on every process ... "); flush(stdout)
-let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n", time() - t) end
+check_psychic_centring(target_m_psychic(TARGETS))
 
 # NOTE ON THE CHILD SOLVE. It keeps a_max = 100 throughout, deliberately: the child block's
 # own grid is a separate object and changing it would confound the parent-grid question
@@ -136,28 +139,47 @@ let t = time(); @everywhere const V_CHILD = build_child_value(); sayf("%.1fs\n",
 # terminal-value spline is evaluated by interpolation, so a parent household above 100 is
 # already extrapolating there -- which is part of what this measures.
 
+# The SHARED pipeline, at a given parent asset ceiling. The child block is rebuilt per
+# draw: `kw` can now contain child parameters, and the child's terminal-value spline is
+# what the parent's a_max interacts with, so holding the child fixed while varying a_max
+# would measure the wrong thing.
 @everywhere function solve_at(kw, a_max)
-    p = Parent_child_interaction_age_specific_AR1(; Na = GS_GRID, Nk = 2, Nhc = GS_GRID,
-                                                    a_max = a_max, simN = GS_SIMN,
-                                                    seed = GS_SEED, school_time = target_school_time(TARGETS), kw...)
-    p.V_child_interp = V_CHILD
-    redirect_stdout(devnull) do
-        solve_model!(p; verbose = false); simulate_model!(p)
-    end
-    return p
+    # `a_max` REACHES THE PARENT CONSTRUCTOR. It did not between 2026-09-10 and this fix:
+    # the refactor onto the shared pipeline dropped it, so every rung of the sweep solved
+    # at the DEFAULT ceiling and the tool reported "the asset grid does not move the
+    # moments" no matter what ceilings it was given. That is the one conclusion this tool
+    # exists to reach, and it was reaching it vacuously.
+    #
+    # `parent_extra` is the pipeline's declared channel for non-estimated parent settings;
+    # it errors if it would collide with an estimated parameter.
+    return run_pipeline(kw, TARGETS; Na = GS_GRID, Nk = 2, Nhc = GS_GRID,
+                        simN = GS_SIMN, seed = GS_SEED,
+                        child_grid = (Na = 30, Nk = 30, Nt = 5),
+                        parent_extra = (a_max = a_max,), demo_sim = false)
 end
 
-@everywhere function evaluate_at(kw, a_max)
+# RENAMED from `evaluate_at` (2026-09-10): moments.jl now exports an `evaluate_at` of its
+# own, and two same-named functions in Main differing only in argument types is a trap --
+# a call that should have been an error would silently dispatch to the other one.
+@everywhere function gs_evaluate_at(kw, a_max)
     try
-        p = solve_at(kw, a_max)
-        m = model_moments(p); d = moment_diagnostics(p); v = simulation_violations(p)
+        r = solve_at(kw, a_max)
+        p = r.parent
+        m = model_moments(r, TARGETS); d = moment_diagnostics(p); v = simulation_violations(p)
+        w = moment_weights(TARGETS)
         q = 0.0
-        for k in SMM_MOMENTS
+        for (j, k) in enumerate(SMM_MOMENTS)
             mj = getfield(m, Symbol(k))
             isfinite(mj) || return nothing
-            q += ((mj - TARGETS[k].mean) / moment_scale(k, TARGETS[k].mean))^2
+            q += w[j] * (mj - TARGETS[k].mean)^2
         end
-        return (q = q, m = m, d = d, viol = v.total,
+        # The ceiling actually used, read back off the solved model. Reported alongside
+        # the requested one so a future refactor that drops `a_max` again shows up as a
+        # visible mismatch in the output rather than as a null result.
+        isapprox(p.a_max, a_max; rtol = 1e-12) || error(
+            "grid sweep asked for a_max = $a_max but the parent was built with " *
+            "$(p.a_max) -- the ceiling is not reaching the constructor.")
+        return (q = q, m = m, d = d, viol = v.total, a_max_used = p.a_max,
                 node_spacing = (a_max - p.a_grid[1]) / (GS_GRID - 1))
     catch err
         is_model_failure(_root_cause(err)) && return nothing
@@ -167,7 +189,7 @@ end
 
 # ---- the point ---------------------------------------------------------------
 const THETA = begin
-    base = Dict{Symbol,Float64}(q.name => getfield(PARENT_DEFAULTS, q.name) for q in SMM_PARAMS)
+    base = Dict{Symbol,Float64}(q.name => param_default(q.name) for q in SMM_PARAMS)
     if !isempty(ATFILE)
         for (k, v) in TOML.parsefile(ATFILE)["parameters"]
             sym = Symbol(k); haskey(base, sym) && (base[sym] = Float64(v))
@@ -190,7 +212,7 @@ end
 const OUT = []
 for am in A_MAXES
     t0 = time()
-    r = evaluate_at(THETA, am)
+    r = gs_evaluate_at(THETA, am)
     if r === nothing
         sayf("  a_max %6.0f   MODEL FAILURE -- skipped\n", am); continue
     end
@@ -220,7 +242,7 @@ for o in OUT; sayf(" %11s", @sprintf("%.0f", o.a_max)); end
 say("")
 say("-"^(27 + 12*length(OUT)))
 for k in SMM_MOMENTS
-    sc = moment_scale(k, TARGETS[k].mean)
+    sc = 1.0 / sqrt(moment_weights(TARGETS)[findfirst(==(k), collect(SMM_MOMENTS))])
     sayf("%-16s %10.4f", k, sc)
     for o in OUT
         Δ = (getfield(o.m, Symbol(k)) - getfield(BASE.m, Symbol(k))) / sc
@@ -235,8 +257,15 @@ sayf("%-16s %10s", "terminal assets", "")
 for o in OUT; sayf(" %11.3f", o.d.terminal_assets); end
 say("")
 
-let worst = maximum(maximum(abs((getfield(o.m, Symbol(k)) - getfield(BASE.m, Symbol(k))) /
-                                moment_scale(k, TARGETS[k].mean)) for k in SMM_MOMENTS)
+# IN RESIDUAL UNITS, i.e. DIVIDED by each moment's standard error -- the same scale the
+# objective works in. This read `/ 1.0 / sqrt(w)` between 2026-09-10 and this fix, and
+# since sqrt(w) = 1/se that MULTIPLIED by the standard error instead of dividing. For a
+# moment that moved 0.001 with an SE of 0.01 it reported 0.00001 residual units instead of
+# 0.1 -- four orders of magnitude too small, always below the 0.01 threshold below, and so
+# always concluding that the asset grid does not matter.
+let W = moment_weights(TARGETS),
+    worst = maximum(maximum(abs(getfield(o.m, Symbol(k)) - getfield(BASE.m, Symbol(k))) *
+                            sqrt(W[findfirst(==(k), collect(SMM_MOMENTS))]) for k in SMM_MOMENTS)
                     for o in OUT)
     sayf("\nlargest moment movement across the whole sweep: %.5f residual units\n", worst)
     say(worst < 0.01 ?
@@ -254,8 +283,15 @@ if REOPT
         println(io, "a_max,Q,", join((String(q.name) for q in SMM_PARAMS), ","), ",ret,n_eval")
     end
     for am in A_MAXES
-        for w in procs(); remotecall_fetch(() -> (Main.GS_AMAX = $am; nothing), w); end
-        obj = z -> (r = evaluate_at(unpack(z), am); r === nothing ? SMM_PENALTY : r.q)
+        # REMOVED: `remotecall_fetch(() -> (Main.GS_AMAX = $am; nothing), w)`.
+        #
+        # A leftover from an older design that pushed the ceiling to the workers through a
+        # global. `$am` is an interpolation outside a quote, which is a LOWERING error, and
+        # Julia lowers a top-level `if` block whether or not the branch is taken -- so this
+        # file aborted at this line on EVERY run, `--reoptimize` or not, and had done since
+        # before the 2026-09-10 refactor. Nothing reads `GS_AMAX`; the ceiling now travels
+        # as an argument to `gs_evaluate_at` and reaches the parent through `parent_extra`.
+        obj = z -> (r = gs_evaluate_at(unpack(z), am); r === nothing ? SMM_PENALTY : r.q)
         opt = Opt(:LN_NELDERMEAD, length(lo))
         lower_bounds!(opt, lo); upper_bounds!(opt, hi)
         ftol_rel!(opt, 1e-4); ftol_abs!(opt, 1e-10); xtol_rel!(opt, 1e-7)

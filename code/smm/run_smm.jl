@@ -67,6 +67,15 @@ const REPORT_ONLY = "--report-only" in ARGS
 # Arnoud-Guvenen-Kleineberg use N* = 0.1N. N = 1000 / N* = 100 is that standard.
 # The Sobol stage is parallel (~8 min at 20 workers); the 100 restarts are SEQUENTIAL
 # and dominate -- budget roughly 25 h. Cut --restarts, not --sobol, if that is too long.
+# THE SIMULATION SEED, named rather than left as an implicit keyword default.
+#
+# It was `1234` in four places -- the objective's default argument, the child warm-up, a
+# line in run_record.toml and a self-cancelling `SIM_N > 0 ? 1234 : 1234` in the
+# checkpoint -- so nothing could compare it and a resume could not check it. Common random
+# numbers are the whole reason the objective is a smooth function of the parameters, so
+# two seeds are two different objectives and a checkpoint from one must not resume into
+# the other.
+const SEED_       = argval("--seed",     1234)
 const N_SOBOL     = argval("--sobol",    QUICK ? 12 : 1000)
 const N_RESTART   = argval("--restarts", QUICK ?  2 : 100)
 const EVERY_SEC   = float(argval("--every", 2))   # progress line throttle, seconds
@@ -217,7 +226,8 @@ function sayf(fmt, args...)
 end
 banner(s) = (say(); say("="^76); say(s); say("="^76))
 
-banner("SMM: parent-block moments" * (QUICK ? "   [QUICK -- smoke test, not an estimate]" : ""))
+banner("SMM: 14 parameters (10 parent + 4 child) against 17 moments (10 parent + 7 TAS)" *
+       (QUICK ? "   [QUICK -- smoke test, not an estimate]" : ""))
 sayf("started    %s\n", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))
 sayf("host       %s\n", gethostname())
 sayf("machine    %d cores, %.0f GB RAM, load average %.1f\n",
@@ -283,6 +293,21 @@ const TARGETS_FILE = freeze_smm_targets(RUN_DIR; source=argstr("--targets", ""),
 using SHA
 const TARGETS_SHA  = bytes2hex(SHA.sha256(read(TARGETS_FILE)))[1:16]
 
+# SPECIFICATION IDENTITY. The targets hash alone no longer identifies the problem: four
+# child parameters are estimated, so the MODEL SOURCE is part of the objective in a way it
+# was not when the child block was a fixed spline. A checkpoint written before an edit to
+# child_lifecycle.jl now describes a different objective, and resuming into it would mix
+# two models in one sequence of restarts.
+const SOURCE_FILES = ["code/src/child_lifecycle.jl", "code/src/parent_family.jl",
+                      "code/smm/moments.jl"]
+const SOURCE_SHA = bytes2hex(SHA.sha256(
+    reduce(vcat, read(joinpath(REPO_, f)) for f in SOURCE_FILES)))[1:16]
+
+# Bumped whenever the moment set, the parameter set or the parameter MEANING changes. The
+# name/box checks below catch most of it; this catches the rest -- the 2026-09-10 psychic
+# centring changed what kappa_0 MEANS without changing any name or bound.
+const SPEC_VERSION = "smm14_tas7_centred_v1"
+
 # -----------------------------------------------------------------------------
 # A5. The reproducible run record -- written TWICE
 # -----------------------------------------------------------------------------
@@ -335,12 +360,12 @@ function write_run_record(result = nothing, q_final = NaN, q_search = NaN,
                 "]   # search coords; the incumbent, forced into the Sobol pool")
         for q in SMM_PARAMS
             @printf(io, "%-12s = %.10g   # starting value, natural units\n",
-                    "start_" * String(q.name), getfield(PARENT_DEFAULTS, q.name))
+                    "start_" * String(q.name), param_default(q.name))
         end
         println(io, "fixed_note   = \"mu_1 is NOT estimated; it holds at PARENT_DEFAULTS\"")
         println(io, "mu_1         = ", PARENT_DEFAULTS.mu_1)
         println(io, "\n[numerical]")
-        println(io, "seed         = 1234   # common random numbers, identical across evaluations")
+        println(io, "seed         = ", SEED_, "   # common random numbers, identical across evaluations")
         println(io, "simN         = ", SIM_N)
         println(io, "grid_search  = ", GRID_SEARCH, "   # parent Na = Nhc during the search")
         println(io, "grid_report  = ", GRID_FULL, "   # parent Na = Nhc for the reported fit")
@@ -384,36 +409,46 @@ end
 @everywhere const G_FULL_ = (Na = $GRID_FULL,   Nk = 2, Nhc = $GRID_FULL,   simN = $SIM_N)
 
 # -----------------------------------------------------------------------------
-# Child solve: once per process, reused by every evaluation
+# Child solve: rebuilt per evaluation, from a complete dependency key
 # -----------------------------------------------------------------------------
-# The estimated parameters are ALL parent-block, so the child lifecycle, its
-# transfer stage and the terminal value spline do not depend on them. Solving
-# once per process and reusing is EXACT, not an approximation, and it is what
-# makes each evaluation cheap enough to run thousands of.
-@everywhere function build_child_value()
-    ch = ConSavLaborCollege_AR1(; Na = CHILD_G_.Na, Nk = CHILD_G_.Nk, Nt = CHILD_G_.Nt,
-                                  rho = 1.5, psi_terminal = 0.0, kappa_terminal = 5.0,
-                                  omega = 0.3, a_max = 100.0, w = 20.0,
-                                  simN = 500, seed = 1234)
-    # ProgressMeter writes its bar to STDERR, so redirect_stdout alone leaves a
-    # half-drawn "Solving working model... 72%" across our own startup line.
-    redirect_stdout(devnull) do
-        redirect_stderr(devnull) do
-            solve_model_work!(ch); solve_model_college!(ch)
-            optimal_transfer_work!(ch); optimal_transfer_college!(ch)
-        end
-    end
-    return terminal_value_spline(ch; s = 10.0)
-end
-
-print("solving the child value function on every process ... "); flush(stdout)
+# THIS USED TO BE `@everywhere const V_CHILD = build_child_value()` -- one child solve per
+# process, reused by every evaluation. That was exact while all ten estimated parameters
+# were parent-block parameters, and it is NOT exact now: kappa_0, kappa_theta, kappa_ParEd
+# and kappa_terminal are estimated, and every one of them changes the child solve. Keeping
+# the old line would have produced converged runs for a model that was never solved.
+#
+# The rebuild lives in `build_child_solution` (moments.jl), which reuses only the two
+# stages that provably read none of the four -- the high-school path and the graduate's
+# working life -- and redoes the rest. That is bit-identical to a full re-solve and about
+# 16.9x faster, so an evaluation costs ~1.2 s more than it did rather than ~12.9 s more.
+#
+# The per-process cache is warmed here so the first Sobol batch is not paying for it while
+# the progress meter reports nothing.
+print("warming the child solve on every process ... "); flush(stdout)
 t = time()
-@everywhere const V_CHILD = build_child_value()
+@everywhere let cfg = child_config(TARGETS; Na = CHILD_G_.Na, Nk = CHILD_G_.Nk,
+                                            Nt = CHILD_G_.Nt, simN = G_.simN, seed = $SEED_)
+    child_base(cfg)
+end
 sayf("%.1fs (all processes at once)\n", time() - t)
 
-@everywhere objective(z) = smm_objective(z, TARGETS, V_CHILD;
+# The centring constant is frozen in the target file and CHILD_DEFAULTS.kappa_0 has to be
+# the legacy psychic cost re-expressed at it. Checked here, once, before any evaluation:
+# a mismatch would leave the starting value 0.21 off on a parameter whose whole box is 7
+# wide, and it would look like a bad fit rather than a bookkeeping error.
+check_psychic_centring(target_m_psychic(TARGETS))
+
+@everywhere objective(z) = smm_objective(z, TARGETS;
                                          Na = G_.Na, Nk = G_.Nk, Nhc = G_.Nhc,
-                                         simN = G_.simN)
+                                         simN = G_.simN, seed = $SEED_,
+                                         child_grid = CHILD_G_,
+                                         # The demonstration child simulation is skipped
+                                         # inside the search: it supplies nothing (its
+                                         # outputs are erased before the parent block runs)
+                                         # and it costs a simulation per evaluation. It IS
+                                         # run in the reported fit, where the full
+                                         # specified sequence is what is being reported.
+                                         demo_sim = false)
 
 # -----------------------------------------------------------------------------
 # Live progress
@@ -531,8 +566,8 @@ find the parameters.
 """
 function say_report(z)
     buf = IOBuffer()
-    r = report_fit(z, TARGETS, V_CHILD; Na = G_FULL_.Na, Nk = G_FULL_.Nk, Nhc = G_FULL_.Nhc,
-                   simN = G_FULL_.simN, out = buf)
+    r = report_fit(z, TARGETS; Na = G_FULL_.Na, Nk = G_FULL_.Nk, Nhc = G_FULL_.Nhc,
+                   simN = G_FULL_.simN, seed = SEED_, child_grid = CHILD_G_, out = buf)
     s = String(take!(buf))
     lock(OUTLOCK) do
         print(s); print(LOG, s); flush(LOG)
@@ -570,6 +605,170 @@ sayf("  total                                    %6.1f min\n", MIN_SOBOL + MIN_L
 say("\nThe local stage dominates because TikTak's restarts are sequential by")
 say("construction. More workers shorten the first line only -- to use a wide")
 say("machine well, raise --sobol (better seeds), not --restarts.")
+
+"""
+    load_resume(dir) -> NamedTuple
+
+Rebuild tiktak's `resume` argument from a run directory's checkpoint and seeds.
+Refuses rather than guesses when the saved run does not match this one.
+"""
+function load_resume(dir::AbstractString)
+    ck_p, sd_p = joinpath(dir, "checkpoint.toml"), joinpath(dir, "seeds.toml")
+    isfile(ck_p) || error("--resume: $ck_p not found")
+    isfile(sd_p) || error("""
+        --resume: $sd_p not found. The interrupted run stopped before its pre-testing
+        stage finished, so there are no seeds to continue from. Start it fresh.""")
+    ck, sd = TOML.parsefile(ck_p), TOML.parsefile(sd_p)
+    seeds = [Float64.(v) for v in sd["seeds"]]
+    n = length(SMM_PARAMS)
+    refuse(msg) = error("--resume refuses to continue $(short(dir)):\n    " * msg *
+                        "\n  Start a fresh run instead. Resuming across a changed problem " *
+                        "would mix two different\n  estimations in one sequence of restarts.")
+
+    all(length(x) == n for x in seeds) || refuse(
+        "seeds have dimension $(length(first(seeds))) but SMM_PARAMS has $n -- " *
+        "the parameter set changed.")
+    Int(ck["restarts_total"]) == N_RESTART || refuse(
+        "that run had --restarts $(ck["restarts_total"]), this one has $N_RESTART.")
+    Int(ck["grid_search"]) == GRID_SEARCH || refuse(
+        "that run searched at grid $(ck["grid_search"]), this one at $GRID_SEARCH -- " *
+        "the objectives differ.")
+
+    # A3. THE SAVED STAGE AND OBJECTIVE GRID DECIDE WHETHER A RESUME IS EVEN MEANINGFUL.
+    #
+    # A "refined" or "final" checkpoint holds a FULL-GRID objective. Feeding it back as the
+    # local stage's incumbent would compare a grid-30 value against grid-20 values for the
+    # rest of the run, and every subsequent restart would be measured against a number it
+    # cannot beat. That is a silent corruption of the search, not an inconvenience.
+    stage = get(ck, "stage", "local")
+    ogrid = Int(get(ck, "objective_grid", GRID_SEARCH))
+    stage == "local" || refuse(
+        "that checkpoint is at stage \"$stage\", not \"local\" -- it holds a FINISHED " *
+        "run's winner, not\n    an interrupted search. There is nothing to continue.")
+    ogrid == GRID_SEARCH || refuse(
+        "that checkpoint's objective was computed at grid $ogrid, but this run searches " *
+        "at $GRID_SEARCH.")
+
+    # Parameter names, boxes and links must be identical: the saved seeds and incumbent are
+    # points in a specific box, in search coordinates.
+    if haskey(ck, "param_names")
+        names_now = [String(q.name) for q in SMM_PARAMS]
+        String.(ck["param_names"]) == names_now || refuse(
+            "parameter set changed:\n      saved $(join(ck["param_names"], ", "))" *
+            "\n      now   $(join(names_now, ", "))")
+        for (fld, now) in (("param_lo",   [q.lo for q in SMM_PARAMS]),
+                           ("param_hi",   [q.hi for q in SMM_PARAMS]))
+            saved = Float64.(ck[fld])
+            saved == now || refuse(
+                "$fld changed:\n      saved $saved\n      now   $now" *
+                "\n    (the R_0 box changed on 2026-09-06 -- old runs cannot be resumed.)")
+        end
+        String.(get(ck, "param_link", ["?"])) == [String(q.link) for q in SMM_PARAMS] ||
+            refuse("parameter links changed; search coordinates are not comparable.")
+    else
+        refuse("that checkpoint predates the bounds/targets identity fields (A3) and " *
+               "cannot be\n    verified against this run's box.")
+    end
+    haskey(ck, "targets_sha") && ck["targets_sha"] != TARGETS_SHA && refuse(
+        "the targets file changed since that run (sha $(ck["targets_sha"]) -> $TARGETS_SHA).")
+
+    # A5 (2026-09-10). THE FOURTEEN-PARAMETER SPECIFICATION IS NOT RESUME-COMPATIBLE WITH
+    # ANYTHING WRITTEN BEFORE IT. A pre-2026-09-10 checkpoint has ten parameter names and
+    # is already refused above -- but these three catch what the name check cannot:
+    #
+    #   spec_version  the psychic cost was RECENTRED. kappa_0 keeps its name and its box
+    #                 and means something different, so a saved incumbent is a valid point
+    #                 in an invalid parameterisation. Nothing else would notice.
+    #   source_sha    four child parameters are estimated, so child_lifecycle.jl is part of
+    #                 the objective now. An edit to it between runs changes Q at a fixed z.
+    #   moment_names  seventeen moments, and the covariance is indexed by their ORDER.
+    #
+    # A missing field means the checkpoint predates the field, which is itself grounds to
+    # refuse: it cannot be verified, and "cannot verify" is not "compatible".
+    # REQUIRED, NOT OPTIONAL. Until this fix these read `haskey(ck, f) && <mismatch> &&
+    # refuse(...)`, which ACCEPTS a checkpoint that simply lacks the field -- exactly the
+    # case the comment above says must be refused. Only `spec_version` was genuinely
+    # required. `require` makes "cannot verify" mean "refuse".
+    require(f) = haskey(ck, f) || refuse(
+        "that checkpoint has no `$f` field, so this run cannot verify that it describes " *
+        "the same\n    objective. It predates the fourteen-parameter TAS specification. " *
+        "Start a fresh run.")
+
+    for f in ("spec_version", "source_sha", "moment_names", "m_psychic",
+              "child_grid", "sim_n", "seed", "grid_report")
+        require(f)
+    end
+
+    ck["spec_version"] == SPEC_VERSION || refuse(
+        "specification changed: saved \"$(ck["spec_version"])\", now \"$SPEC_VERSION\".\n" *
+        "    Parameter names and boxes can be identical across a specification change and " *
+        "still\n    describe different models -- the 2026-09-10 psychic recentring did " *
+        "exactly that.")
+    ck["source_sha"] == SOURCE_SHA || refuse(
+        "the model source changed since that run (sha $(ck["source_sha"]) -> $SOURCE_SHA).\n" *
+        "    Four CHILD parameters are estimated, so child_lifecycle.jl is part of the\n" *
+        "    objective: the same z would score differently. Files hashed: " *
+        join(SOURCE_FILES, ", "))
+    String.(ck["moment_names"]) == collect(SMM_MOMENTS) || refuse(
+        "moment set changed:\n      saved $(join(ck["moment_names"], ", "))" *
+        "\n      now   $(join(SMM_MOMENTS, ", "))")
+    isapprox(Float64(ck["m_psychic"]), target_m_psychic(TARGETS); atol = 1e-9) || refuse(
+        "the psychic-cost centring changed ($(ck["m_psychic"]) -> " *
+        "$(target_m_psychic(TARGETS))); kappa_0 is on a different scale.")
+
+    # THE NUMERICAL PROBLEM, not just the specification.
+    #
+    # `Q_best` and the saved seeds are loaded back and compared against values this run
+    # computes. That comparison is only meaningful if both sides solve the same numerical
+    # problem, and grid_search alone does not establish it: the CHILD grid, the number of
+    # simulated households and the RNG seed all move Q at fixed parameters. Resuming a
+    # simN = 2000 checkpoint into a simN = 500 run kept the old, better-resolved `Q_best`
+    # as an incumbent that the new run's noisier evaluations could not beat, so every
+    # subsequent restart was measured against a number from a different problem.
+    child_now = string(CHILD_G_.Na, "x", CHILD_G_.Nk, "x", CHILD_G_.Nt)
+    String(ck["child_grid"]) == child_now || refuse(
+        "child grid changed: saved $(ck["child_grid"]), now $child_now. The child block " *
+        "is part of\n    the objective now, so Q is not comparable across its grid.")
+    Int(ck["sim_n"]) == SIM_N || refuse(
+        "simulated households changed: saved $(ck["sim_n"]), now $SIM_N. Q moves with " *
+        "simN at fixed\n    parameters, so the saved Q_best is not comparable.")
+    Int(ck["seed"]) == SEED_ || refuse(
+        "seed changed: saved $(ck["seed"]), now $SEED_. Common random numbers are what " *
+        "make Q a\n    smooth function of the parameters; two seeds are two objectives.")
+    Int(ck["grid_report"]) == GRID_FULL || refuse(
+        "report grid changed: saved $(ck["grid_report"]), now $GRID_FULL. The refinement " *
+        "stage and\n    the reported fit would not be comparable with that run's.")
+
+    j_done = Int(ck["restarts_done"])
+    # A3. RESTART HISTORY. The completed restarts' trace is reloaded so the run record
+    # covers the whole estimation and not only the part after the interruption.
+    hist_p = joinpath(dir, "restarts.csv")
+    history = NamedTuple[]
+    if isfile(hist_p)
+        for (i, ln) in enumerate(eachline(hist_p))
+            i == 1 && continue
+            f = split(strip(ln), ',')
+            length(f) >= 6 || continue
+            push!(history, (j = parse(Int, f[1]), theta = parse(Float64, f[2]),
+                            f_start = parse(Float64, f[3]), f_local = parse(Float64, f[4]),
+                            improved = parse(Bool, f[5]), ret = Symbol(f[6])))
+        end
+    end
+    return (seeds = seeds, f_sobol_best = Float64(sd["f_sobol_best"]),
+            Z = Float64.(ck["search_vector"]["z"]), fZ = Float64(ck["Q_best"]),
+            j_start = j_done + 1, history = history)
+end
+
+# THE RESUME IS VALIDATED HERE, BEFORE THE REPORT AND BEFORE `--report-only` EXITS.
+#
+# It used to be built at the search stage, ~260 lines further down. `--report-only` returns
+# above that point, so a `--report-only --resume` run performed NO compatibility checking
+# at all and reported a fit as though the checkpoint were fine. That also made every
+# refusal in tools/test_smm_resume.jl unreachable.
+#
+# Validating early is better regardless: a resume that is going to be refused should be
+# refused before twenty worker processes and a model load, not after.
+const RESUME_STATE = RESUMING ? load_resume(RESUME_DIR) : nothing
 
 banner("Incumbent calibration")
 sayf("Q = %.6f\n", q0)
@@ -657,7 +856,12 @@ function checkpoint!(j::Int, best::Float64, best_x::Vector{Float64};
         println(io, "param_hi      = [", join((q.hi for q in SMM_PARAMS), ", "), "]")
         println(io, "param_link    = [", join(("\"$(q.link)\"" for q in SMM_PARAMS), ", "), "]")
         println(io, "targets_sha   = \"", TARGETS_SHA, "\"")
-        println(io, "seed          = ", SIM_N > 0 ? 1234 : 1234)
+        println(io, "source_sha    = \"", SOURCE_SHA, "\"   # child_lifecycle + parent_family + moments")
+        println(io, "spec_version  = \"", SPEC_VERSION, "\"")
+        println(io, "m_psychic     = ", target_m_psychic(TARGETS), "   # the psychic-cost centring this run used")
+        println(io, "moment_names  = [", join(("\"$m\"" for m in SMM_MOMENTS), ", "), "]")
+        println(io, "child_grid    = \"", CHILD_G_.Na, "x", CHILD_G_.Nk, "x", CHILD_G_.Nt, "\"")
+        println(io, "seed          = ", SEED_)
         println(io, "sim_n         = ", SIM_N)
         println(io, "restarts_total= ", N_RESTART)
         println(io, "Q_best        = ", best)
@@ -678,94 +882,9 @@ function checkpoint!(j::Int, best::Float64, best_x::Vector{Float64};
     return nothing
 end
 
-"""
-    load_resume(dir) -> NamedTuple
-
-Rebuild tiktak's `resume` argument from a run directory's checkpoint and seeds.
-Refuses rather than guesses when the saved run does not match this one.
-"""
-function load_resume(dir::AbstractString)
-    ck_p, sd_p = joinpath(dir, "checkpoint.toml"), joinpath(dir, "seeds.toml")
-    isfile(ck_p) || error("--resume: $ck_p not found")
-    isfile(sd_p) || error("""
-        --resume: $sd_p not found. The interrupted run stopped before its pre-testing
-        stage finished, so there are no seeds to continue from. Start it fresh.""")
-    ck, sd = TOML.parsefile(ck_p), TOML.parsefile(sd_p)
-    seeds = [Float64.(v) for v in sd["seeds"]]
-    n = length(SMM_PARAMS)
-    refuse(msg) = error("--resume refuses to continue $(short(dir)):\n    " * msg *
-                        "\n  Start a fresh run instead. Resuming across a changed problem " *
-                        "would mix two different\n  estimations in one sequence of restarts.")
-
-    all(length(x) == n for x in seeds) || refuse(
-        "seeds have dimension $(length(first(seeds))) but SMM_PARAMS has $n -- " *
-        "the parameter set changed.")
-    Int(ck["restarts_total"]) == N_RESTART || refuse(
-        "that run had --restarts $(ck["restarts_total"]), this one has $N_RESTART.")
-    Int(ck["grid_search"]) == GRID_SEARCH || refuse(
-        "that run searched at grid $(ck["grid_search"]), this one at $GRID_SEARCH -- " *
-        "the objectives differ.")
-
-    # A3. THE SAVED STAGE AND OBJECTIVE GRID DECIDE WHETHER A RESUME IS EVEN MEANINGFUL.
-    #
-    # A "refined" or "final" checkpoint holds a FULL-GRID objective. Feeding it back as the
-    # local stage's incumbent would compare a grid-30 value against grid-20 values for the
-    # rest of the run, and every subsequent restart would be measured against a number it
-    # cannot beat. That is a silent corruption of the search, not an inconvenience.
-    stage = get(ck, "stage", "local")
-    ogrid = Int(get(ck, "objective_grid", GRID_SEARCH))
-    stage == "local" || refuse(
-        "that checkpoint is at stage \"$stage\", not \"local\" -- it holds a FINISHED " *
-        "run's winner, not\n    an interrupted search. There is nothing to continue.")
-    ogrid == GRID_SEARCH || refuse(
-        "that checkpoint's objective was computed at grid $ogrid, but this run searches " *
-        "at $GRID_SEARCH.")
-
-    # Parameter names, boxes and links must be identical: the saved seeds and incumbent are
-    # points in a specific box, in search coordinates.
-    if haskey(ck, "param_names")
-        names_now = [String(q.name) for q in SMM_PARAMS]
-        String.(ck["param_names"]) == names_now || refuse(
-            "parameter set changed:\n      saved $(join(ck["param_names"], ", "))" *
-            "\n      now   $(join(names_now, ", "))")
-        for (fld, now) in (("param_lo",   [q.lo for q in SMM_PARAMS]),
-                           ("param_hi",   [q.hi for q in SMM_PARAMS]))
-            saved = Float64.(ck[fld])
-            saved == now || refuse(
-                "$fld changed:\n      saved $saved\n      now   $now" *
-                "\n    (the R_0 box changed on 2026-09-06 -- old runs cannot be resumed.)")
-        end
-        String.(get(ck, "param_link", ["?"])) == [String(q.link) for q in SMM_PARAMS] ||
-            refuse("parameter links changed; search coordinates are not comparable.")
-    else
-        refuse("that checkpoint predates the bounds/targets identity fields (A3) and " *
-               "cannot be\n    verified against this run's box.")
-    end
-    haskey(ck, "targets_sha") && ck["targets_sha"] != TARGETS_SHA && refuse(
-        "the targets file changed since that run (sha $(ck["targets_sha"]) -> $TARGETS_SHA).")
-
-    j_done = Int(ck["restarts_done"])
-    # A3. RESTART HISTORY. The completed restarts' trace is reloaded so the run record
-    # covers the whole estimation and not only the part after the interruption.
-    hist_p = joinpath(dir, "restarts.csv")
-    history = NamedTuple[]
-    if isfile(hist_p)
-        for (i, ln) in enumerate(eachline(hist_p))
-            i == 1 && continue
-            f = split(strip(ln), ',')
-            length(f) >= 6 || continue
-            push!(history, (j = parse(Int, f[1]), theta = parse(Float64, f[2]),
-                            f_start = parse(Float64, f[3]), f_local = parse(Float64, f[4]),
-                            improved = parse(Bool, f[5]), ret = Symbol(f[6])))
-        end
-    end
-    return (seeds = seeds, f_sobol_best = Float64(sd["f_sobol_best"]),
-            Z = Float64.(ck["search_vector"]["z"]), fZ = Float64(ck["Q_best"]),
-            j_start = j_done + 1, history = history)
-end
 
 const RESTARTS_F = joinpath(RUN_DIR, "restarts.csv")
-const RESUME_STATE = RESUMING ? load_resume(RESUME_DIR) : nothing
+# RESUME_STATE is built EARLY -- see above the incumbent banner.
 if !RESUMING || !isfile(RESTARTS_F)
     open(RESTARTS_F, "w") do io
         println(io, "restart,theta,f_start,f_local,improved,ret")
@@ -955,9 +1074,11 @@ function refine_at_full_grid(z_search::Vector{Float64}, lo, hi)
     end
 end
 
-@everywhere objective_full(z) = smm_objective(z, TARGETS, V_CHILD;
+@everywhere objective_full(z) = smm_objective(z, TARGETS;
                                               Na = G_FULL_.Na, Nk = G_FULL_.Nk,
-                                              Nhc = G_FULL_.Nhc, simN = G_FULL_.simN)
+                                              Nhc = G_FULL_.Nhc, simN = G_FULL_.simN,
+                                              seed = $SEED_,
+                                              child_grid = CHILD_G_, demo_sim = false)
 const (Z_FINAL, Q_FINAL, REFINE) = if GRID_SEARCH != GRID_FULL
     refine_at_full_grid(Z_SEARCH, lo, hi)
 else
@@ -1120,8 +1241,18 @@ end
 # -----------------------------------------------------------------------------
 est = unpack(Z_FINAL)
 open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
-    println(io, "# SMM: ", length(SMM_MOMENTS), " parent moments, ", length(SMM_PARAMS),
-                 " parameters. GENERATED by code/smm/run_smm.jl.")
+    println(io, "# SMM: ", length(SMM_MOMENTS), " moments (",
+                 length(SMM_PARENT_MOMENTS), " parent + ", length(SMM_TAS_MOMENTS),
+                 " TAS), ", length(SMM_PARAMS), " parameters (",
+                 length(SMM_PARENT_PARAMS), " parent + ", length(SMM_CHILD_PARAMS),
+                 " child). GENERATED by code/smm/run_smm.jl.")
+    println(io, "spec_version = \"", SPEC_VERSION, "\"")
+    println(io, "source_sha   = \"", SOURCE_SHA, "\"   # ", join(SOURCE_FILES, " + "))
+    println(io, "m_psychic    = ", target_m_psychic(TARGETS),
+                 "   # kappa_0 is the psychic cost AT THIS log-ability, not at log theta = 0")
+    println(io, "child_grid   = \"", CHILD_G_.Na, "x", CHILD_G_.Nk, "x", CHILD_G_.Nt, "\"")
+    println(io, "child_params = [", join(("\"$n\"" for n in SMM_CHILD_PARAMS), ", "), "]")
+    println(io, "weighting    = \"diagonal inverse-variance on the joint clustered covariance\"")
     println(io, "generated  = \"", Dates.format(now(), "yyyy-mm-dd HH:MM"), "\"")
     println(io, "git_commit = \"", git_sha(), "\"")
     println(io, "targets    = \"", short(TARGETS_FILE), "\"")
@@ -1173,8 +1304,8 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "}")
     println(io, "\n[parameters]")
     for q in SMM_PARAMS
-        @printf(io, "%-10s = %.8f   # was %.8f\n", q.name, getfield(est, q.name),
-                getfield(PARENT_DEFAULTS, q.name))
+        @printf(io, "%-14s = %.8f   # %s block; was %.8f\n", q.name, getfield(est, q.name),
+                q.owner, param_default(q.name))
     end
 end
 

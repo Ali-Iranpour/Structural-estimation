@@ -1,0 +1,44 @@
+# Written after each restart by code/smm/run_smm.jl. Safe to read
+# while the run is going; rewritten atomically.
+# Resume with:  julia --project=../.. run_smm.jl --resume <this dir>
+stage         = "final"
+restarts_done = 5
+param_names   = ["phi_2", "phi_3", "lambda_2", "R_0", "sigma_1_0", "sigma_1_1", "sigma_2_0", "sigma_2_1", "sigma_4_0", "sigma_4_1", "kappa_0", "kappa_theta", "kappa_ParEd", "kappa_terminal"]
+param_lo      = [0.01, 0.05, 0.05, 0.5, -4.0, -0.2, -5.0, -0.3, -10.0, -0.05, -2.0, -10.0, -3.0, 0.5]
+param_hi      = [20.0, 20.0, 100.0, 100.0, -0.1, 0.05, -0.5, 0.05, -1.0, 0.15, 5.0, 0.0, 0.0, 40.0]
+param_link    = ["log", "log", "log", "log", "level", "level", "level", "level", "level", "level", "level", "level", "level", "log"]
+targets_sha   = "7594b3ec42c66fc8"
+source_sha    = "c65dc4e2c8ed4569"   # child_lifecycle + parent_family + moments
+spec_version  = "smm14_tas7_centred_v1"
+m_psychic     = 6.263396877461691   # the psychic-cost centring this run used
+moment_names  = ["mean_c_p", "mean_h_p", "mean_t_p_early", "mean_t_p_late", "mean_e_p_early", "mean_e_p_late", "mean_i_c_early", "mean_i_c_late", "mean_hc_early", "mean_hc_late", "k0_complete", "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c", "kpe_g0_c", "kpe_g1_c", "kterm_x_strict_w99"]
+child_grid    = "30x30x5"
+seed          = 1234
+sim_n         = 2000
+restarts_total= 5
+Q_best        = 427.0098967024581
+objective_grid= 30   # the grid Q_best was computed at
+Q_incumbent   = 2405.181407467897   # at grid_search
+grid_search   = 30
+grid_report   = 30
+minutes       = 537.2
+updated       = "2026-09-11 03:35:41"
+
+[search_vector]
+z = [-1.6281667456754874, 0.39802223453380758, 2.7080595840489816, 3.8737026941314934, -0.92643323162525526, -0.090575511209241191, -3.7667963179190611, -0.093338674420868809, -6.0324102823610213, 0.12815494480475884, 0.67400506495902457, -2.0214989589898318, -1.1681212766795013, 2.1197055227571115]
+
+[parameters]
+phi_2      = 0.19628909
+phi_3      = 1.48887713
+lambda_2   = 15.00014074
+R_0        = 48.12023112
+sigma_1_0  = -0.92643323
+sigma_1_1  = -0.09057551
+sigma_2_0  = -3.76679632
+sigma_2_1  = -0.09333867
+sigma_4_0  = -6.03241028
+sigma_4_1  = 0.12815494
+kappa_0    = 0.67400506
+kappa_theta = -2.02149896
+kappa_ParEd = -1.16812128
+kappa_terminal = 8.32868452

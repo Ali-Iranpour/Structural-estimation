@@ -91,6 +91,91 @@ AGE_HC_LATE_LO = 12
 CHILD_TIME_SPEC = "own_study_fixed_school_v1"
 
 
+# =============================================================================
+# THE TAS BLOCK -- seven child-level moments for the four kappa parameters
+# =============================================================================
+# A SECOND SAMPLE, not more rows of the first. `Input/SMM_TAS_Micro.dta` is one row per
+# TAS-linked child (4,248 of them, 1,481 family clusters); `SMM_Moments_Micro.dta` is one
+# row per child-YEAR of the PSID one-child panel (17,791 rows, 1,825 clusters). They
+# overlap in 492 clusters and in nothing else -- different unit of observation, different
+# frame, different weighting rule. So they are built separately here and joined only at
+# the covariance, on the cluster key they share.
+#
+# UNWEIGHTED, per Input/CODEBOOK.md. CHILD_WT is a CDS CHILDHOOD weight, non-missing for
+# 424 of 2,603 records, and the codebook's own check reports that the full-frame-vs-
+# weighted-subset difference is mostly selection rather than weighting. Applying it would
+# reweight to a population neither file describes.
+TAS_MICRO = REPO / "Input" / "SMM_TAS_Micro.dta"
+
+# The cluster key. `famclust` in the TAS file and `Fam_id` in the parent file are the SAME
+# object -- the PSID 1968 family interview number, ER30001 -- which is what makes a joint
+# covariance possible at all. Siblings share it, and so does a TAS child with the
+# child-years of the same lineage in the parent block.
+TAS_CLUSTER_ON = "famclust"
+
+# COMPLETION, NOT ENTRY (decision 2026-09-10, and the codebook's own primary outcome).
+# The model's college path is binary and has no dropout: enrol, study t_college = 4 years,
+# then earn the graduate wage E = 1. Nobody enrols without finishing, so the path IS a
+# completed four-year degree. Entry (0.6162) counts respondents who never receive that
+# premium and would be matched against a mechanism that always pays it. `y_entry` is
+# carried through to the target file as an untargeted diagnostic.
+TAS_OUTCOME = "y_complete"
+TAS_FOLLOWUP = "hf_complete"      # OUTCOME-SPECIFIC follow-up mask -- see below
+
+# FOLLOW-UP IS PER OUTCOME, NOT PER CHILD. `hf_entry` and `hf_complete` are different
+# masks: 2,603 children have a usable entry observation at age 23-25 and 2,771 a usable
+# completion one, and neither is a subset of the other. Using a single `has_followup` for
+# both would silently change the denominator of whichever moment it did not belong to.
+
+# ACHIEVEMENT: age 17, g_ACH, completion frame.
+# Age 17 over age 18 because the existing HC targets are the g_ACH composite and the
+# age-17 panel is far larger (455 children with a last-CDS wave at 17 against 174 at 18);
+# the age-18 group comes almost entirely from CDS-2002/2007 since CDS-2014 and CDS-2019
+# stop at 17. LW, age 18 and the entry variants stay out of the targeted set and are
+# written as sensitivity rows.
+#
+# TERTILES ARE CUT WITHIN AGE GROUP AND ON THE COMPLETION FRAME, so T1/T2/T3 are not
+# comparable in level between the age-17 and age-18 panels -- only the gradient within a
+# panel is. `tert_ga` in the micro file already carries that cut; it is used as given
+# rather than recut here, so the target and the published moment cannot drift apart.
+TAS_ACH_AGE = 17
+TAS_ACH_TERT = "tert_ga"
+
+# TERMINAL WEALTH: strict definition, net worth EXCLUDING home equity, WINSORISED AT p99.
+#
+# WHY WINSORISED (decision 2026-09-10). The raw moment is a mean of $429,803 on a median
+# of $49,243, an SD of $1,902,538 and a maximum of $41.3m; the top 1% alone moves the mean
+# by ~$98k. That is the same pathology this file already handles on the parent side --
+# `cons_real` carries a $12.07m outlier and is targeted winsorised at p99 because "a mean
+# built on that is not a moment, it is an accident". The model cannot produce the tail
+# either: its asset grid tops out at a_max = 100 model units = $1m.
+#
+# NEGATIVE NET WORTH IS RETAINED, not dropped -- 13.0% of the qualifying sample is
+# negative, and dropping it would bias the target upward on top of everything else. Note
+# that the model CANNOT reproduce it: retained assets are floored at delta_P. That is a
+# recorded limitation of the moment, not something to fix by censoring the data.
+#
+# STRICT over loose/broad because it is the definition that comes closest to the model's
+# concept -- separated, not in a parental home, and no tuition/housing/bills support -- so
+# the parent has stopped paying for college by the time wealth is measured.
+TAS_WEALTH_DEF = "strict"
+TAS_WEALTH_VAR = "pwx_strict"     # excl. home equity; pwi_* is the incl.-home variant
+TAS_WEALTH_WINSOR_P = 99.0
+
+# TIMING GAP -- OPEN, and not corrected here. The model's object is the parent's retained
+# assets at the transfer, i.e. at child age 18. The data is the LATEST parental wealth
+# observation at or after the first qualifying wave: median gap 4 years, up to 16, and a
+# median child age at measurement of about 29. Parents keep accumulating over that decade,
+# so the target is measured later in the parental life cycle than the model's counterpart.
+# The model has no post-separation parent to age forward, so this cannot be closed without
+# a new mechanism. It is carried as a limitation on kappa_terminal.
+
+TAS_MOMENTS = ["k0_complete",
+               "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c",
+               "kpe_g0_c", "kpe_g1_c",
+               "kterm_x_strict_w99"]
+
+
 
 # =============================================================================
 # MOMENT COVARIANCE -- the input standard errors need and the file did not carry
@@ -129,11 +214,17 @@ CLUSTER_ON = "Fam_id"
 # The moments the estimator actually targets, in SMM_MOMENTS order. `mean_l_p` and the
 # pooled `mean_e_p` are written to the file for reference but are not targeted, so they
 # are not part of the covariance the weighting matrix would be built from.
-TARGETED = ["mean_c_p", "mean_h_p",
-            "mean_t_p_early", "mean_t_p_late",
-            "mean_e_p_early", "mean_e_p_late",
-            "mean_i_c_early", "mean_i_c_late",
-            "mean_hc_early", "mean_hc_late"]
+PARENT_TARGETED = ["mean_c_p", "mean_h_p",
+                   "mean_t_p_early", "mean_t_p_late",
+                   "mean_e_p_early", "mean_e_p_late",
+                   "mean_i_c_early", "mean_i_c_late",
+                   "mean_hc_early", "mean_hc_late"]
+
+# SEVENTEEN moments against FOURTEEN parameters -- over-identified, so the weighting
+# matrix now changes the answer in a way it could not when the system was square. The
+# order here IS the order of `SMM_MOMENTS` in code/smm/moments.jl and of every row and
+# column of the covariance below; moments.jl checks it and refuses to run if they differ.
+TARGETED = PARENT_TARGETED + TAS_MOMENTS
 
 
 def moment_influence(series, ages, clusters):
@@ -147,24 +238,229 @@ def moment_influence(series, ages, clusters):
     return psi.groupby(c).sum()
 
 
-def moment_covariance(moments, r):
-    """Cluster-robust covariance of the targeted moment vector."""
-    clusters = r[CLUSTER_ON]
-    infl = {}
-    for mo in moments:
-        infl[mo["name"]] = moment_influence(mo["series"], r["Child_Age"], clusters)
-    names = [mo["name"] for mo in moments]
-    # One row per cluster, one column per moment; a cluster that contributes nothing to a
-    # moment contributes a zero, not a dropped row -- that is what carries the overlap.
-    all_clusters = sorted(set().union(*(set(v.index) for v in infl.values())))
-    P = np.zeros((len(all_clusters), len(names)))
+def ratio_influence(num, den, clusters):
+    """
+    Estimate and per-cluster influence of a RATIO OF MEANS, the form every TAS moment
+    takes: mean(numerator)/mean(denominator) over the WHOLE frame, with both zero off the
+    subgroup. That is exactly how `23_smm_tas_moments.do` estimates them
+    (`ratio ..., cluster(famclust)`), and reproducing the form is what makes the
+    reconstructed covariance the same object as the one the do-file exports.
+
+        r        = mean(num) / mean(den)
+        psi_i    = (num_i - r*den_i) / mean(den) / N
+        Var(r)   = sum_c (sum_{i in c} psi_i)^2 ,  clustered on the family
+
+    N is the WHOLE-FRAME row count, not the subgroup's -- the subgroup indicator lives
+    inside `den`. Getting that wrong rescales every standard error.
+
+    VERIFIED: this reproduces all seven published estimates AND all seven published
+    standard errors in `Input/SMM_TAS_Moments.csv` to six decimal places. That is why the
+    missing `SMM_TAS_VCov.dta` does not have to be requested -- see the codebook's
+    "Standard errors and the covariance matrix" section for what is being reproduced.
+    """
+    num = np.asarray(num, dtype=float)
+    den = np.asarray(den, dtype=float)
+    n = len(den)
+    dbar = den.mean()
+    if dbar <= 0:
+        raise ValueError("ratio moment has an empty denominator")
+    r = num.mean() / dbar
+    psi = pd.Series((num - r * den) / dbar / n, index=clusters.index)
+    return r, psi.groupby(clusters).sum()
+
+
+def joint_covariance(influences, names, dof_correct=True):
+    """
+    Cluster-robust covariance of a moment vector assembled from SEVERAL BLOCKS.
+
+    `influences` maps a moment name to a per-cluster influence Series. The blocks are
+    measured on different samples with different units of observation, and the whole point
+    of stacking them here is that they are NOT independent: 492 of the TAS block's 1,481
+    family clusters also appear among the parent block's 1,825, so a child whose
+    completion outcome enters `k0_complete` can be from the same 1968 lineage as the
+    child-years behind `mean_c_p`.
+
+    A cluster that contributes nothing to a moment contributes a ZERO to that column, not
+    a dropped row. That is what carries the overlap: the cross-block covariance comes
+    entirely from the rows where both columns are non-zero, and dropping rows would set
+    those terms to zero by construction -- which is the "silently assume independent
+    blocks" mistake.
+
+    `dof_correct` applies the G/(G-1) finite-cluster correction used by Stata's
+    `cluster()`. It is applied PER BLOCK in the published SEs (each moment's own cluster
+    count), so it is applied here on the joint cluster count and the per-moment counts are
+    reported separately; the difference is under 0.1% at these G.
+    """
+    all_clusters = sorted(set().union(*(set(v.index) for v in influences.values())))
     idx = {c: i for i, c in enumerate(all_clusters)}
+    P = np.zeros((len(all_clusters), len(names)))
     for j, nm in enumerate(names):
-        for c, v in infl[nm].items():
-            P[idx[c], j] = v
+        v = influences[nm]
+        P[[idx[c] for c in v.index], j] = v.values
+    G = len(all_clusters)
     Omega = P.T @ P
+    if dof_correct and G > 1:
+        Omega = Omega * (G / (G - 1.0))
     n_cl = {nm: int((np.abs(P[:, j]) > 0).sum()) for j, nm in enumerate(names)}
-    return names, Omega, n_cl, len(all_clusters)
+    return Omega, n_cl, G
+
+
+def moment_covariance(moments, r):
+    """Per-cluster influence of each parent-block moment, keyed on the cluster id."""
+    clusters = r[CLUSTER_ON]
+    return {mo["name"]: moment_influence(mo["series"], r["Child_Age"], clusters)
+            for mo in moments}
+
+
+def winsorise(x, p):
+    """Upper-tail winsorisation at percentile `p`. The LOWER tail is left alone."""
+    x = np.asarray(x, dtype=float)
+    return np.minimum(x, np.percentile(x, p))
+
+
+def build_tas_moments(t):
+    """
+    The seven TAS targets, plus the untargeted diagnostics, as ratio-of-means moments.
+
+    Every one is defined on the FULL TAS frame with the subgroup indicator inside the
+    denominator, so `n_obs` below is the subgroup size (the denominator's support) while
+    the influence function runs over all 4,248 rows. Both are reported.
+    """
+    n_all = len(t)
+    out = []
+
+    def add(name, mask, value, *, source, units, model, block, targeted=True, note=""):
+        mask = np.asarray(mask, dtype=float)
+        value = np.asarray(value, dtype=float)
+        # A NaN outcome off the subgroup must not poison the product; the mask is what
+        # decides membership, so the value is only ever read where the mask is 1.
+        num = np.where(mask > 0, np.nan_to_num(value, nan=0.0), 0.0)
+        out.append(dict(name=name, num=num, den=mask, source=source, units=units,
+                        model=model, block=block, targeted=targeted, note=note))
+
+    y = t[TAS_OUTCOME]
+    hf = (t[TAS_FOLLOWUP] == 1)
+
+    # ---- kappa_0: the overall completion rate --------------------------------
+    add("k0_complete", hf, y,
+        source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}",
+        units="share of linked children completing a four-year degree by age 25",
+        model="share of resimulated children with path_choice == :college",
+        block="kappa_0")
+    # Untargeted: the entry series, kept visible so the entry/completion gap that decided
+    # this specification stays in the file rather than only in the codebook.
+    add("k0_entry", (t.hf_entry == 1), t.y_entry,
+        source="y_entry | hf_entry",
+        units="share entering a four-year track by age 25",
+        model="(not targeted; the model has no entry-without-completion state)",
+        block="kappa_0", targeted=False,
+        note="degree SOUGHT, runs ~0.62 against a national ~0.45; see CODEBOOK")
+
+    # ---- kappa_theta: completion by age-17 achievement tertile ----------------
+    for k in (1, 2, 3):
+        add(f"kth_ga17_t{k}_c",
+            hf & (t.ach_age == TAS_ACH_AGE) & (t[TAS_ACH_TERT] == k), y,
+            source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, ach_age=={TAS_ACH_AGE}, {TAS_ACH_TERT}=={k}",
+            units="completion share within the achievement tertile",
+            model=f"college share within model-internal tertile {k} of sim_hc at child age 17",
+            block="kappa_theta")
+
+    # ---- kappa_theta SENSITIVITY VARIANTS, untargeted -------------------------
+    # `docs/SMM_14PARAM_TAS.md` promised these and the generator did not build them, so
+    # the "sensitivity checks" the specification calls for did not exist. They are cheap:
+    # the same ratio moment on a different achievement measure or age panel.
+    #
+    # NOT COMPARABLE IN LEVEL ACROSS PANELS. Tertiles are cut WITHIN age group, so the
+    # age-17 T1 and the age-18 T1 are different ability cuts. Only the gradient within a
+    # panel means anything, which is why these are diagnostics and not alternative targets.
+    for (tag, tvar, age) in (("lw17", "tert_lw", 17), ("lw18", "tert_lw", 18),
+                             ("ga18", "tert_ga", 18)):
+        for k in (1, 2, 3):
+            add(f"kth_{tag}_t{k}_c", hf & (t.ach_age == age) & (t[tvar] == k), y,
+                source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, ach_age=={age}, {tvar}=={k}",
+                units="completion share within the achievement tertile",
+                model=f"(not targeted; sensitivity variant of kth_ga17_t{k}_c)",
+                block="kappa_theta", targeted=False,
+                note="tertiles are cut WITHIN age group -- levels are not comparable "
+                     "to the age-17 g_ACH panel, only the gradient is")
+
+    # ---- kappa_ParEd: completion by parental education -----------------------
+    # OPEN MISMATCH, by instruction 2026-09-10: pared_col is EITHER-parent 16+, the model's
+    # BothCollege is both. Targeted as supplied and recorded as P7c in docs/ERRORS.md.
+    for g in (0, 1):
+        add(f"kpe_g{g}_c", hf & (t.pared_col == g), y,
+            source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, pared_col=={g}",
+            units="completion share within the parental-education group",
+            model=f"college share among simulated parents with BothCollege == {g}",
+            block="kappa_ParEd",
+            note="EITHER-parent 16+ in data vs BothCollege in model -- see ERRORS.md P7c")
+    # The unknown group is its own moment and is NOT folded into g0. The codebook is
+    # explicit that doing so estimates "no OBSERVED college parent", a different quantity.
+    # `pared_unknown`, NOT `pared_col.isna()`. The two differ by 13 children on the
+    # completion frame -- those with NEITHER parent observed, which `pared_unknown`
+    # (exactly one parent observed, and below 16) excludes. Using the published variable
+    # reproduces the published `kpe_gu_c` exactly; using the missing-mask does not.
+    add("kpe_gu_c", hf & (t.pared_unknown == 1), y,
+        source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, pared_unknown==1",
+        units="completion share where at least one parent's education is unobserved",
+        model="(not targeted; the model has no unknown-education state)",
+        block="kappa_ParEd", targeted=False)
+
+    # ---- kappa_terminal: parental net worth after independence ---------------
+    wmask = (t[f"ever_{TAS_WEALTH_DEF}"] == 1) & t[TAS_WEALTH_VAR].notna()
+    raw = t[TAS_WEALTH_VAR].where(wmask)
+    cut = np.percentile(raw.dropna(), TAS_WEALTH_WINSOR_P)
+    wins = raw.clip(upper=cut)
+    add("kterm_x_strict_w99", wmask, wins / DOLLARS_PER_MODEL_UNIT,
+        source=f"{TAS_WEALTH_VAR} winsorised at p{TAS_WEALTH_WINSOR_P:g} "
+               f"(cut = {cut:,.0f} USD) | ever_{TAS_WEALTH_DEF}",
+        units="model units (10k USD, real 2015)",
+        model="mean of (parent sim_a at T+1) - transfer, i.e. assets retained AFTER the transfer",
+        block="kappa_terminal",
+        note=f"{100*(raw < 0).mean():.1f}% of the qualifying sample is negative and is RETAINED; "
+             "the model floors retained assets at delta_P and cannot reproduce it")
+    # Untargeted: the raw mean, so the effect of the winsorisation is auditable, and the
+    # incl.-home variant.
+    add("kterm_x_strict_raw", wmask, raw / DOLLARS_PER_MODEL_UNIT,
+        source=f"{TAS_WEALTH_VAR} | ever_{TAS_WEALTH_DEF} (NOT winsorised)",
+        units="model units (10k USD, real 2015)",
+        model="(not targeted; the p99 winsorised variant is)",
+        block="kappa_terminal", targeted=False)
+    add("kterm_i_strict_raw", wmask & t.pwi_strict.notna(), t.pwi_strict,
+        source="pwi_strict | ever_strict (net worth INCLUDING home equity)",
+        units="model units (10k USD, real 2015)",
+        model="(not targeted; the model has no housing sector)",
+        block="kappa_terminal", targeted=False)
+    # Rebuild the incl.-home series in model units without disturbing the mask logic.
+    out[-1]["num"] = np.where(np.asarray(out[-1]["den"]) > 0,
+                              np.nan_to_num(t.pwi_strict.values, nan=0.0) / DOLLARS_PER_MODEL_UNIT,
+                              0.0)
+    return out
+
+
+def psychic_centre(t):
+    """
+    `m_psychic`, the frozen centring constant for the psychic cost of college.
+
+    The cost is `kappa_0 + kappa_theta*(log(theta) - m_psychic)`. Recentring is
+    BEHAVIOURALLY NEUTRAL -- exactly the device the wage equation already uses, where
+    `m_theta = 7.3486` is "centring only; offset exactly by lnw0" -- but it is what makes
+    the two parameters separately identified. Raw, `log(theta)` has a mean of about 6.26
+    and a standard deviation of about 0.035, so the columns [1, log theta] have a
+    condition number near 180 and `kappa_0` has to move ~180 units to undo one unit of
+    `kappa_theta`. Centred, the two are orthogonal: `kappa_0` is the psychic cost at mean
+    ability and `kappa_theta` is the pure gradient.
+
+    Frozen HERE, alongside the targets, rather than computed from the simulation: a
+    constant that moved with the parameter vector would not be a reparameterisation, it
+    would be a new nonlinearity, and the estimate would depend on the simulation draw.
+
+    Measured on the SAME frame the tertiles are cut on -- age-17 last-CDS wave, completion
+    follow-up -- so `kappa_0` is the psychic cost at the mean ability of the children whose
+    completion rates identify it.
+    """
+    f = t[(t[TAS_FOLLOWUP] == 1) & (t.ach_age == TAS_ACH_AGE) & t.g_ACH.notna()]
+    return float(np.log(f.g_ACH).mean()), len(f)
 
 
 def git_sha():
@@ -178,6 +474,7 @@ def git_sha():
 
 def main():
     m = pd.read_stata(MICRO)
+    t = pd.read_stata(TAS_MICRO)          # the TAS block's own frame -- see TAS_MICRO
     r = m[(m.Child_Age >= AGE_LO) & (m.Child_Age <= AGE_HI)].copy()
 
     # ------------------------------------------------------------------
@@ -316,6 +613,24 @@ def main():
              model=f"mean of log(sim_hc) over t = {AGE_HC_LATE_LO}..{AGE_HI}"),
     ]
 
+    # The TAS block is computed HERE, before `lines` is assembled, because its scalar
+    # metadata are TOP-LEVEL TOML keys. Any bare `key = value` emitted after the first
+    # `[table]` header belongs to that table, not to the document -- so writing m_psychic
+    # further down silently nested it inside the last moment's table and load_targets
+    # could not find it.
+    tas = build_tas_moments(t)
+    m_psychic, n_psychic = psychic_centre(t)
+    tas_est, tas_infl = {}, {}
+    for mo in tas:
+        est, infl = ratio_influence(mo["num"], mo["den"], t[TAS_CLUSTER_ON])
+        tas_est[mo["name"]] = est
+        tas_infl[mo["name"]] = infl
+        mo["estimate"] = est
+        mo["n_obs"] = int((np.asarray(mo["den"]) > 0).sum())
+        mo["n_clusters"] = int(t.loc[np.asarray(mo["den"]) > 0, TAS_CLUSTER_ON].nunique())
+    _wmask = (t[f"ever_{TAS_WEALTH_DEF}"] == 1) & t[TAS_WEALTH_VAR].notna()
+    cut = float(np.percentile(t[TAS_WEALTH_VAR].where(_wmask).dropna(), TAS_WEALTH_WINSOR_P))
+
     lines = [
         "# SMM targets, baseline parent block. GENERATED by tools/make_smm_targets.py.",
         "# Do not edit by hand -- rerun the script.",
@@ -338,6 +653,34 @@ def main():
         f'age_split  = {AGE_SPLIT}   # early = {AGE_LO}..{AGE_SPLIT}, late = {AGE_SPLIT+1}..{AGE_HI}',
         f'dollars_per_model_unit = {DOLLARS_PER_MODEL_UNIT}',
         f'hours_per_week = {HOURS_PER_WEEK}',
+        "",
+        "# ---- TAS block metadata (TOP-LEVEL keys: they must precede every [table]) ----",
+        f'tas_source      = "Input/SMM_TAS_Micro.dta"',
+        f'tas_cluster_on  = "{TAS_CLUSTER_ON}"',
+        f'tas_n_children  = {len(t)}',
+        f'tas_n_clusters  = {int(t[TAS_CLUSTER_ON].nunique())}',
+        f'tas_outcome     = "{TAS_OUTCOME}"',
+        f'tas_followup    = "{TAS_FOLLOWUP}"',
+        f'tas_ach_age     = {TAS_ACH_AGE}',
+        f'tas_ach_tertile = "{TAS_ACH_TERT}"',
+        f'tas_wealth_var  = "{TAS_WEALTH_VAR}"',
+        f'tas_wealth_winsor_p = {TAS_WEALTH_WINSOR_P}',
+        "# The winsorisation cut, IN MODEL UNITS, so the model side can apply the SAME",
+        "# functional. The data moment is E[min(W, cut)], not E[W]; comparing it against a",
+        "# plain simulated mean would be comparing two different estimators. In practice the",
+        "# model never reaches the cut -- its asset grid tops out at a_max = 100 -- so the",
+        "# minimum binds on no simulated household, which moments.jl checks and reports.",
+        f'tas_wealth_winsor_cut = {cut / DOLLARS_PER_MODEL_UNIT:.17g}',
+        "",
+        "# Centring constant for the psychic cost of college:",
+        "#     kappa_0 + kappa_theta*(log(theta) - m_psychic)",
+        "# Behaviourally neutral -- the same device as m_theta in the wage equation -- but it",
+        "# orthogonalises kappa_0 and kappa_theta, which are otherwise collinear at a",
+        "# condition number near 180. FROZEN here: a centring that moved with the parameter",
+        "# vector would be a new nonlinearity, not a reparameterisation.",
+        f'm_psychic       = {m_psychic:.17g}',
+        f'm_psychic_n     = {n_psychic}',
+        f'm_psychic_source = "mean log g_ACH, ach_age=={TAS_ACH_AGE}, completion follow-up frame"',
         "",
     ]
 
@@ -387,10 +730,93 @@ def main():
         print(f"{mo['name']:12s} {len(s):7d} {mean_equal:10.4f} {mean_pooled:10.4f} "
               f"{s.std():10.4f}   {mo['source']}")
 
-    # ---- clustered moment covariance ------------------------------------------
+    # =========================================================================
+    # THE TAS BLOCK
+    # =========================================================================
+    lines += [
+        "# -------------------------------------------------------------------------",
+        "# TAS BLOCK -- child-level outcomes for the four kappa parameters.",
+        "#",
+        "# A DIFFERENT SAMPLE FRAME from everything above: one row per TAS-linked child",
+        f"# ({len(t)} children, {t[TAS_CLUSTER_ON].nunique()} family clusters), against the parent",
+        "# block's one row per child-YEAR. Unweighted, per the codebook. Every moment is a",
+        "# ratio of means over the whole frame with the subgroup indicator in the",
+        "# denominator, which is how the source do-file estimates them.",
+        "#",
+        "# Completion, not entry: the model's college path has no dropout, so enrolling IS",
+        "# completing. Entry is written below as an untargeted diagnostic.",
+        "",
+    ]
+
+    print()
+    print(f"{'TAS moment':22s} {'estimate':>13s} {'N':>7s} {'clusters':>9s}   source")
+    print("-" * 100)
+    for mo in tas:
+        tag = "" if mo["targeted"] else "   [untargeted]"
+        lines += [
+            f"[{mo['name']}]",
+            f'block  = "{mo["block"]}"',
+            f'source = "{mo["source"]}"',
+            f'units  = "{mo["units"]}"',
+            f'model  = "{mo["model"]}"',
+            f'targeted = {"true" if mo["targeted"] else "false"}',
+            f"n      = {mo['n_obs']}",
+            f"n_clusters = {mo['n_clusters']}",
+            f"mean   = {mo['estimate']:.17g}",
+            # `sd` is written for interface compatibility with the parent-block entries,
+            # which moments.jl reads generically. For a ratio moment it is the SD of the
+            # subgroup's own values, NOT the moment's standard error -- the SE is in
+            # [moment_cov] below and is the only thing inference may use.
+            f"sd     = {np.std(np.asarray(mo['num'])[np.asarray(mo['den']) > 0], ddof=1):.10g}",
+        ]
+        if mo["note"]:
+            lines.append(f'note   = "{mo["note"]}"')
+        lines.append("")
+        print(f"{mo['name']:22s} {mo['estimate']:13.6f} {mo['n_obs']:7d} "
+              f"{mo['n_clusters']:9d}   {mo['source'][:44]}{tag}")
+
+    # ---- joint clustered moment covariance, BOTH blocks ----------------------
     targeted = [mo for mo in moments if mo["name"] in TARGETED]
-    names, Omega, n_cl, n_clusters = moment_covariance(targeted, r)
+    influences = moment_covariance(targeted, r)
+    influences.update({k: v for k, v in tas_infl.items() if k in TARGETED})
+    names = [n for n in TARGETED]
+    missing = [n for n in names if n not in influences]
+    if missing:
+        raise ValueError(f"no influence function for targeted moment(s): {missing}")
+    Omega, n_cl, n_clusters = joint_covariance(influences, names)
     se = np.sqrt(np.diag(Omega))
+
+    # The overlap is the reason this is one matrix and not two. Report it, so that a
+    # future change to either frame shows up as a change in the number of shared clusters
+    # rather than silently as a different weighting matrix.
+    shared = set(r[CLUSTER_ON].unique()) & set(t[TAS_CLUSTER_ON].unique())
+    print(f"\ncluster overlap: {len(shared)} families appear in BOTH blocks "
+          f"({len(set(r[CLUSTER_ON].unique()))} parent, {len(set(t[TAS_CLUSTER_ON].unique()))} TAS, "
+          f"{n_clusters} distinct in the joint system)")
+    ip = [names.index(n) for n in PARENT_TARGETED]
+    it_ = [names.index(n) for n in TAS_MOMENTS]
+    cross = Omega[np.ix_(ip, it_)]
+    # corr(i,j) = cov(i,j) / (se_i * se_j). This had a stray sqrt -- np.sqrt(np.outer(...))
+    # -- which divides by sqrt(se_i*se_j) and, since these SEs are well below 1, made every
+    # reported cross-block correlation about an order of magnitude too SMALL. The EXPORTED
+    # `corr` matrix below was always correct; only this printed diagnostic, and the
+    # documentation quoting it, were wrong.
+    dsd = np.outer(se[ip], se[it_])
+    xcorr = cross / np.where(dsd > 0, dsd, 1.0)
+    print(f"cross-block correlations: min {xcorr.min():+.4f}  max {xcorr.max():+.4f}  "
+          f"|corr|>0.05 in {int((np.abs(xcorr) > 0.05).sum())} of {xcorr.size} pairs")
+    # WITHIN-block correlation is the number that actually bears on whether a diagonal
+    # weighting matrix loses efficiency, and it is much larger than the cross-block one.
+    # Reporting only the cross-block figure invited the conclusion that the moments are
+    # nearly uncorrelated, which they are not.
+    Corr_full = Omega / np.where(np.outer(se, se) > 0, np.outer(se, se), 1.0)
+    within = Corr_full[np.triu_indices(len(names), 1)]
+    blocks = np.zeros_like(Corr_full, dtype=bool)
+    blocks[np.ix_(ip, it_)] = True
+    blocks[np.ix_(it_, ip)] = True
+    wmask = (~blocks)[np.triu_indices(len(names), 1)]
+    print(f"WITHIN-block correlations: min {within[wmask].min():+.4f}  "
+          f"max {within[wmask].max():+.4f}  -- these are what a diagonal weight ignores")
     D = np.diag(1.0 / np.where(se > 0, se, 1.0))
     Corr = D @ Omega @ D
 
@@ -398,7 +824,9 @@ def main():
         "# ---------------------------------------------------------------------------",
         "# Cluster-robust covariance of the TARGETED moment vector.",
         "#",
-        f"# Clustered on {CLUSTER_ON} ({n_clusters} families). `se` is the standard error of",
+        f"# Clustered on {CLUSTER_ON} / {TAS_CLUSTER_ON} -- the SAME key, the PSID 1968 family",
+        f"# interview number ({n_clusters} distinct families across both blocks, {len(shared)} of them",
+        "# in both). `se` is the standard error of",
         "# each moment -- NOT the cross-sectional `sd` above, which is a different quantity",
         "# and is 20-100x larger. `cov` is row-major over `names`; `corr` is the same matrix",
         "# scaled to unit diagonal, which is the readable one.",
@@ -411,22 +839,26 @@ def main():
         f"n_clusters = {n_clusters}",
         "names      = [" + ", ".join(f'"{n}"' for n in names) + "]",
         "n_clusters_by_moment = [" + ", ".join(str(n_cl[n]) for n in names) + "]",
-        "se         = [" + ", ".join(f"{v:.10g}" for v in se) + "]",
+        "se         = [" + ", ".join(f"{v:.17g}" for v in se) + "]",
         "cov        = [",
     ]
     for i in range(len(names)):
-        lines.append("  [" + ", ".join(f"{Omega[i, j]:.10g}" for j in range(len(names))) + "],")
+        lines.append("  [" + ", ".join(f"{Omega[i, j]:.17g}" for j in range(len(names))) + "],")
     lines += ["]", "corr       = ["]
     for i in range(len(names)):
         lines.append("  [" + ", ".join(f"{Corr[i, j]:.6f}" for j in range(len(names))) + "],")
     lines += ["]", ""]
 
     print()
-    print(f"{'moment':16s} {'se':>12s} {'sd':>12s}   se/sd   clusters")
-    print("-" * 66)
+    print(f"{'moment':22s} {'se':>12s} {'sd':>12s}   se/sd   clusters")
+    print("-" * 72)
     for j, nm in enumerate(names):
-        sd = next(mo["series"].dropna().std() for mo in targeted if mo["name"] == nm)
-        print(f"{nm:16s} {se[j]:12.6f} {sd:12.6f} {se[j]/sd:7.4f} {n_cl[nm]:10d}")
+        if nm in PARENT_TARGETED:
+            sd = next(mo["series"].dropna().std() for mo in targeted if mo["name"] == nm)
+        else:
+            mo = next(mo for mo in tas if mo["name"] == nm)
+            sd = float(np.std(np.asarray(mo["num"])[np.asarray(mo["den"]) > 0], ddof=1))
+        print(f"{nm:22s} {se[j]:12.6f} {sd:12.6f} {se[j]/sd:7.4f} {n_cl[nm]:10d}")
     off = Corr[np.triu_indices(len(names), 1)]
     print(f"\nmoment correlations: min {off.min():+.3f}  max {off.max():+.3f}  "
           f"|corr|>0.3 in {int((np.abs(off) > 0.3).sum())} of {len(off)} pairs")

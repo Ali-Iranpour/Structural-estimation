@@ -54,6 +54,7 @@ both theoretical masks. **One caveat remains — see P5.**
 | P10 | Leisure restored (`φ₂` 20.0 → 0.8); `τ_p` level now targeted — see P11 | parent_family | 🟡 |
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
 | P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
+| P7c | `kappa_ParEd` targeted on *either*-parent college; model means *both* — **open by instruction** | smm/moments | 🟡 |
 | G3 | `create_focused_grid` builds a non-monotone grid when the range is under 3.0 | both | ⚪ |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
@@ -485,6 +486,67 @@ reason stated.
 
 **Fix.** Replace `0.3` with the share measured in the estimation sample, and record it in
 `model.txt` alongside the wage estimates.
+
+## 🟡 P7c — `kappa_ParEd` is targeted on *either*-parent college while the model means *both*
+
+**Open by instruction (2026-09-10): use the supplied numbers, change nothing, fix later.**
+
+The `kappa_ParEd` targets adopted for the fourteen-parameter SMM are TAS `kpe_g0_c` and
+`kpe_g1_c` — four-year completion by age 25 without and with a college-educated parent,
+**0.210766** (N=1,319) and **0.601314** (N=913). `Input/CODEBOOK_TAS.md` is explicit about
+what the grouping variable is:
+
+> `pared_col` is THREE-VALUED [...]: 1 when **either** observed parent has 16+ years, 0
+> only when BOTH parents are observed and both are below 16, and missing otherwise.
+
+The model's counterpart is `BothCollege` — the parent's binary `k`, `[0.0, 1.0]`, drawn
+from `Bernoulli(0.3)`. **These are different groups.** `g1` is "at least one parent has a
+degree"; the model's `k = 1` is "two parents have one". So the estimation currently
+compares a model group of one composition against a data group of another, and
+`kappa_ParEd` absorbs the difference.
+
+**Measured, on the same completion frame (N=2,771), rebuilt from `momed_hi`/`daded_hi`
+in `Input/SMM_TAS_Micro.dta`:**
+
+| group | N | clusters | completion |
+|---|---|---|---|
+| both parents 16+ | 416 | 249 | **0.7861** |
+| exactly one parent 16+ | 521 | 350 | 0.4357 |
+| neither parent 16+ | 1,247 | 682 | **0.2013** |
+| at least one parent unobserved | 587 | 351 | 0.1516 |
+
+So the group the model actually describes has a completion rate of **0.7861**, not the
+0.6013 being targeted, and its complement is **0.2013**, not 0.2108. The targeted gap is
+0.390; the both-parents gap is 0.585, **50% wider**. Whatever `kappa_ParEd` estimates
+under the current targets, it is not the both-parents effect.
+
+Two further consequences, neither of which the targets can absorb:
+
+1. **The share is wrong as well as the definition.** Among children with both parents
+   observed, the both-16+ share is **0.1905** and the any-16+ share is **0.4290**. The
+   model draws 0.30, which matches neither. This is P7b, and the two findings have to be
+   fixed together — changing the definition without changing the share, or the reverse,
+   just moves the error.
+2. **`BothCollege` is not only a psychic-cost shifter.** It also enters parental wages
+   through `β_bothcollege = 0.3077394` (`parent_family.jl:482`). Redefining the indicator
+   to "any college parent" therefore invalidates that Mincer coefficient — its base group
+   changes from "not both" to "neither" — so the education state cannot be respecified
+   without re-estimating the wage equation.
+3. **The unknown group is real and is not zero.** 587 children in the completion frame
+   have at least one parent's education unobserved, and they complete at 0.1516 — *below*
+   the neither-college group. The codebook records that an earlier version folded them
+   into the zeros and that this "estimates 'no OBSERVED college parent', a different
+   quantity". They are kept out of both targeted groups here, not recoded.
+
+**Fix, when it is taken up.** Choose one of: (a) retarget on the reconstructed
+both-parents-16+ rates above, which needs no model change and no new wage estimate; or
+(b) redefine the model's `k` as "any college parent", re-estimate `β_bothcollege` on that
+definition, and reset the `Bernoulli` share to 0.4290; or (c) carry three education states
+(neither / one / both), which uses all three observed groups and identifies a gradient
+rather than a level shift, at the cost of `Nk = 3`, a second wage coefficient, one terminal
+surface per state, and a wider handoff. Until then, read the estimated `kappa_ParEd` as
+"whatever reconciles a both-college model group with an either-college data group", NOT as
+the effect of parental education.
 
 ## ⚪ G3 — `create_focused_grid` silently builds an invalid grid on a narrow range
 

@@ -1,0 +1,47 @@
+
+==============================================================================
+Asset-grid sensitivity   [at a fixed point]
+==============================================================================
+started  2026-09-10 18:04:03
+outdir   output/grid_sensitivity/2026-09-10_180403
+targets  output/smm_runs/2026-09-10_164146_450677_targets/targets.toml
+27.6s
+point    PARENT_DEFAULTS
+a_max    80.0, 200.0   (Na = 14 nodes throughout -- the cap is an instruction, see CLAUDE.md)
+  a_max     80  spacing  6.154   Q    2414.59   term.assets  37.924   above: 0 ever / 0 handoff   max   79.0    0.3 min
+  a_max    200  spacing 15.385   Q    2437.05   term.assets  35.976   above: 0 ever / 0 handoff   max   84.0    0.0 min
+
+==============================================================================
+Movement against the baseline a_max = 80.0, in units of each moment's own residual scale
+==============================================================================
+A moment that moves less than ~0.01 of its scale cannot change the objective
+meaningfully; that is the convergence criterion, not the off-grid share.
+
+moment                scale          80         200
+---------------------------------------------------
+mean_c_p             0.0355     0.00000     0.91114
+mean_h_p             0.0021     0.00000    -2.04168
+mean_t_p_early       0.0073     0.00000     0.34887
+mean_t_p_late        0.0068     0.00000     0.42161
+mean_e_p_early       0.0119     0.00000     0.34516
+mean_e_p_late        0.0154     0.00000     0.71467
+mean_i_c_early       0.0028     0.00000    -0.15309
+mean_i_c_late        0.0025     0.00000    -0.07809
+mean_hc_early        0.0038     0.00000     1.02877
+mean_hc_late         0.0014     0.00000     1.97891
+k0_complete          0.0115     0.00000     0.00000
+kth_ga17_t1_c        0.0304     0.00000     0.00000
+kth_ga17_t2_c        0.0418     0.00000     0.00000
+kth_ga17_t3_c        0.0479     0.00000     0.00000
+kpe_g0_c             0.0128     0.00000     0.00000
+kpe_g1_c             0.0184     0.00000     0.00000
+kterm_x_strict_w99     3.2539     0.00000    -0.13848
+Q                               2414.59     2437.05
+terminal assets                  37.924      35.976
+
+largest moment movement across the whole sweep: 2.04168 residual units
+The asset grid DOES move the moments. Choose the smallest a_max at which they stop
+moving, and use that grid for every comparison from here on -- Q is not comparable
+across grids.
+
+wrote output/grid_sensitivity/2026-09-10_180403/grid_sensitivity.csv

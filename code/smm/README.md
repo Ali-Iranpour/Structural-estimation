@@ -330,6 +330,18 @@ the *average* of mother and father. Using `leis_hh` would double the target.
 
 ## What is being estimated
 
+**Fourteen parameters against seventeen moments — over-identified by three (2026-09-10).**
+Ten parent parameters against ten parent moments, plus four child parameters
+(`kappa_0`, `kappa_theta`, `kappa_ParEd`, `kappa_terminal`) against seven TAS moments.
+Because the system is over-identified the WEIGHTING MATRIX now decides the answer and not
+merely the path to it: the objective weights each residual by `1/se_j^2` from the joint
+cluster-robust covariance. `report_fit` prints each moment's share of `Q`; read it before
+trusting a fit, because inverse-variance weighting concentrates on whichever moment is
+most precisely measured when the model cannot fit any of them to within sampling error.
+
+The paragraph below describes the historical nine-against-ten design and its argument is
+unchanged.
+
 **Nine parameters against ten moments — over-identified by one.** `Q` cannot reach
 zero and the weighting matrix is *not* irrelevant at the optimum, so equal weights are a
 real assumption. Counting nine against ten establishes nothing about identification on its

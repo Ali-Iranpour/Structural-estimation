@@ -117,6 +117,12 @@ mutable struct ConSavLaborCollege_AR1
     sim_c::Matrix{Float64}; sim_h::Matrix{Float64}; sim_a::Matrix{Float64}
     sim_k::Matrix{Float64}; sim_p_idx::Matrix{Int}
     sim_a_init::Vector{Float64}; sim_k_init::Vector{Float64}; sim_p_init_idx::Vector{Int}
+    # THE HANDOFF OUTCOMES, retained rather than only returned. `simulate_model_family!`
+    # used to return `path_choice` and drop the transfer on the floor, so the two objects
+    # the TAS moments are built from -- who went to college, and what the parent kept --
+    # could not be read back off a solved model. Both are filled by every child simulator.
+    sim_college::Vector{Float64}   # 1.0 = chose college, 0.0 = work
+    sim_tr_init::Vector{Float64}   # transfer received at the handoff, model units
     # Parent's BothCollege indicator, for the kappa_ParEd term in the psychic cost.
     # Zeros unless the caller fills it (run_all.jl sets it from the parent block).
     sim_bc_init::Vector{Float64}
@@ -130,9 +136,14 @@ mutable struct ConSavLaborCollege_AR1
     college_cost::Float64
     # --- Psychic cost of college: kappa_0 + kappa_theta*log(theta)
     #                                       + kappa_ParEd*BothCollege
-    kappa_0::Float64          # level
+    kappa_0::Float64          # level, AT MEAN ABILITY once m_psychic is set
     kappa_theta::Float64      # ability gradient (NEGATIVE: ability lowers the cost)
     kappa_ParEd::Float64      # parental-education shift (NEGATIVE)
+    # Centring constant for log(theta) in the psychic cost. Behaviourally neutral -- the
+    # same device as m_theta in the wage equation -- but it makes kappa_0 and kappa_theta
+    # separately identified instead of collinear. 0.0 reproduces the pre-2026-09-10 form
+    # exactly, which is why it defaults to 0.0 and is set explicitly by the estimation.
+    m_psychic::Float64
 
     # --- Wage process -----------------------------------------------------
     # ln w_t = lnw0 + beta_E*E + (alpha_theta + alpha_thetaE*E)*theta_tilde
@@ -195,6 +206,12 @@ function ConSavLaborCollege_AR1(;
                 kappa_0::Float64=0.2728,
                 kappa_theta::Float64=-0.0342,
                 kappa_ParEd::Float64=-0.0070,
+                # Centring for the ability term: kappa_theta*(log theta - m_psychic).
+                # DEFAULT 0.0 = the uncentred form, so every existing call site and every
+                # frozen result is unchanged. The SMM sets it from the frozen target file
+                # (`m_psychic` there), where it is the mean log g_ACH of the age-17
+                # completion frame the kappa_theta tertiles are cut on.
+                m_psychic::Float64=0.0,
                 # Shock parameters (AR1 only)
                 p_ar1::Float64=0.95, sigma_p::Float64=0.2, Np::Int=5,
                 # Preference shock parameters
@@ -305,6 +322,12 @@ function ConSavLaborCollege_AR1(;
     draws_uniform_p = rand(rng, sim_shape...)
     draws_uniform_t = rand(rng, simN)      # N15: shared across every simulator
 
+    # NaN, not zero. A zero here is a legitimate value (no transfer, chose work), so an
+    # unfilled array has to be distinguishable from a filled one -- otherwise a moment
+    # built before the resimulation reads as a real 0% college share.
+    sim_college = fill(NaN, simN)
+    sim_tr_init = fill(NaN, simN)
+
     return ConSavLaborCollege_AR1(
         T, t_college, rho, beta, phi, eta, y, w, tau, r,
         a_max, a_min, Na, k_max, Nk, simT, simN, a_grid, k_grid,
@@ -317,9 +340,10 @@ function ConSavLaborCollege_AR1(;
         sol_c_college, sol_h_college, sol_v_college,
         sol_tr_college, sol_tr_work, sol_tr_v_college, sol_tr_v_work,
         sim_c, sim_h, sim_a, sim_k, sim_p_idx,
-        sim_a_init, sim_k_init, sim_p_init_idx, sim_bc_init, sim_income, sim_wage,
+        sim_a_init, sim_k_init, sim_p_init_idx, sim_college, sim_tr_init,
+        sim_bc_init, sim_income, sim_wage,
         draws_uniform_p, draws_uniform_t, college_cost,
-        kappa_0, kappa_theta, kappa_ParEd,
+        kappa_0, kappa_theta, kappa_ParEd, m_psychic,
         lnw0, beta_E, alpha_theta, alpha_thetaE, gamma1, gamma1E, gamma2, gamma2E,
         m_theta, tax_lambda,
         c_floor, delta_P
@@ -388,7 +412,12 @@ end
     # form and both find a negative gradient). The parental-education term is
     # additive and constant over the college years, so it is applied once, as a
     # value offset at the college-vs-work comparison, rather than carried here.
-    psychic_cost = model.kappa_0 + model.kappa_theta * log(max(k, 1e-8))
+    # CENTRED: kappa_0 + kappa_theta*(log theta - m_psychic). With m_psychic = 0 this is
+    # the original expression, unchanged. With m_psychic set to the frozen mean log
+    # ability, kappa_0 IS the psychic cost of the average child and kappa_theta is the
+    # pure gradient -- see the SMM note on why the uncentred pair is near-collinear.
+    psychic_cost = model.kappa_0 +
+                   model.kappa_theta * (log(max(k, 1e-8)) - model.m_psychic)
     return cons_utility - psychic_cost
 end
 
@@ -909,15 +938,37 @@ Fills the college arrays. Two stages:
   2. `t <= t_college`: the study years, consumption and saving only, with the
      continuation at `t_college+1` taken from stage 1.
 """
-function solve_model_college!(model::ConSavLaborCollege_AR1)
+function solve_model_college!(model::ConSavLaborCollege_AR1; reuse_grad::Bool = false)
     @unpack T, t_college, Na, Nk, Np, a_grid, k_grid, p_grid, c_floor = model
     @unpack sol_c_college, sol_h_college, sol_v_college, sol_v_work = model
     @unpack sol_c_grad, sol_h_grad, sol_v_grad = model
 
     # Stage 1: the graduate's working life, into its own eps-free arrays.
-    solve_model_work!(model; E = 1.0,
-                      sol_c = sol_c_grad, sol_h = sol_h_grad, sol_v = sol_v_grad,
-                      t_min = t_college + 1, label = "graduate working")
+    #
+    # `reuse_grad = true` SKIPS this stage, and the caller is asserting that
+    # `sol_*_grad` already holds the solution for THIS model's configuration.
+    #
+    # WHY THAT IS SAFE, AND WHAT IT IS FOR. The psychic cost of college
+    # (`kappa_0`, `kappa_theta`, `m_psychic`) enters `util_college`, which is evaluated
+    # ONLY in the study years, t = 1..t_college. The graduate's working life is E = 1
+    # under the ordinary `util` and reads none of them -- nor `kappa_ParEd`, which is a
+    # value offset applied at the enrolment comparison, nor `kappa_terminal`, which lives
+    # in the parent's transfer objective. So a change in any of the four leaves
+    # `sol_*_grad` bit-identical, while stage 2 below must be redone.
+    #
+    # The stages are ~47 periods against 4, so this is the difference between paying
+    # ~6.1s and ~0.5s for a psychic-cost change -- which is what makes estimating these
+    # parameters affordable. `code/smm/moments.jl` owns the cache and its dependency key;
+    # nothing else in the project passes `reuse_grad`.
+    if reuse_grad
+        any(isnan, view(sol_v_grad, T, :, :, :, :)) && error(
+            "reuse_grad = true but sol_v_grad is unsolved at t = T. The caller must copy " *
+            "a solved graduate block in first -- see build_child_solution in moments.jl.")
+    else
+        solve_model_work!(model; E = 1.0,
+                          sol_c = sol_c_grad, sol_h = sol_h_grad, sol_v = sol_v_grad,
+                          t_min = t_college + 1, label = "graduate working")
+    end
 
     a_req = compute_min_assets(model)
     if a_req[1] > a_grid[end]
@@ -1436,6 +1487,13 @@ function simulate_model_child!(model::ConSavLaborCollege_AR1)
         path_choice[i] = EV_college > EV_work ? :college : :work
     end
 
+    # This simulator has NO parental transfer stage -- the child starts on its own
+    # `sim_a_init` -- so `sim_tr_init` stays NaN rather than being filled with a zero that
+    # would read as "the parent transferred nothing". Only the family simulator produces a
+    # transfer, and only its output may be used for the kappa_terminal moment.
+    model.sim_college .= [pc === :college ? 1.0 : 0.0 for pc in path_choice]
+    fill!(model.sim_tr_init, NaN)
+
     # -- 4. Initialize simulation arrays --
     sim_a[:, 1] .= sim_a_init
     sim_k[:, 1] .= sim_k_init
@@ -1645,6 +1703,14 @@ function simulate_model_family!(model::ConSavLaborCollege_AR1)
         end
         tr_initial[i] = tr  # Ensure non-negative transfer
     end
+
+    # RETAIN both handoff outcomes on the model. The TAS moments are built from exactly
+    # these two objects -- who enrolled (kappa_0, kappa_theta, kappa_ParEd) and what the
+    # parent kept after the transfer (kappa_terminal) -- and before this they existed only
+    # as a local and a return value, so a moment function handed a solved model could not
+    # recover them.
+    model.sim_college .= [pc === :college ? 1.0 : 0.0 for pc in path_choice]
+    model.sim_tr_init .= tr_initial
 
     # -- 4. Initialize simulation arrays with transfer as initial asset --
     sim_a[:, 1] .= tr_initial
