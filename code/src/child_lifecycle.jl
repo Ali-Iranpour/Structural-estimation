@@ -90,9 +90,13 @@ mutable struct ConSavLaborCollege_AR1
     omega::Float64              # Weight on child's life-cycle utility
     mu::Float64                 # Weight on Parent's utility
 
-    # Transitory shocks
+    # Transitory shocks -- the college TASTE shock eps ~ N(0, sigma_eps^2), realised once at
+    # the age-18 half period and observed before enrolment. `t_grid` is its Gauss-Hermite
+    # discretisation, built from `sigma_eps` in the constructor and nowhere else.
     Nt::Int                     # Number of grid points for t
-    t_grid::Vector{Float64}     # Grid for transitory shock t
+    sigma_eps::Float64          # SD of eps -- ESTIMATED by the SMM since 2026-09-11; the
+                                # psychic-cost kappas are denominated in its units
+    t_grid::Vector{Float64}     # Grid for transitory shock t  (= sqrt(2) * sigma_eps * Hermite nodes)
     t_weight::Vector{Float64}   # Weights for t quadrature
 
     # --- Stochastic Shock Parameters (AR1 only) ---
@@ -165,6 +169,46 @@ mutable struct ConSavLaborCollege_AR1
     delta_P::Float64             # Minimum retained parental asset (a_bar^P) at the transfer stage
 end
 
+# =============================================================================
+# THE CHILD BLOCK'S CALIBRATION -- the fitted baseline
+# =============================================================================
+# The child-side counterpart of PARENT_DEFAULTS in parent_family.jl, and the single place
+# the child's non-grid configuration is written down. It lived in code/smm/moments.jl
+# until 2026-09-12; it is HERE now so that run_all.jl and the notebook build the same
+# child the estimation fitted (`ConSavLaborCollege_AR1(; Na = 30, ..., CHILD_DEFAULTS...)`)
+# instead of carrying their own copies of kappa_terminal = 5.0 and sigma_eps = 0.5.
+#
+# The five ESTIMATED entries and m_psychic are the sixteen-parameter fit
+# `2026-09-11_182836_exp16b` (Q 313.34 -> 61.80, accepted: polish FTOL_REACHED, all three
+# restarts converged, no parameter on a bound; kappa_ParEd within 5% of its wall at 0).
+# Full-precision values from the checkpoint's search vector, not the eight-decimal
+# estimates.toml. The specification it was fitted under (sigma_eta, sigma_eps, the gap
+# moments) is preliminary and has not been through the advisor -- docs/SMM.md. The five
+# fixed entries are unchanged since 2026-09-10.
+#
+# kappa_0 IS ON THE CENTRED SCALE: the psychic cost is
+#     kappa_0 + kappa_theta*(log theta - m_psychic) + kappa_ParEd*BothCollege
+# and the fitted kappa_0 is the cost AT log theta = m_psychic = 6.2634 (the data's mean
+# log g_ACH at 17). A target file with a different m_psychic would make this a different
+# model; `check_psychic_centring` in moments.jl refuses it.
+const CHILD_DEFAULTS = (
+    # --- fixed ---
+    rho          = 1.5,
+    psi_terminal = 0.0,      # by instruction 2026-08-30
+    omega        = 0.3,      # altruism
+    a_max        = 100.0,    # must cover the parent's terminal assets + 51 periods
+    w            = 20.0,
+    # --- estimated: the psychic cost of college (exp16b) ---
+    kappa_0      = -0.3565912994458334,
+    kappa_theta  = -3.6193790303472806,
+    kappa_ParEd  = -0.1081080950368823,    # 3.6% from the wall at 0 -- see the box in moments.jl
+    m_psychic    = 6.263396877461691,      # the centring the kappas were fitted at
+    # --- estimated: the parent's taste for retained assets (exp16b) ---
+    kappa_terminal = 8.786782398737627,
+    # --- estimated: the SCALE of the college taste shock (exp16b) ---
+    sigma_eps    = 1.142235039998814,
+)
+
 function ConSavLaborCollege_AR1(;
                 # T = 51: ages 18..68 inclusive, per model.txt. Was 52 in
                 # child_lifecycle_ret.jl, which implied a terminal age of 69.
@@ -203,22 +247,24 @@ function ConSavLaborCollege_AR1(;
                 # old kappa/(HC+1)^4 cost. docs/WAGE_PROCESS.md
                 # -kappa_theta*log(M) = +0.2266, offsetting the same rescaling: the
                 # psychic cost takes kappa_theta*log(theta). Behaviourally neutral.
-                kappa_0::Float64=0.2728,
-                kappa_theta::Float64=-0.0342,
-                kappa_ParEd::Float64=-0.0070,
+                # DEFAULTS ARE THE FITTED BASELINE (CHILD_DEFAULTS, above) since 2026-09-12.
+                # The legacy uncentred pair (0.2728, -0.0342) with m_psychic = 0 is kept in
+                # moments.jl as LEGACY_KAPPA_* for the centring regression test only.
+                kappa_0::Float64=CHILD_DEFAULTS.kappa_0,
+                kappa_theta::Float64=CHILD_DEFAULTS.kappa_theta,
+                kappa_ParEd::Float64=CHILD_DEFAULTS.kappa_ParEd,
                 # Centring for the ability term: kappa_theta*(log theta - m_psychic).
-                # DEFAULT 0.0 = the uncentred form, so every existing call site and every
-                # frozen result is unchanged. The SMM sets it from the frozen target file
-                # (`m_psychic` there), where it is the mean log g_ACH of the age-17
-                # completion frame the kappa_theta tertiles are cut on.
-                m_psychic::Float64=0.0,
+                # Default = the centring the fitted kappa_0 belongs to. 0.0 is the
+                # uncentred legacy form. The SMM sets it from the frozen target file
+                # (`m_psychic` there), the mean log g_ACH of the age-17 completion frame.
+                m_psychic::Float64=CHILD_DEFAULTS.m_psychic,
                 # Shock parameters (AR1 only)
                 p_ar1::Float64=0.95, sigma_p::Float64=0.2, Np::Int=5,
                 # Preference shock parameters
                 # Nt = 5 Gauss-Hermite nodes for the taste shock eps (was 11). GH with n
                 # nodes is exact for degree 2n-1, and measured: Nt 10 -> 5 moves the
                 # college share 51.5 -> 52.1 and nothing else at all.
-                Nt=5, sigma_eps=0.5,
+                Nt=5, sigma_eps=CHILD_DEFAULTS.sigma_eps,
                 # --- Terminal value parameters ---
                 # psi_terminal = 0.0 by instruction (2026-08-30). It is the weight on the CHILD'S HC
 # in the PARENT's terminal value at separation, terminal_value = psi*log(k) + kappa*log(a).
@@ -227,7 +273,7 @@ function ConSavLaborCollege_AR1(;
 # WATCH tau_p AT t = 17: psi was raised 1.0 -> 4.0 precisely because a low terminal weight
 # made the last period value skill far less than every earlier one and tau_p collapsed
 # (0.059 against 0.155 once psi rose). Zero is a stronger version of that. See ERRORS.md P11.
-                psi_terminal::Float64=0.0, kappa_terminal::Float64=10.0, omega::Float64=0.5,
+                psi_terminal::Float64=0.0, kappa_terminal::Float64=CHILD_DEFAULTS.kappa_terminal, omega::Float64=0.5,
                     # --- Bargaining parameter ---
                 mu = 0.5,
                 tax_lambda::Float64=0.82,
@@ -270,7 +316,11 @@ function ConSavLaborCollege_AR1(;
         end
     end
 
-    # Gauss-Hermite quadrature for transitory shocks
+    # Gauss-Hermite quadrature for transitory shocks. THE ONLY place `t_grid` is built:
+    # a model constructed with a different sigma_eps gets a different grid, and nothing
+    # downstream carries a hardcoded 0.5.
+    sigma_eps > 0.0 || error("sigma_eps must be positive, got $sigma_eps")
+    1 <= Nt <= 5 || error("Nt = $Nt: shock discretisation is capped at 5 nodes by instruction")
     nodes, weights = gausshermite(Nt)
     t_grid = sqrt(2) * sigma_eps .* nodes
     t_weight = weights / sqrt(pi)
@@ -333,7 +383,7 @@ function ConSavLaborCollege_AR1(;
         a_max, a_min, Na, k_max, Nk, simT, simN, a_grid, k_grid,
         ap_grid, Nap, ap_min, ap_max,
         psi_terminal, kappa_terminal, omega, mu,
-        Nt, t_grid, t_weight,
+        Nt, float(sigma_eps), t_grid, t_weight,
         Np, p_grid, p_transition, p_ar1, sigma_p,
         sol_c_work, sol_h_work, sol_v_work,
         sol_c_grad, sol_h_grad, sol_v_grad,

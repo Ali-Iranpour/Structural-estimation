@@ -1,9 +1,34 @@
-# SMM — ten parent moments
+# SMM — sixteen parameters, seventeen moments
+
+**Since 11 September 2026 (preliminary, not through the advisor):** eleven parent
+parameters — the ten below plus `sigma_eta`, the SD of an i.i.d. log shock in the HC
+technology — and five child parameters — `kappa_0`, `kappa_theta`, `kappa_ParEd`,
+`kappa_terminal`, plus `sigma_eps`, the scale of the college taste shock — against the
+ten parent moments and seven TAS moments (`k0_complete`, `kth_ga17_gap`, `kpe_g0_c`,
+`kpe_g1_c`, `kterm_x_strict_w99`, `kse_w_gap`, `sd_ga17`). `R_1` is fixed at 0. The
+design, the moment definitions and the pilot budget are in `docs/SMM.md`; the diagnosis
+that motivated it is `docs/ERRORS.md` P13.
+**Baseline promoted 2026-09-12** from run `2026-09-11_182836_exp16b` (Q 61.80, accepted):
+`PARENT_DEFAULTS` and `CHILD_DEFAULTS` (now in `child_lifecycle.jl`) carry it at full
+precision, so a run with no `--init-from` starts from the fit. Boxes changed for the next
+run: `kappa_0 [-3, 1]`, `kappa_ParEd [-1, 0.5]`, `sigma_4_1 [-0.05, 0.30]` — the reasons
+are beside each line in `moments.jl` and in `docs/SMM.md`, "The next run".
+
+The original pilot command (the incumbent is now the baseline, so `--init-from` is no
+longer needed):
+
+```bash
+julia --project=. code/smm/run_smm.jl --sobol 1000 --restarts 5 --local-evals 500 \
+      --skip-polish --grid 30 --procs 20 --seed 1234 --targets <targets.toml> \
+      --init-from output/smm_runs/2026-09-10_183649/estimates.toml --outdir <dir>
+```
+
+The paragraphs below describe the parent block, which is unchanged.
 
 Estimates **ten** parent parameters against **ten** moments. From 9 September 2026,
 child investment is **own study only** (`study_hrs / 112`), at ages 6–9 and 10–17.
 The HC moments are mean log HC at ages **3–9 and 12–17**. `sigma_4_1` is estimated
-in `[-0.05, 0.15]`; `mu_1` remains fixed. Equal parameter/moment counts do not
+in `[-0.05, 0.30]` (top raised from 0.15 on 2026-09-12); `mu_1` remains fixed. Equal parameter/moment counts do not
 establish identification: rerun the Jacobian after fitting the new specification.
 
 The fixed school schedule uses `school_hrs`, the median within `(Year, Child_Age)`,
@@ -121,6 +146,12 @@ directories are gitignored; delete a throwaway folder whenever.
 | `--outdir P` | Write the run folder to `P` instead of `output/smm_runs/<stamp>/`. |
 | `--serial` | Everything on one process. Slowest, but the easiest to debug. |
 | `--resume DIR` | Continue a killed run from `DIR/checkpoint.toml`. Exact continuation, not a warm start — see below. |
+| `--init-from FILE` | Warm start: load the incumbent from a previous run's `estimates.toml` **by name**. Parameters the file lacks start at their SMM starts; a value outside its box is an error. Recorded per parameter in `run_record.toml`. |
+| `--skip-polish` | Bypass the final BOBYQA polish entirely (`polish_ret = SKIPPED`). This is a real switch, not `--polish-evals 0` — NLopt reads `maxeval = 0` as *no limit*, and the runner now refuses that. |
+| `--seed N` | Common-random-number seed (default 1234). Part of the checkpoint identity. |
+
+**Every flag is validated.** An unknown flag (`--workers`, say) is an error before
+anything is written; it used to be silently ignored.
 
 ### Resuming a killed run
 

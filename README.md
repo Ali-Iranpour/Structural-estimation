@@ -10,7 +10,7 @@ the child's birth to age 18; the child is then followed to age 68.
 
 | I want to… | Go to |
 |---|---|
-| Run the model | [`docs/GUIDE.md`](docs/GUIDE.md) |
+| Run the model | [`docs/MODEL.md`](docs/MODEL.md) — "Running it", current defaults, known issues |
 | Estimate the parameters | [`docs/SMM.md`](docs/SMM.md) — SMM by TikTak, and every open decision we settled |
 | Read the model as written in the paper | [`docs/model.txt`](docs/model.txt) |
 | Find which code implements which equation | [`docs/MODEL.md`](docs/MODEL.md) |
@@ -46,8 +46,7 @@ the child's birth to age 18; the child is then followed to age 68.
 │
 ├── docs/
 │   ├── model.txt                   LaTeX model specification from the paper
-│   ├── MODEL.md                    equation ↔ code map
-│   ├── GUIDE.md                    how to run, parameters
+│   ├── MODEL.md                    equation ↔ code map, how to run, current defaults
 │   ├── ERRORS.md                   full audit: severity, file, line
 │   ├── SLSQP_algorithm.md          methodology note
 │   └── Flat_policy_function.md     methodology note
@@ -101,7 +100,7 @@ cd code && julia --project=.. run_all.jl
 ```
 
 or open `code/transfer_CRRA_wage.ipynb` with the IJulia (Julia 1.11) kernel and run cells
-in order. See [`docs/GUIDE.md`](docs/GUIDE.md) for load order, runtime, and caveats.
+in order. See [`docs/MODEL.md`](docs/MODEL.md) for load order, runtime, and caveats.
 
 ---
 

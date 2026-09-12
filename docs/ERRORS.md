@@ -55,6 +55,7 @@ both theoretical masks. **One caveat remains — see P5.**
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
 | P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
 | P7c | `kappa_ParEd` targeted on *either*-parent college; model means *both* — **open by instruction** | smm/moments | 🟡 |
+| P13 | HC technology has no idiosyncratic shock; child block cannot fit ability and parental education jointly — **g0 = 0 carries 64% of Q** | parent_family / smm | 🟠 |
 | G3 | `create_focused_grid` builds a non-monotone grid when the range is under 3.0 | both | ⚪ |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
@@ -493,7 +494,7 @@ reason stated.
 
 The `kappa_ParEd` targets adopted for the fourteen-parameter SMM are TAS `kpe_g0_c` and
 `kpe_g1_c` — four-year completion by age 25 without and with a college-educated parent,
-**0.210766** (N=1,319) and **0.601314** (N=913). `Input/CODEBOOK_TAS.md` is explicit about
+**0.210766** (N=1,319) and **0.601314** (N=913). `Input/CODEBOOK.md` (Part B; formerly `CODEBOOK_TAS.md`) is explicit about
 what the grouping variable is:
 
 > `pared_col` is THREE-VALUED [...]: 1 when **either** observed parent has 16+ years, 0
@@ -547,6 +548,125 @@ rather than a level shift, at the cost of `Nk = 3`, a second wage coefficient, o
 surface per state, and a wider handoff. Until then, read the estimated `kappa_ParEd` as
 "whatever reconciles a both-college model group with an either-college data group", NOT as
 the effect of parental education.
+
+## 🟠 P13 — The HC technology has no idiosyncratic shock, so the child block cannot fit ability and parental education jointly
+
+**Found on run `2026-09-10_183649`** (14 parameters / 17 moments, Q 2405 → 427, accepted).
+The parent block fits to |t| ≤ 1.3 everywhere; **91.8% of the remaining Q is three moments,
+and they are one problem:**
+
+| moment | model | data | t | Q share |
+|---|---|---|---|---|
+| `kpe_g0_c` | **0.000** | 0.211 | −16.5 | 64% |
+| `k0_complete` | 0.215 | 0.323 | −9.4 | 21% |
+| `kpe_g1_c` | 0.706 | 0.601 | +5.7 | 8% |
+
+All 430 simulated completers are children of `BothCollege = 1` parents (609 of 2,000). The
+model says nobody without two college-educated parents completes college.
+
+**It is structural, not a bad basin.** Measured at the fitted point (2026-09-11):
+
+| test | result |
+|---|---|
+| `kappa_ParEd` −1.17 → −0.90 | g1 collapses 0.70 → 0.01; g0 stays 0 throughout |
+| `kappa_0` 0.67 → −0.20 | g1 saturates at 1.00; g0 reaches 0.001 |
+| `Nt` 5 → 11 taste nodes | g0 stays 0 — not the discretisation |
+| `sigma_eps` 0.5 → 2.0 | g0 reaches 0.009 — not the taste-shock scale |
+| SD of log HC at age 17 | **model 0.0081, data 0.0329** — four times narrower |
+
+**Mechanism.** `HC_technology_full` (`parent_family.jl:750`) is deterministic: log HC_{t+1}
+is an exact function of (t_p, e_p, i_c, HC_t). Self-productivity is σ₃ = exp(−0.90) = 0.407,
+flat in t, so the initial draw's SD of 0.067 is gone by age 17 (0.067 × 0.407¹⁶ ≈ 0). The
+only cross-sectional variation left in HC₁₇ comes from parental inputs, and those are
+functions of the parent's state — assets, `BothCollege`, the wage shock. **In the model,
+"ability" and "parental resources" are the same object.** The three TAS moment groups
+(overall, by ability tertile, by parental education) ask the model to separate two things it
+has fused, and the optimiser did the only thing available: it generated the ability gradient
+by *composition* — the top HC tertile is overwhelmingly `BothCollege` — through a large
+`kappa_ParEd`, which zeros g0. `kappa_theta = −2.02` on a distribution with SD 0.008 is a
+slope of 22 completion points per log point of ability against 6.4 in the data; rank
+tertiles cannot see the difference.
+
+The sweeps agree with this reading and with nothing else. g1 moves from 0.70 to 0.01 on a
+0.27 change in `kappa_ParEd` (≈ 0.8 utils at the enrolment comparison), so the within-group
+spread of the college value gap is about half of `sigma_eps`; g0 sits one
+`pared_value_offset` (≈ 3.4 utils) below that, and no move in `kappa_0` reaches it without
+first saturating g1. The college-feasibility threshold is not the constraint: `a_req[1]` =
+2.27 model units against mean pre-transfer assets of 42.
+
+**Why the tertiles did not catch it.** They are cut at the simulation's own terciles by
+design (decision 2026-09-10, `moments.jl:190`), precisely so a dispersion miss would not
+contaminate `kappa_theta`. That worked: T3 − T1 fits at 0.42 against 0.52 while the
+underlying dispersion is off by 4×. The miss surfaced in `kpe_g0_c` / `kpe_g1_c`, the two
+completion moments that are not rank-based.
+
+**The mean-gap moment is not a substitute on its own.** Replacing the tertiles with the mean
+of log g_ACH among completers minus non-completers (data **0.0312**, SE 0.0031, N = 317,
+verified from `SMM_TAS_Micro.dta`) is attractive — smooth, every child, absolute units — but
+a binary outcome at completion rate p bounds that gap at φ(Φ⁻¹(1−p))/(p(1−p)) × SD ≈
+1.64 × SD, attained only under perfect sorting on HC:
+
+| SD of log HC at 17 | largest reachable gap | target |
+|---|---|---|
+| model, 0.0081 | **0.0133** | 0.0312 |
+| data, 0.0329 | 0.0539 | 0.0312 |
+
+Under the current model it is unreachable by 2.3× (|t| ≥ 5.8 at best) and would drive
+`kappa_theta` to its box edge chasing perfect sorting. A moment can only discipline
+something a parameter can move; with the ten parent parameters pinned by ten parent
+moments, nothing in the current vector moves HC dispersion. **The gap is the right moment
+once dispersion is a parameter, and a second `kpe_g0_c` until then.** The standardised OLS
+slope (0.209 per SD, SE 0.025; model 0.179) is the scale-free alternative that *is*
+reachable now; it buys smoothness over the tertiles and nothing else.
+
+**What not to do.** Fixing `kappa_ParEd` and dropping g0/g1 leaves g0 = 0 in the model and
+stops measuring it; there is no defensible level to fix at (Colas gives a ratio to
+`kappa_theta`, not a level). Overriding the inverse-variance weights to mute the moment
+makes Q and the standard errors uninterpretable. Neither is a quotable result. Nor is a
+longer search: 3 of 5 restarts hit the 500-eval budget, but the sequence
+(2340 → 658 → 496 → 451 → 432) is descending into the same corner, and at 94 s per
+evaluation a 2000-eval run costs ~15 h on 20 cores.
+
+**Fix — needs the advisor, it changes the technology.**
+
+(a) **An idiosyncratic shock in the HC technology**: log HC_{t+1} = … + η_{t+1},
+η ~ N(0, σ_η²) i.i.d. It adds no state variable — the parent's continuation integrates over
+η with ≤ 5 GH nodes (inside the grid cap) and the simulator draws η from a seeded stream
+like `draws_uniform_p`. Stationary SD at 17 ≈ σ_η / √(1 − σ₃²) ≈ 1.09 σ_η, so σ_η ≈ 0.03
+reaches 0.033; dynamic complementarity (∂HC'/∂t_p ∝ HC') amplifies it slightly. Expected
+cost: 2–3× on the parent solve from the extra interpolant evaluations — measure on a test
+grid before committing. The alternative is a *permanent* child type on log R, closer to
+what "ability" usually means, at the price of a state variable and Nζ× the solve.
+
+(b) **Moments**: add SD(log g_ACH | age 17) = 0.0329 to identify σ_η, and **replace the
+three tertiles with the mean gap** (decision 2026-09-11). 15 parameters against 16 moments.
+If a counterfactual turns out to need *where* in the ability distribution college responds
+— the data's quintiles run 0.08, 0.18, 0.21, 0.49, 0.69, with the jump between Q3 and Q4 —
+the tertiles can be re-added beside the gap; it is not a linear combination of them.
+
+(c) **Partial, estimation-side**: `sigma_eps` = 0.5 is hand-set (`child_lifecycle.jl:221`)
+and is the smoothing scale of the enrolment margin — the κ's are denominated in its units.
+Estimating it lets g0 and g1 both be interior. It does not touch HC dispersion, so the
+ability gradient stays composition-driven and `kappa_theta` stays poorly identified. Worth
+it only as an intermediate if (a) has to wait.
+
+Next run, whichever path: `--sobol 1000 --local-evals 2000`, started from this run's
+`estimates.toml`. The best of 4,000 Sobol draws on this run was the incumbent itself; the
+stage cost 5.2 h.
+
+**P7c stays open** (decision 2026-09-11): the g0/g1 targets remain the either-parent
+rates. The data-side work order for (b) — frames, estimators, expected values, staging —
+is in `docs/SMM.md` ("The seven TAS moments" and the appendix).
+
+**Implemented 2026-09-11 as a PRELIMINARY experiment (not through the advisor):** (a) as
+an i.i.d. shock `hc_apply_shock` with `sigma_eta` estimated (box [0, 0.08], start 0.03),
+integrated once per period in the parent continuation (`eta_expected_interp`) and by
+quadrature on the handoff (`eval_child_value_eta`); (b) with `kth_ga17_gap` replacing the
+tertiles and `sd_ga17` added; (c) with `sigma_eps` estimated (box [0.1, 2.0], start 0.5)
+and `kse_w_gap` added. Sixteen parameters, seventeen moments; `R_1` fixed at 0. Focused
+tests: `tools/test_hc_process_shock.jl`, `tools/test_smm_tas.jl` 14–15,
+`tools/test_smm_baseline.jl` (the pre-shock fit reproduced at `sigma_eta = 0`). The
+finding stays OPEN until the advisor has seen the specification and the pilot estimate.
 
 ## ⚪ G3 — `create_focused_grid` silently builds an invalid grid on a narrow range
 
@@ -650,7 +770,7 @@ over-identification test, and hand-set weights (1.0–3.0). `SMM.md` already rec
 
 ## ✅ Child `Np` convergence — **tested 2026-08-26, converged**
 
-`GUIDE.md` records that raising the **parent's** `Np` from 3 to 7 moved the college
+The 2026-08 run guide (now folded into `MODEL.md`) recorded that raising the **parent's** `Np` from 3 to 7 moved the college
 share **17.85% → 22.40%**, making the shock grid the most consequential numerical choice
 in the model. The equivalent study had never been run for the **child**, which has always
 run at `Np = 5` (`run_all.jl` overrides `Na`, `Nk` and `Nt` but not `Np`). That was the
@@ -750,19 +870,22 @@ Ordered by priority. Improvement 1 is now **done** — it is what settled P5.
 
 ## Remaining work, in order
 
-1. **P10 (calibration half)** — `τ_p` = 0.011 is too low and neither `φ₂` nor `σ₁` fixes it.
+1. **P13** — an idiosyncratic shock in the HC technology plus a dispersion moment, through
+   the advisor. Until then the 14-parameter child-block estimates (`kappa_theta`,
+   `kappa_ParEd`) are the model failing `kpe_g0_c`, not a fit.
+2. **P10 (calibration half)** — `τ_p` = 0.011 is too low and neither `φ₂` nor `σ₁` fixes it.
    The levers are the units of the HC production inputs and the weight on the child's skill.
-   This is the only open item that changes the economics.
-2. **P5 (child side)** — apply the same shape-preserving continuation to
+   With P13, one of the two open items that change the economics.
+3. **P5 (child side)** — apply the same shape-preserving continuation to
    `child_lifecycle.jl`, now that the parent side shows it is safe: `V` stayed monotone at
    59,160 of 59,160 adjacent pairs and the Bellman residual went to exactly zero.
-3. **P7b** — get the `BothCollege` share from the estimation sample.
-4. **G3** — two-line guard, needed before any grid range can be narrowed.
-5. **Regenerate every table and figure.** The headline numbers moved a long way across this
+4. **P7b** — get the `BothCollege` share from the estimation sample.
+5. **G3** — two-line guard, needed before any grid range can be narrowed.
+6. **Regenerate every table and figure.** The headline numbers moved a long way across this
    session (college share 13.1% → 19.1%); anything already drafted is stale.
-3. **Improvement 7.0** — Tauchen vs Rouwenhorst in the solved model, not just in the
+7. **Improvement 7.0** — Tauchen vs Rouwenhorst in the solved model, not just in the
    discretization report.
-4. **Improvement 7.5 / 6.5** — grid refinement on real outcomes, and the paired bootstrap.
+8. **Improvement 7.5 / 6.5** — grid refinement on real outcomes, and the paired bootstrap.
 
 ---
 

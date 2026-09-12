@@ -170,10 +170,25 @@ TAS_WEALTH_WINSOR_P = 99.0
 # The model has no post-separation parent to age forward, so this cannot be closed without
 # a new mechanism. It is carried as a limitation on kappa_terminal.
 
+# SEVEN TAS TARGETS (2026-09-11, sixteen-parameter experiment). The three rank tertiles
+# are REPLACED by the mean log-ability gap; `kse_w_gap` identifies `sigma_eps` and
+# `sd_ga17` identifies `sigma_eta`. Order is load-bearing: it is the order of
+# SMM_TAS_MOMENTS in code/smm/moments.jl and of the covariance rows below.
+#
+#   kth_ga17_gap   mean ln(g_ACH) among completers minus non-completers, age-17 frame.
+#                  Absolute units on purpose: rank tertiles are scale-free and could not
+#                  see the model's 4x dispersion miss (docs/ERRORS.md P13).
+#   kse_w_gap      mean winsorised parental net worth (10k USD) among completers minus
+#                  non-completers, wealth frame. A PECUNIARY shifter in known units is
+#                  what separates the taste-shock SCALE from the psychic-cost levels.
+#   sd_ga17        sample SD of ln(g_ACH) on the age-17 frame -- the dispersion the HC
+#                  shock exists to reproduce.
 TAS_MOMENTS = ["k0_complete",
-               "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c",
+               "kth_ga17_gap",
                "kpe_g0_c", "kpe_g1_c",
-               "kterm_x_strict_w99"]
+               "kterm_x_strict_w99",
+               "kse_w_gap",
+               "sd_ga17"]
 
 
 
@@ -220,7 +235,7 @@ PARENT_TARGETED = ["mean_c_p", "mean_h_p",
                    "mean_i_c_early", "mean_i_c_late",
                    "mean_hc_early", "mean_hc_late"]
 
-# SEVENTEEN moments against FOURTEEN parameters -- over-identified, so the weighting
+# SEVENTEEN moments against SIXTEEN parameters -- over-identified, so the weighting
 # matrix now changes the answer in a way it could not when the system was square. The
 # order here IS the order of `SMM_MOMENTS` in code/smm/moments.jl and of every row and
 # column of the covariance below; moments.jl checks it and refuses to run if they differ.
@@ -267,6 +282,46 @@ def ratio_influence(num, den, clusters):
     r = num.mean() / dbar
     psi = pd.Series((num - r * den) / dbar / n, index=clusters.index)
     return r, psi.groupby(clusters).sum()
+
+
+def diff_influence(num1, den1, num2, den2, clusters):
+    """
+    A DIFFERENCE OF TWO RATIOS -- Stata's `lincom r1 - r2` after a joint `ratio`.
+
+    The influence function is linear, so the difference's per-cluster influence is the
+    difference of the two ratios' influences. Nothing is assumed about their independence:
+    the clusters that enter both (every family with a completer AND a non-completer) carry
+    the covariance between the two halves into the SE of the gap, exactly as `lincom` does.
+    """
+    r1, psi1 = ratio_influence(num1, den1, clusters)
+    r2, psi2 = ratio_influence(num2, den2, clusters)
+    return r1 - r2, psi1.sub(psi2, fill_value=0.0)
+
+
+def sd_influence(x, mask, clusters):
+    """
+    SAMPLE standard deviation of `x` on the frame `mask` -- Stata's `nlcom sqrt(m2 - m1^2)`.
+
+    `m1 = mean(x)` and `m2 = mean(x^2)` are ratio moments on the frame; the delta method
+    gives  psi_sd = sqrt(n/(n-1)) * (psi_m2 - 2 m1 psi_m1) / (2 sqrt(m2 - m1^2)).  The
+    sample correction is carried in BOTH the estimate and the influence, so this is the SD
+    a `summarize` reports, the SD the model side computes with Julia's `std(...)`, and the
+    SE Stata's `nlcom sqrt(m2 - m1^2)` reports on the corrected form.
+    """
+    mask = np.asarray(mask, dtype=float)
+    x = np.where(mask > 0, np.nan_to_num(np.asarray(x, dtype=float), nan=0.0), 0.0)
+    m1, psi1 = ratio_influence(x, mask, clusters)
+    m2, psi2 = ratio_influence(x * x, mask, clusters)
+    n = int((mask > 0).sum())
+    var_pop = m2 - m1 * m1
+    if not var_pop > 0:
+        raise ValueError("sd moment has zero variance")
+    corr = np.sqrt(n / (n - 1.0))
+    sd = corr * np.sqrt(var_pop)
+    # d sd / d var_pop = corr / (2 sqrt(var_pop)); the same factor Stata's nlcom carries.
+    # VERIFIED against the supplied sd_ga17 row: estimate and SE to six decimals.
+    psi = corr * (psi2.sub(2.0 * m1 * psi1, fill_value=0.0)) / (2.0 * np.sqrt(var_pop))
+    return sd, psi
 
 
 def joint_covariance(influences, names, dof_correct=True):
@@ -318,28 +373,64 @@ def winsorise(x, p):
     return np.minimum(x, np.percentile(x, p))
 
 
+def rank_tertiles(x):
+    """
+    Within-sample tertiles by rank, ties broken by row order, cut at the INTERPOLATED
+    rank quantiles 1 + j*(n-1)/3 -- Stata's `xtile` / pandas' `qcut` convention, which is
+    what the supplied `kse_w_t*_c` rows use (N 222 / 221 / 222; reproduced exactly).
+
+    The model side (`rank_tertiles` in code/smm/moments.jl) uses the floor rule
+    `min(3, 1 + div(3*(rank-1), n))`, which differs from this one by AT MOST ONE
+    observation at each boundary (for n = 665: ranks 444 and 665). Immaterial for a
+    diagnostic; recorded so nobody reads the one-observation difference as a data change.
+    """
+    x = np.asarray(x, dtype=float)
+    n = len(x)
+    order = np.argsort(x, kind="stable")
+    rank = np.empty(n, dtype=float)
+    rank[order] = np.arange(1, n + 1)
+    q = 1.0 + np.arange(1, 3) * (n - 1) / 3.0            # interpolated rank cut points
+    return 1 + (rank[:, None] > q[None, :]).sum(axis=1)
+
+
 def build_tas_moments(t):
     """
-    The seven TAS targets, plus the untargeted diagnostics, as ratio-of-means moments.
+    The seven TAS targets, plus the untargeted diagnostics.
 
-    Every one is defined on the FULL TAS frame with the subgroup indicator inside the
-    denominator, so `n_obs` below is the subgroup size (the denominator's support) while
-    the influence function runs over all 4,248 rows. Both are reported.
+    Three estimator kinds, all reduced to per-cluster influence functions so they enter
+    ONE joint covariance:
+      ratio   mean(num)/mean(den) on the FULL frame, subgroup indicator in `den`
+      diff    ratio_1 - ratio_2                       (kth_ga17_gap, kse_w_gap)
+      sd      sample SD of a variable on a frame      (sd_ga17)
+    `n_obs` is the subgroup size (the denominator's support; for a diff, the union of the
+    two subgroups) while the influence function runs over all 4,248 rows.
+
+    ROWS REMOVED 2026-09-11 as never used by any run: every `_e` (entry) variant, the LW
+    subscale, the age-18 panel, and the incl.-home wealth variant. They can be rebuilt from
+    the micro file at any time; nothing read them.
     """
-    n_all = len(t)
     out = []
 
-    def add(name, mask, value, *, source, units, model, block, targeted=True, note=""):
+    def add(name, mask, value, *, source, units, model, block, targeted=True, note="",
+            kind="ratio", mask2=None, value2=None):
         mask = np.asarray(mask, dtype=float)
         value = np.asarray(value, dtype=float)
         # A NaN outcome off the subgroup must not poison the product; the mask is what
         # decides membership, so the value is only ever read where the mask is 1.
         num = np.where(mask > 0, np.nan_to_num(value, nan=0.0), 0.0)
-        out.append(dict(name=name, num=num, den=mask, source=source, units=units,
-                        model=model, block=block, targeted=targeted, note=note))
+        mo = dict(name=name, kind=kind, num=num, den=mask, source=source, units=units,
+                  model=model, block=block, targeted=targeted, note=note)
+        if kind == "diff":
+            mask2 = np.asarray(mask2, dtype=float)
+            value2 = np.asarray(value2, dtype=float)
+            mo["num2"] = np.where(mask2 > 0, np.nan_to_num(value2, nan=0.0), 0.0)
+            mo["den2"] = mask2
+        out.append(mo)
 
     y = t[TAS_OUTCOME]
     hf = (t[TAS_FOLLOWUP] == 1)
+    yc = (y == 1)                   # completer
+    yn = (y == 0)                   # non-completer (y is 0/1 on the follow-up frame)
 
     # ---- kappa_0: the overall completion rate --------------------------------
     add("k0_complete", hf, y,
@@ -347,46 +438,46 @@ def build_tas_moments(t):
         units="share of linked children completing a four-year degree by age 25",
         model="share of resimulated children with path_choice == :college",
         block="kappa_0")
-    # Untargeted: the entry series, kept visible so the entry/completion gap that decided
-    # this specification stays in the file rather than only in the codebook.
-    add("k0_entry", (t.hf_entry == 1), t.y_entry,
-        source="y_entry | hf_entry",
-        units="share entering a four-year track by age 25",
-        model="(not targeted; the model has no entry-without-completion state)",
-        block="kappa_0", targeted=False,
-        note="degree SOUGHT, runs ~0.62 against a national ~0.45; see CODEBOOK")
 
-    # ---- kappa_theta: completion by age-17 achievement tertile ----------------
+    # ---- kappa_theta: the mean log-ability gap on the age-17 frame ------------
+    a17 = hf & (t.ach_age == TAS_ACH_AGE) & t.g_ACH.notna()
+    lng = np.log(t.g_ACH.where(t.g_ACH > 0))
+    add("kth_ga17_gap", a17 & yc, lng,
+        kind="diff", mask2=a17 & yn, value2=lng,
+        source=f"ln(g_ACH) | {TAS_FOLLOWUP}, ach_age=={TAS_ACH_AGE}: completers minus non-completers",
+        units="log W-score points",
+        model="mean(log hc17[college]) - mean(log hc17[work]), hc17 = parent.sim_hc[:, 17]",
+        block="kappa_theta",
+        note="absolute units, not rank: the gap is bounded by ~1.64 x SD(log HC) under "
+             "perfect sorting, so it disciplines dispersion where rank tertiles cannot")
+    add("kth_ga17_mean_c", a17 & yc, lng,
+        source=f"ln(g_ACH) | {TAS_FOLLOWUP}, ach_age=={TAS_ACH_AGE}, completers",
+        units="log W-score", model="mean(log hc17[college])",
+        block="kappa_theta", targeted=False)
+    add("kth_ga17_mean_n", a17 & yn, lng,
+        source=f"ln(g_ACH) | {TAS_FOLLOWUP}, ach_age=={TAS_ACH_AGE}, non-completers",
+        units="log W-score", model="mean(log hc17[work])",
+        block="kappa_theta", targeted=False)
+    # The former targets, kept as diagnostics. `tert_ga` is used as supplied.
     for k in (1, 2, 3):
-        add(f"kth_ga17_t{k}_c",
-            hf & (t.ach_age == TAS_ACH_AGE) & (t[TAS_ACH_TERT] == k), y,
+        add(f"kth_ga17_t{k}_c", a17 & (t[TAS_ACH_TERT] == k), y,
             source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, ach_age=={TAS_ACH_AGE}, {TAS_ACH_TERT}=={k}",
             units="completion share within the achievement tertile",
             model=f"college share within model-internal tertile {k} of sim_hc at child age 17",
-            block="kappa_theta")
+            block="kappa_theta", targeted=False,
+            note="UNTARGETED since 2026-09-11; replaced by kth_ga17_gap")
 
-    # ---- kappa_theta SENSITIVITY VARIANTS, untargeted -------------------------
-    # `docs/SMM_14PARAM_TAS.md` promised these and the generator did not build them, so
-    # the "sensitivity checks" the specification calls for did not exist. They are cheap:
-    # the same ratio moment on a different achievement measure or age panel.
-    #
-    # NOT COMPARABLE IN LEVEL ACROSS PANELS. Tertiles are cut WITHIN age group, so the
-    # age-17 T1 and the age-18 T1 are different ability cuts. Only the gradient within a
-    # panel means anything, which is why these are diagnostics and not alternative targets.
-    for (tag, tvar, age) in (("lw17", "tert_lw", 17), ("lw18", "tert_lw", 18),
-                             ("ga18", "tert_ga", 18)):
-        for k in (1, 2, 3):
-            add(f"kth_{tag}_t{k}_c", hf & (t.ach_age == age) & (t[tvar] == k), y,
-                source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, ach_age=={age}, {tvar}=={k}",
-                units="completion share within the achievement tertile",
-                model=f"(not targeted; sensitivity variant of kth_ga17_t{k}_c)",
-                block="kappa_theta", targeted=False,
-                note="tertiles are cut WITHIN age group -- levels are not comparable "
-                     "to the age-17 g_ACH panel, only the gradient is")
+    # ---- sigma_eta: dispersion of log ability at 17 ---------------------------
+    add("sd_ga17", a17, lng, kind="sd",
+        source=f"sample SD of ln(g_ACH) | {TAS_FOLLOWUP}, ach_age=={TAS_ACH_AGE}",
+        units="log W-score",
+        model="std(log hc17) over all simulated children (sample SD)",
+        block="sigma_eta",
+        note="TAS age-17 assessment frame -- NOT the CDS age-17 panel behind sd_ga_age17")
 
     # ---- kappa_ParEd: completion by parental education -----------------------
-    # OPEN MISMATCH, by instruction 2026-09-10: pared_col is EITHER-parent 16+, the model's
-    # BothCollege is both. Targeted as supplied and recorded as P7c in docs/ERRORS.md.
+    # OPEN MISMATCH, by instruction: pared_col is EITHER-parent 16+, the model's BothCollege
+    # is both. Targeted as supplied and recorded as P7c in docs/ERRORS.md.
     for g in (0, 1):
         add(f"kpe_g{g}_c", hf & (t.pared_col == g), y,
             source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, pared_col=={g}",
@@ -394,12 +485,8 @@ def build_tas_moments(t):
             model=f"college share among simulated parents with BothCollege == {g}",
             block="kappa_ParEd",
             note="EITHER-parent 16+ in data vs BothCollege in model -- see ERRORS.md P7c")
-    # The unknown group is its own moment and is NOT folded into g0. The codebook is
-    # explicit that doing so estimates "no OBSERVED college parent", a different quantity.
-    # `pared_unknown`, NOT `pared_col.isna()`. The two differ by 13 children on the
-    # completion frame -- those with NEITHER parent observed, which `pared_unknown`
-    # (exactly one parent observed, and below 16) excludes. Using the published variable
-    # reproduces the published `kpe_gu_c` exactly; using the missing-mask does not.
+    # The unknown group is its own moment and is NOT folded into g0. `pared_unknown`, NOT
+    # `pared_col.isna()`: the two differ by the children with NEITHER parent observed.
     add("kpe_gu_c", hf & (t.pared_unknown == 1), y,
         source=f"{TAS_OUTCOME} | {TAS_FOLLOWUP}, pared_unknown==1",
         units="completion share where at least one parent's education is unobserved",
@@ -419,22 +506,40 @@ def build_tas_moments(t):
         block="kappa_terminal",
         note=f"{100*(raw < 0).mean():.1f}% of the qualifying sample is negative and is RETAINED; "
              "the model floors retained assets at delta_P and cannot reproduce it")
-    # Untargeted: the raw mean, so the effect of the winsorisation is auditable, and the
-    # incl.-home variant.
     add("kterm_x_strict_raw", wmask, raw / DOLLARS_PER_MODEL_UNIT,
         source=f"{TAS_WEALTH_VAR} | ever_{TAS_WEALTH_DEF} (NOT winsorised)",
         units="model units (10k USD, real 2015)",
         model="(not targeted; the p99 winsorised variant is)",
         block="kappa_terminal", targeted=False)
-    add("kterm_i_strict_raw", wmask & t.pwi_strict.notna(), t.pwi_strict,
-        source="pwi_strict | ever_strict (net worth INCLUDING home equity)",
+
+    # ---- sigma_eps: the completion-wealth gradient in dollars -----------------
+    # The wealth frame INTERSECTED WITH the completion follow-up: a child with wealth but
+    # no completion outcome can be in neither half of the gap.
+    wf = wmask & hf
+    w99 = wins / DOLLARS_PER_MODEL_UNIT
+    add("kse_w_gap", wf & yc, w99,
+        kind="diff", mask2=wf & yn, value2=w99,
+        source=f"{TAS_WEALTH_VAR} winsorised at p{TAS_WEALTH_WINSOR_P:g} | ever_{TAS_WEALTH_DEF} "
+               f"& {TAS_FOLLOWUP}: completers minus non-completers",
         units="model units (10k USD, real 2015)",
-        model="(not targeted; the model has no housing sector)",
-        block="kappa_terminal", targeted=False)
-    # Rebuild the incl.-home series in model units without disturbing the mask logic.
-    out[-1]["num"] = np.where(np.asarray(out[-1]["den"]) > 0,
-                              np.nan_to_num(t.pwi_strict.values, nan=0.0) / DOLLARS_PER_MODEL_UNIT,
-                              0.0)
+        model="mean(retained[college]) - mean(retained[work]), retained winsorised at the same cut",
+        block="sigma_eps",
+        note="a pecuniary shifter in known units -- what separates the taste-shock scale "
+             "from the psychic-cost levels; wealth is measured ~11 years after the model's object")
+    add("k0_w_c", wf, y,
+        source=f"{TAS_OUTCOME} | ever_{TAS_WEALTH_DEF} & {TAS_FOLLOWUP}",
+        units="completion share on the wealth frame",
+        model="(data-only diagnostic: selection into ever_strict; model counterpart is k0_complete)",
+        block="sigma_eps", targeted=False)
+    wt = np.zeros(len(t), dtype=int)
+    wt[wf.values] = rank_tertiles(w99[wf].values)
+    for k in (1, 2, 3):
+        add(f"kse_w_t{k}_c", wf & (wt == k), y,
+            source=f"{TAS_OUTCOME} | ever_{TAS_WEALTH_DEF} & {TAS_FOLLOWUP}, wealth tertile {k}",
+            units="completion share within the parental-wealth tertile",
+            model=f"college share within model-internal tertile {k} of retained assets",
+            block="sigma_eps", targeted=False,
+            note="fallback for kse_w_gap if the Jacobian finds it collinear with kpe_g1_c - kpe_g0_c")
     return out
 
 
@@ -461,6 +566,116 @@ def psychic_centre(t):
     """
     f = t[(t[TAS_FOLLOWUP] == 1) & (t.ach_age == TAS_ACH_AGE) & t.g_ACH.notna()]
     return float(np.log(f.g_ACH).mean()), len(f)
+
+
+def estimate_tas_moment(mo, clusters):
+    """Estimate one TAS moment by its `kind`; returns (estimate, per-cluster influence, support mask)."""
+    den = np.asarray(mo["den"]) > 0
+    if mo["kind"] == "ratio":
+        est, infl = ratio_influence(mo["num"], mo["den"], clusters)
+        return est, infl, den
+    if mo["kind"] == "diff":
+        est, infl = diff_influence(mo["num"], mo["den"], mo["num2"], mo["den2"], clusters)
+        return est, infl, den | (np.asarray(mo["den2"]) > 0)
+    if mo["kind"] == "sd":
+        est, infl = sd_influence(mo["num"], mo["den"], clusters)
+        return est, infl, den
+    raise ValueError(f"unknown moment kind {mo['kind']!r} for {mo['name']}")
+
+
+def cds_sd_by_age(m, ages=range(3, 18)):
+    """
+    `sd_ga_age{a}`: sample SD of `x_gach` at each child age of the CDS panel, clustered on
+    `Fam_id`. Pre-estimated here because the frame is the OTHER micro file.
+
+    These rows are DATA-ONLY. They are never targeted and enter no covariance; the supplied
+    SMM_TAS_VCov.dta carries them with ZERO cross-file covariance, which is an
+    approximation the joint estimator here does not need to make -- but since nothing is
+    estimated against them, the point is moot and the rows are informational.
+    """
+    out = []
+    for a in ages:
+        mask = (m.Child_Age == a) & m.x_gach.notna()
+        if mask.sum() < 3:
+            continue
+        # The SAME convention as every other row: the age indicator sits in the
+        # denominator and the influence runs over the whole CDS file, clustered on the
+        # family. Reproduces the supplied rows' estimates and SEs.
+        est, infl = sd_influence(m.x_gach, mask, m[CLUSTER_ON])
+        out.append(dict(name=f"sd_ga_age{a}", kind="sd",
+                        num=np.where(mask, np.nan_to_num(m.x_gach.values, nan=0.0), 0.0),
+                        den=mask.values.astype(float),
+                        source=f"sample SD of x_gach | Child_Age=={a} (CDS panel, SMM_Moments_Micro.dta)",
+                        units="log W-score",
+                        model="(data-only diagnostic: no model counterpart is targeted; "
+                              "compare against std(log sim_hc[:, a]) informally)",
+                        block="sigma_eta", targeted=False,
+                        note="CDS child-year panel, NOT the TAS age-17 assessment frame behind sd_ga17",
+                        estimate=est, n_obs=int(mask.sum()),
+                        n_clusters=int(m.loc[mask, CLUSTER_ON].nunique()),
+                        precomputed_infl=infl))
+    return out
+
+
+def check_against_supplied(tas, tas_infl, t, tol_est=1e-6, tol_se=1e-6):
+    """
+    Reproduce the SUPPLIED Stata exports before trusting the reconstruction.
+
+    Input/SMM_TAS_Moments.csv carries estimates and clustered SEs for every TAS row that
+    exists there, and Input/SMM_TAS_VCov.dta the covariance of that whole vector. Every row
+    here that has a namesake there must match to `tol` -- estimate AND standard error --
+    and every within-system covariance entry among the TARGETED TAS moments must match
+    too. That is the regression that lets the joint two-file covariance below be trusted.
+
+    `kterm_x_strict` (raw) in the supplied file is checked against `kterm_x_strict_raw`
+    here; the winsorised target has no supplied counterpart and is reconstructed only.
+    The `sd_ga_age*` rows are checked on their estimates and SEs.
+    """
+    sup_path = REPO / "Input" / "SMM_TAS_Moments.csv"
+    vc_path = REPO / "Input" / "SMM_TAS_VCov.dta"
+    if not sup_path.exists():
+        print("  (no Input/SMM_TAS_Moments.csv -- reproduction check skipped)")
+        return
+    sup = pd.read_csv(sup_path).set_index("moment")
+    alias = {"kterm_x_strict_raw": "kterm_x_strict"}
+    scale = {"kterm_x_strict_raw": 1.0 / DOLLARS_PER_MODEL_UNIT}
+    # SEs from the reconstructed influences, per moment (own cluster count, as published)
+    bad = []
+    print()
+    print(f"{'reproduction of the supplied exports':34s} {'ours':>12s} {'supplied':>12s} {'se ours':>11s} {'se supplied':>11s}")
+    print("-" * 86)
+    for mo in tas:
+        nm = mo["name"]; key = alias.get(nm, nm)
+        if key not in sup.index:
+            continue
+        infl = tas_infl.get(nm, mo.get("precomputed_infl"))
+        G = len(infl)
+        se = float(np.sqrt((infl.values ** 2).sum() * (G / (G - 1.0))))
+        est_s = float(sup.loc[key, "estimate"]) * scale.get(nm, 1.0)
+        se_s = float(sup.loc[key, "se"]) * scale.get(nm, 1.0)
+        ok = abs(mo["estimate"] - est_s) <= tol_est * max(1.0, abs(est_s)) and \
+             abs(se - se_s) <= tol_se * max(1.0, abs(se_s))
+        ok or bad.append(nm)
+        print(f"  {nm:32s} {mo['estimate']:12.6f} {est_s:12.6f} {se:11.6f} {se_s:11.6f}   {'ok' if ok else '<-- DIFFERS'}")
+    # within-system covariance among the targeted TAS moments
+    if vc_path.exists():
+        vc = pd.read_stata(vc_path)
+        names_v = list(vc["moment"])
+        V = vc.drop(columns=[c for c in ("moment", "row") if c in vc.columns]).values
+        tgt = [mo["name"] for mo in tas if mo["targeted"] and mo["name"] in names_v]
+        Om, _, _ = joint_covariance({n: tas_infl[n] for n in tgt}, tgt)
+        worst = 0.0
+        for i, a in enumerate(tgt):
+            for j, b in enumerate(tgt):
+                s_ab = V[names_v.index(a), names_v.index(b)]
+                worst = max(worst, abs(Om[i, j] - s_ab) / max(abs(s_ab), 1e-12))
+        print(f"  targeted-TAS covariance vs supplied SMM_TAS_VCov.dta: worst relative "
+              f"difference {worst:.2e} over {len(tgt)}x{len(tgt)} entries "
+              f"({'ok' if worst < 1e-4 else '<-- DIFFERS'})")
+        worst < 1e-4 or bad.append("moment_cov")
+    if bad:
+        raise ValueError("reconstruction does not reproduce the supplied exports for: "
+                         + ", ".join(bad))
 
 
 def git_sha():
@@ -622,12 +837,18 @@ def main():
     m_psychic, n_psychic = psychic_centre(t)
     tas_est, tas_infl = {}, {}
     for mo in tas:
-        est, infl = ratio_influence(mo["num"], mo["den"], t[TAS_CLUSTER_ON])
+        est, infl, support = estimate_tas_moment(mo, t[TAS_CLUSTER_ON])
         tas_est[mo["name"]] = est
         tas_infl[mo["name"]] = infl
         mo["estimate"] = est
-        mo["n_obs"] = int((np.asarray(mo["den"]) > 0).sum())
-        mo["n_clusters"] = int(t.loc[np.asarray(mo["den"]) > 0, TAS_CLUSTER_ON].nunique())
+        mo["n_obs"] = int(support.sum())
+        mo["n_clusters"] = int(t.loc[support, TAS_CLUSTER_ON].nunique())
+    # DATA-ONLY diagnostics from the OTHER micro file: the SD of log g_ACH by child age on
+    # the CDS panel. No model counterpart is targeted from them; they are the evidence on
+    # the SHAPE of HC dispersion over childhood (docs/SMM.md, "Untargeted exports")
+    # and are written so the advisor discussion has them in the same file as the targets.
+    tas += cds_sd_by_age(m)
+    check_against_supplied(tas, tas_infl, t)
     _wmask = (t[f"ever_{TAS_WEALTH_DEF}"] == 1) & t[TAS_WEALTH_VAR].notna()
     cut = float(np.percentile(t[TAS_WEALTH_VAR].where(_wmask).dropna(), TAS_WEALTH_WINSOR_P))
 
@@ -760,6 +981,7 @@ def main():
             f'units  = "{mo["units"]}"',
             f'model  = "{mo["model"]}"',
             f'targeted = {"true" if mo["targeted"] else "false"}',
+            f'kind   = "{mo["kind"]}"   # ratio | diff (difference of two ratios) | sd (sample SD on a frame)',
             f"n      = {mo['n_obs']}",
             f"n_clusters = {mo['n_clusters']}",
             f"mean   = {mo['estimate']:.17g}",
@@ -927,7 +1149,7 @@ def write_by_age():
             continue
         d = pd.read_stata(path)
         missing = [c for c in ("mu_cons_exhous_real_w99", "mu_m_method2_final_w99",
-                               "mu_assets_real", "mu_leis_mom_wk", "mu_leis_dad_wk",
+                               "mu_leis_mom_wk", "mu_leis_dad_wk",
                                "mu_par_time_tot", "mu_c_time_hrs", "mu_study_hrs", "mu_school_hrs", "mu_x_gach", "mu_x_lw")
                    if c not in d.columns]
         if missing:
@@ -935,6 +1157,13 @@ def write_by_age():
                   f"The committed CSV is left as it is and is STALE.")
             continue
         d = d[(d.Child_Age >= AGE_LO) & (d.Child_Age <= AGE_HI)].sort_values("Child_Age")
+        # ASSETS COME FROM THE BINNED FILE since 2026-09-11. The Stata rerun dropped the
+        # twelve `*_assets_*` columns from the by-age files and moved parental net worth
+        # to SMM_Assets_ByChildAge.dta in TWO-YEAR bins (`age_bin` = lower edge). The
+        # by-age CSV keeps its `a_p` column -- the notebook reads it -- filled with the
+        # mean of the bin that contains each age, so ages 2k and 2k+1 share a value.
+        # Same sample for both by-age files (the assets file is not cohort-split).
+        a_p = assets_by_age_from_bins(d.Child_Age.astype(int).values)
         out = pd.DataFrame({
             "child_age": d.Child_Age.astype(int),
             "c_p": d.mu_cons_exhous_real_w99 / DOLLARS_PER_MODEL_UNIT,
@@ -942,7 +1171,7 @@ def write_by_age():
             # Net worth EXCLUDING home equity. The model has no housing sector, no
             # mortgage and no durable stock, so home equity has nothing to map onto --
             # the same reason consumption uses cons_exhous_real.
-            "a_p": d.mu_assets_real / DOLLARS_PER_MODEL_UNIT,
+            "a_p": a_p,
             # work is not stored directly by age; leis_*_wk IS 112 - own work, so invert it
             "h_p": (((HOURS_PER_WEEK - d.mu_leis_mom_wk) +
                      (HOURS_PER_WEEK - d.mu_leis_dad_wk)) / 2.0) / HOURS_PER_WEEK,
@@ -960,7 +1189,8 @@ def write_by_age():
         (REPO / "Input" / dst).write_text(
             f"# Per-child-age data means for the baseline figure. Sample: {note}.\n"
             f"# GENERATED by tools/make_smm_targets.py from {src} -- do not edit by hand.\n"
-            "# c_p, e_p, a_p: model units (10k USD/yr). a_p EXCLUDES home equity.\n"
+            "# c_p, e_p, a_p: model units (10k USD/yr). a_p EXCLUDES home equity and is the\n"
+            "# mean of the TWO-YEAR age bin containing each age (SMM_Assets_ByChildAge.dta).\n"
             "# h_p, t_p, i_c, school_c, i_total, l_c: shares of the 112h week.\n"
             "# i_c = own study; school_c = mean of the median-school variable by age.\n"
             "# i_total = legacy school-plus-study input (includes imputations).\n"
@@ -978,6 +1208,35 @@ ASSETS_SRC = "SMM_Assets_ByChildAge.dta"
 ASSETS_DST = "smm_assets_by_child_age.csv"
 
 
+def _read_assets_bins():
+    """The binned assets file, or None. `age_bin` is the LOWER EDGE of a two-year bin."""
+    path = REPO / "Input" / ASSETS_SRC
+    if not path.exists():
+        return None
+    d = pd.read_stata(path)
+    if "age_bin" not in d.columns:
+        # pre-2026-09-11 layout: one row per single year of child age
+        d = d.rename(columns={"Child_Age": "age_bin"})
+        d["bin_width"] = 1
+    else:
+        d["bin_width"] = 2
+    return d.sort_values("age_bin").reset_index(drop=True)
+
+
+def assets_by_age_from_bins(ages):
+    """Mean net worth (excl. home, model units) for each single age, from its bin."""
+    d = _read_assets_bins()
+    if d is None or "mu_assets_real" not in d.columns:
+        return np.full(len(ages), np.nan)
+    lo = d.age_bin.astype(int).values; w = d.bin_width.values
+    out = np.full(len(ages), np.nan)
+    for i, a in enumerate(ages):
+        j = np.where((lo <= a) & (a < lo + w))[0]
+        if len(j):
+            out[i] = d.mu_assets_real.values[j[0]] / DOLLARS_PER_MODEL_UNIT
+    return out
+
+
 def write_assets_by_age():
     """
     Parental net worth by child age, in MODEL UNITS, for comparison against sim_a.
@@ -989,21 +1248,20 @@ def write_assets_by_age():
     no durable stock, so home equity has nothing to map onto. `a_p_home` is carried
     alongside so the choice stays visible rather than silently made.
 
-    MEDIANS MATTER HERE MORE THAN USUAL. The mean is wildly skewed -- at child age 2 the
-    SD is 949k against a mean of 117k -- so `md_` is the column to read for a typical
-    household, and the p10-p90 spread says how little the mean represents anyone. The
-    model's simulated distribution should be compared against the quantiles, not just
-    the mean.
+    MEDIANS MATTER HERE MORE THAN USUAL. The mean is wildly skewed -- at child ages 2-3 the
+    SD is 71 model units against a mean of 9.2 -- so `md_` is the column to read for a
+    typical household, and the p10-p90 spread says how little the mean represents anyone.
 
-    Ages 0-30 are in the source; all of them are written. The parent block only runs
-    t = 1..17, and the age-18 handoff column is where sim_a becomes the child's initial
-    assets, so 18+ is the child block's comparison, not the parent's.
+    TWO-YEAR BINS since the 2026-09-11 Stata rerun: `age_bin` is the lower edge, so the
+    row for bin 16 covers child ages 16 and 17 and bin 18 covers 18-19. `age_lo` /
+    `age_hi` make that explicit; `child_age` is kept equal to `age_lo` for readers of the
+    old single-year layout. The parent block only runs t = 1..17; the age-18 handoff is
+    where sim_a becomes the child's initial assets.
     """
-    path = REPO / "Input" / ASSETS_SRC
-    if not path.exists():
+    d = _read_assets_bins()
+    if d is None:
         print(f"  SKIP {ASSETS_DST}: {ASSETS_SRC} is not in Input/.")
         return
-    d = pd.read_stata(path).sort_values("Child_Age")
     stats = ["n", "mu", "sd", "p10", "p25", "md", "p75", "p90"]
     missing = [f"{s}_assets_{k}" for k in ("real", "home") for s in stats
                if f"{s}_assets_{k}" not in d.columns]
@@ -1011,7 +1269,10 @@ def write_assets_by_age():
         print(f"  SKIP {ASSETS_DST}: {ASSETS_SRC} is missing {', '.join(missing)}.")
         return
 
-    out = pd.DataFrame({"child_age": d.Child_Age.astype(int),
+    lo = d.age_bin.astype(int)
+    out = pd.DataFrame({"child_age": lo,
+                        "age_lo": lo,
+                        "age_hi": lo + d.bin_width.astype(int) - 1,
                         "n": d.n_assets_real.astype(int)})
     # n is a count and stays a count; everything else is dollars -> model units.
     for k, suffix in (("real", ""), ("home", "_home")):
@@ -1022,25 +1283,26 @@ def write_assets_by_age():
         "# Parental net worth by child age, in MODEL UNITS (10k USD).",
         f"# GENERATED by tools/make_smm_targets.py from {ASSETS_SRC} -- do not edit by hand.",
         "#",
+        "# ONE ROW PER TWO-YEAR BIN of child age: [age_lo, age_hi]. child_age == age_lo.",
         "# a_p_*       EXCLUDES home equity -- the concept the model can be compared to,",
         "#             for the same reason consumption uses cons_exhous_real.",
         "# a_p_home_*  INCLUDES it, carried so the choice stays visible.",
         "#",
-        "# READ THE MEDIAN, NOT THE MEAN. The distribution is severely right-skewed",
-        "# (at child age 2 the SD is 95 model units against a mean of 11.7), so a_p_md",
-        "# describes a typical household and a_p_mu does not. Compare the model's",
+        "# READ THE MEDIAN, NOT THE MEAN. The distribution is severely right-skewed, so",
+        "# a_p_md describes a typical household and a_p_mu does not. Compare the model's",
         "# simulated spread against p10-p90, not against the mean alone.",
         "#",
-        "# Ages 0-30 are all written; the parent block only covers t = 1..17 and age 18",
-        "# is the handoff where sim_a becomes the child's initial assets.",
+        "# The parent block only covers t = 1..17 and age 18 is the handoff where sim_a",
+        "# becomes the child's initial assets.",
     ]
     (REPO / "Input" / ASSETS_DST).write_text(
         "\n".join(header) + "\n" + out.to_csv(index=False, float_format="%.6f"))
-    print(f"wrote Input/{ASSETS_DST}  ({len(out)} child ages)")
-    a17 = out.loc[out.child_age == 17]
+    print(f"wrote Input/{ASSETS_DST}  ({len(out)} age bins)")
+    a17 = out.loc[(out.age_lo <= 17) & (17 <= out.age_hi)]
     if not a17.empty:
         r = a17.iloc[0]
-        print(f"  at child age 17: mean {r.a_p_mu:.2f} / median {r.a_p_md:.2f} model units "
+        print(f"  bin containing child age 17 ({int(r.age_lo)}-{int(r.age_hi)}): mean {r.a_p_mu:.2f} / "
+              f"median {r.a_p_md:.2f} model units "
               f"(${r.a_p_mu*DOLLARS_PER_MODEL_UNIT:,.0f} / ${r.a_p_md*DOLLARS_PER_MODEL_UNIT:,.0f})")
 
 if __name__ == "__main__":

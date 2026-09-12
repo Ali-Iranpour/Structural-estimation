@@ -58,9 +58,11 @@ banner("1. Child lifecycle")
 # the child's own accumulation over 51 periods. At a_max = 50 check_simulation reported
 # 2.87% of simulated child assets above the grid. Verified at the current parameters: child
 # assets go off-grid 0.00% of the time at 100, and raising it to 200 buys nothing.
-child = ConSavLaborCollege_AR1(Na = C_NA, Nk = C_NK, Nt = C_NT, rho = 1.5,
-                               psi_terminal = 0.0, kappa_terminal = 5.0, omega = 0.3,
-                               a_max = 100.0, w = 20.0, simN = SIMN, seed = SEED)
+# The FITTED child block: CHILD_DEFAULTS (child_lifecycle.jl) carries the five estimated
+# parameters, m_psychic and the fixed settings (rho, psi_terminal, omega, a_max, w). This
+# call used to hardcode kappa_terminal = 5.0 and leave the kappas at legacy values.
+child = ConSavLaborCollege_AR1(; Na = C_NA, Nk = C_NK, Nt = C_NT, simN = SIMN, seed = SEED,
+                                 CHILD_DEFAULTS...)
 solve_model_work!(child)
 solve_model_college!(child)
 optimal_transfer_work!(child)

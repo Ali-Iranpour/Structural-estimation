@@ -170,10 +170,18 @@ const SMM_PARENT_MOMENTS = ("mean_c_p", "mean_h_p",
 # would compare a mechanism that always pays the college premium against a population
 # where 30 percentage points of it never does. Decision 2026-09-10; the codebook makes the
 # same call independently ("COMPLETION IS THE PRIMARY OUTCOME").
+# SEVEN TAS TARGETS since 2026-09-11 (docs/SMM.md, "The seven TAS moments"). The three
+# rank tertiles are REPLACED by `kth_ga17_gap`, the mean log-ability gap between
+# completers and non-completers in ABSOLUTE units -- rank moments could not see the
+# model's fourfold dispersion miss (docs/ERRORS.md P13). `kse_w_gap` (mean retained
+# parental wealth, completers minus non-completers) identifies sigma_eps; `sd_ga17`
+# (sample SD of log HC at 17) identifies sigma_eta. Order = the generator's TAS_MOMENTS.
 const SMM_TAS_MOMENTS = ("k0_complete",
-                         "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c",
+                         "kth_ga17_gap",
                          "kpe_g0_c", "kpe_g1_c",
-                         "kterm_x_strict_w99")
+                         "kterm_x_strict_w99",
+                         "kse_w_gap",
+                         "sd_ga17")
 
 # SEVENTEEN moments, FOURTEEN parameters. The order here must match TARGETED in
 # tools/make_smm_targets.py -- it is the row/column order of the covariance matrix, and
@@ -425,7 +433,19 @@ function load_targets(path::AbstractString)
         e = raw[k]
         out[k] = (mean = Float64(e["mean"]), sd = Float64(e["sd"]),
                   n = Int(e["n"]), source = String(e["source"]),
-                  units = String(e["units"]))
+                  units = String(e["units"]), targeted = true)
+    end
+    # UNTARGETED tables travel too (2026-09-11): the ability and wealth tertiles, the two
+    # halves of the ability gap, the CDS SD-by-age rows. They enter no objective and no
+    # covariance -- `moment_weights` and `target_se` read only `_spec` -- but the fit
+    # report prints them beside their model counterparts, and a diagnostic that has to
+    # re-parse the TOML to find them is a diagnostic nobody runs.
+    for (k, e) in raw
+        (e isa Dict && haskey(e, "mean") && !haskey(out, k)) || continue
+        get(e, "targeted", false) == false || error("$k is flagged targeted in $path but is not in SMM_MOMENTS")
+        out[k] = (mean = Float64(e["mean"]), sd = Float64(get(e, "sd", NaN)),
+                  n = Int(get(e, "n", 0)), source = String(get(e, "source", "")),
+                  units = String(get(e, "units", "")), targeted = false)
     end
     return out
 end
@@ -595,7 +615,26 @@ function tas_moments(r, targets)
     hc17 = p.sim_hc[:, SMM_TAS_ACH_AGE]
     n_bad += count(x -> !(isfinite(x) && x > 0), hc17)
     tert = rank_tertiles(hc17)
-    kth = ntuple(k -> share(tert .== k), 3)
+    kth = ntuple(k -> share(tert .== k), 3)          # diagnostics since 2026-09-11
+
+    # THE TARGETED ABILITY MOMENT: mean log HC at 17 among completers minus non-completers,
+    # on the same linked outcome. An EMPTY group -- nobody or everybody goes to college --
+    # leaves the gap undefined; that is a controlled invalid evaluation (NaN, counted in
+    # `tas_nonfinite`, penalised by the objective), NOT a zero gap that would reward a
+    # parameter draw at which the college margin has collapsed.
+    lhc = log.(max.(hc17, 1e-300))
+    isc = col .>= 0.5
+    isw = col .< 0.5
+    function cond_mean(v, mask)
+        w = filter(isfinite, v[mask])
+        isempty(w) ? (n_bad += 1; NaN) : mean(w)
+    end
+    kth_mean_c = cond_mean(lhc, isc)
+    kth_mean_n = cond_mean(lhc, isw)
+    kth_gap    = kth_mean_c - kth_mean_n
+
+    # THE DISPERSION MOMENT: sample SD (Julia's `std` is the n-1 form, as the data's).
+    sd_ga17 = length(hc17) > 1 ? std(lhc) : (n_bad += 1; NaN)
 
     # --- kappa_ParEd: completion by parental education ---
     # The model's BothCollege against the data's EITHER-parent group. Open mismatch, by
@@ -619,11 +658,24 @@ function tas_moments(r, targets)
     n_wins = count(>(cut), fin_ret)
     kterm = isempty(fin_ret) ? NaN : mean(min.(fin_ret, cut))
 
+    # THE WEALTH-GRADIENT MOMENT for sigma_eps: retained parental wealth, winsorised at the
+    # SAME cut as kterm, among completers minus non-completers. Empty group -> invalid.
+    retw = min.(ret, cut)
+    kse_gap = cond_mean(retw, isc) - cond_mean(retw, isw)
+    wtert = rank_tertiles(ret)
+    kse_t = ntuple(k -> share(wtert .== k), 3)         # diagnostics
+
     return (k0_complete = k0,
-            kth_ga17_t1_c = kth[1], kth_ga17_t2_c = kth[2], kth_ga17_t3_c = kth[3],
+            kth_ga17_gap = kth_gap,
             kpe_g0_c = kpe0, kpe_g1_c = kpe1,
             kterm_x_strict_w99 = kterm,
+            kse_w_gap = kse_gap,
+            sd_ga17 = sd_ga17,
             # diagnostics, not targeted
+            kth_ga17_t1_c = kth[1], kth_ga17_t2_c = kth[2], kth_ga17_t3_c = kth[3],
+            kth_ga17_mean_c = kth_mean_c, kth_ga17_mean_n = kth_mean_n,
+            kse_w_t1_c = kse_t[1], kse_w_t2_c = kse_t[2], kse_w_t3_c = kse_t[3],
+            sd_hc_by_age = Tuple(std(log.(max.(p.sim_hc[:, a], 1e-300))) for a in 1:SMM_TAS_ACH_AGE),
             n_college = count(isequal(1.0), col),
             n_bothcollege = count(>=(0.5), bc),
             mean_transfer = (v = filter(isfinite, r.transfers); isempty(v) ? NaN : mean(v)),
@@ -816,35 +868,13 @@ SMMParam(name, lo, hi, link) = SMMParam(name, lo, hi, link, :parent)
 # =============================================================================
 # THE CHILD BLOCK'S CALIBRATION
 # =============================================================================
-# The child-side counterpart of PARENT_DEFAULTS, and the single place the child's
-# non-grid configuration is written down. Before 2026-09-10 these values were inline
-# keyword arguments in run_smm.jl's build_child_value() and in run_all.jl, and the two
-# had already drifted from the constructor's own defaults: `kappa_terminal` is 10.0 in
-# child_lifecycle.jl and 5.0 in both callers. 5.0 is what every run since has actually
-# used, so 5.0 is what is recorded here -- and now there is one definition instead of
-# three.
-#
-# The four ESTIMATED entries are starting values; the eight others are fixed.
-const CHILD_DEFAULTS = (
-    # --- fixed ---
-    rho          = 1.5,
-    psi_terminal = 0.0,      # by instruction 2026-08-30
-    omega        = 0.3,      # altruism
-    a_max        = 100.0,    # must cover the parent's terminal assets + 51 periods
-    w            = 20.0,
-    # --- estimated: the psychic cost of college ---
-    # kappa_0 IS ON THE CENTRED SCALE. The legacy uncentred value was 0.2728 with
-    # kappa_theta = -0.0342; centring at m_psychic moves it to
-    #     kappa_0_centred = 0.2728 + (-0.0342)*m_psychic = 0.0587  at m_psychic = 6.2611
-    # which is the same psychic cost for the same child -- see check_psychic_centring.
-    # Quoting the old 0.2728 against the new box would put the starting value 0.21 above
-    # where it belongs, which at this scale is a large error.
-    kappa_0      = 0.0587,
-    kappa_theta  = -0.0342,
-    kappa_ParEd  = -0.0070,
-    # --- estimated: the parent's taste for retained assets ---
-    kappa_terminal = 5.0,
-)
+# `CHILD_DEFAULTS` is defined in code/src/child_lifecycle.jl since 2026-09-12 (it was here
+# from 2026-09-10), beside the constructor whose defaults read from it, so that the
+# notebook and run_all.jl build the fitted child without including the SMM. The five
+# estimated entries are the exp16b fit; the five fixed ones are unchanged. Nothing about
+# how this file uses it changed: `child_config` takes the fixed entries,
+# `CHILD_ESTIMATED_DEFAULTS` the estimated ones, and `m_psychic` comes from the TARGET
+# FILE, checked against the baseline's centring below.
 
 # The legacy uncentred pair, kept so the centring can be CHECKED rather than trusted.
 const LEGACY_KAPPA_0, LEGACY_KAPPA_THETA = 0.2728, -0.0342
@@ -852,23 +882,24 @@ const LEGACY_KAPPA_0, LEGACY_KAPPA_THETA = 0.2728, -0.0342
 """
     check_psychic_centring(m_psychic)
 
-Verify that `CHILD_DEFAULTS.kappa_0` really is the legacy psychic cost re-expressed at
-this centring, rather than a number that was right for some earlier `m_psychic`.
+Verify that the target file's `m_psychic` is the centring `CHILD_DEFAULTS.kappa_0` was
+fitted at. The psychic cost is `kappa_0 + kappa_theta*(log theta - m_psychic)`, so
+`kappa_0` is the cost AT `m_psychic`; a target file built on a different achievement age
+or frame would carry a different `m_psychic`, and the same `kappa_0` would then be a
+different model. This turns that into an error at load time.
 
-The recentring is behaviourally neutral BY CONSTRUCTION, but only if the starting value
-moves with it. If the target file's `m_psychic` changes -- a different achievement age, a
-different frame -- and `CHILD_DEFAULTS.kappa_0` does not, then the incumbent silently
-becomes a different model. This is the check that turns that into an error.
+Until 2026-09-12 the check derived `kappa_0` from the legacy uncentred pair instead
+(`LEGACY_KAPPA_0 + LEGACY_KAPPA_THETA*m_psychic`); that pair is kept for the centring
+regression test (tools/test_smm_tas.jl group 8) and no longer describes the baseline.
 """
 function check_psychic_centring(m_psychic::Float64)
-    implied = LEGACY_KAPPA_0 + LEGACY_KAPPA_THETA * m_psychic
-    isapprox(CHILD_DEFAULTS.kappa_0, implied; atol = 5e-4) || error("""
-        CHILD_DEFAULTS.kappa_0 = $(CHILD_DEFAULTS.kappa_0) does not match the legacy
-        psychic cost re-centred at m_psychic = $m_psychic, which is $implied.
+    isapprox(m_psychic, CHILD_DEFAULTS.m_psychic; atol = 1e-9) || error("""
+        the target file's m_psychic = $m_psychic is not the centring the baseline
+        kappa_0 was fitted at, CHILD_DEFAULTS.m_psychic = $(CHILD_DEFAULTS.m_psychic).
 
-        The legacy uncentred pair is (kappa_0, kappa_theta) = ($LEGACY_KAPPA_0, $LEGACY_KAPPA_THETA)
-        and centring maps kappa_0 -> kappa_0 + kappa_theta*m_psychic. Either the target
-        file's m_psychic changed, or CHILD_DEFAULTS was edited without re-deriving it.""")
+        Either the target file was generated on a different achievement frame, or
+        CHILD_DEFAULTS was re-fitted without recording its m_psychic. Re-derive one or the
+        other; do not run with a kappa_0 that belongs to another centring.""")
     return nothing
 end
 
@@ -879,6 +910,13 @@ Starting value for an estimated parameter, from whichever block owns it. Both bl
 searched and an ambiguous name is an error rather than a silent precedence rule -- a
 parameter that existed in both would otherwise be routed by declaration order.
 """
+# SEARCH STARTS THAT DIFFER FROM THE BLOCK DEFAULT. Empty since 2026-09-12: the block
+# defaults ARE the fitted exp16b vector, including sigma_eta = 0.0315 (until then
+# PARENT_DEFAULTS.sigma_eta was 0 and the search started the shock at 0.03 from here).
+# The mechanism stays so a future parameter can be started away from its baseline value
+# without editing the block that run_all.jl and the notebook read.
+const SMM_START = (;)
+
 function param_default(name::Symbol)
     inp = hasproperty(PARENT_DEFAULTS, name)
     inc = hasproperty(CHILD_DEFAULTS, name)
@@ -888,6 +926,15 @@ function param_default(name::Symbol)
     inc && return getfield(CHILD_DEFAULTS, name)
     error("`$name` is in neither PARENT_DEFAULTS nor CHILD_DEFAULTS")
 end
+
+"""
+    smm_start(name) -> Float64
+
+The SEARCH starting value: `SMM_START` where it lists the parameter, the block default
+otherwise. This is what the incumbent and the "(was ...)" column report; `param_default`
+remains the value a partial point is completed with.
+"""
+smm_start(name::Symbol) = hasproperty(SMM_START, name) ? getfield(SMM_START, name) : param_default(name)
 
 # The nine-parameter run 2026-09-06_183119 is frozen with its ORIGINAL bounds.
 # Exploration bounds for the school-plus-study target pilot (2026-09-07).
@@ -1003,8 +1050,11 @@ const SMM_PARAMS = [
     # there to absorb.
     SMMParam(:sigma_4_0, -10.0, -1.0,  :level),
     # Same candidate interval already used by jacobian.jl. This is a search box,
-    # not an identification result; reassess it after the first own-study fit.
-    SMMParam(:sigma_4_1, -0.05, 0.15, :level),
+    # not an identification result. TOP RAISED 0.15 -> 0.30 (2026-09-12): exp16b landed
+    # at 0.1301 (90.1% of the way up) after 0.1327 (91.4%) in the ten-parameter fit --
+    # two fits sitting just under the same ceiling. At the exp16b sigma_4_0 = -6.10 the
+    # top gives sigma_4 = exp(-6.10 + 0.30*16) = 0.27 at age 17, nowhere near explosive.
+    SMMParam(:sigma_4_1, -0.05, 0.30, :level),
     # mu_1 remains fixed at PARENT_DEFAULTS.
 
     # =========================================================================
@@ -1041,12 +1091,13 @@ const SMM_PARAMS = [
     #     region, and improved Q on the other moments while all six completion moments
     #     stayed pinned at zero.
     #
-    # About 71% of [-2, 5] is that dead region. RECOMMENDATION for the next box, after the
-    # first joint fit: [-3, 1]. It covers the transition with margin and spends no Sobol
-    # points where the derivative is identically zero. NOT applied here -- [-2, 5] is the
-    # agreed pilot box, and a full Sobol stage over 14 dimensions will still find the live
-    # region. Raise it with the advisor before the production run.
-    SMMParam(:kappa_0, -2.0, 5.0, :level, :child),
+    # About 71% of [-2, 5] was that dead region. APPLIED 2026-09-12: [-3, 1]. Both joint
+    # fits so far landed inside the transition (-0.357 in exp16b, -0.476 in v2's first
+    # run), and exp16b's 1,000 Sobol points found nothing that beat the seeded incumbent
+    # -- the box was spending its budget where every completion moment is identically
+    # zero. [-3, 1] covers the transition with margin on both sides. A numerical (box)
+    # change, not a specification one.
+    SMMParam(:kappa_0, -3.0, 1.0, :level, :child),
 
     # kappa_theta -- the ABILITY GRADIENT. NEGATIVE: ability lowers the cost.
     #
@@ -1087,8 +1138,16 @@ const SMM_PARAMS = [
     # signature already documented for sigma_2_1. It is also the weakest column of the
     # Jacobian at every step size tested (44.6-51.9 against 120+ for the next weakest), and
     # it is half of the least-identified direction, trading off against kappa_theta.
-    # RECOMMENDATION for the next box: [-1, 0].
-    SMMParam(:kappa_ParEd, -3.0, 0.0, :level, :child),
+    #
+    # BOX [-1.0, 0.5] (2026-09-12). exp16b landed at -0.108, 3.6% from the wall at 0 --
+    # the parental-education gap in completion is mostly produced by the BothCollege
+    # wage premium -> wealth -> transfer channel, and the psychic-cost shift the data
+    # asks for is small. The floor follows the earlier recommendation (the saturation
+    # region below -0.3 is unreachable from here); the top now admits a small POSITIVE
+    # value so the estimate can come to rest interior instead of on a sign restriction.
+    # If it settles at ~0, FIX it at 0 and drop a parameter rather than widen further.
+    # Under the either-parent targets it still absorbs the P7c definitional mismatch.
+    SMMParam(:kappa_ParEd, -1.0, 0.5, :level, :child),
 
     # kappa_terminal -- the parent's taste for the assets it RETAINS after the transfer.
     #
@@ -1098,7 +1157,36 @@ const SMM_PARAMS = [
     # a strictly positive weight, and a step that made it negative would inverte the sign
     # of log(a_terminal) in the transfer objective.
     SMMParam(:kappa_terminal, 0.5, 40.0, :log, :child),
+
+    # ---------------------------------------------------------------------------
+    # THE TWO 2026-09-11 PARAMETERS (docs/ERRORS.md P13, docs/SMM.md appendix)
+    # ---------------------------------------------------------------------------
+    # sigma_eta -- SD of the i.i.d. log shock in the HC technology, a PARENT parameter
+    # (it lives in the family-stage transition). LEVEL link and a box that INCLUDES ZERO:
+    # the deterministic technology is a legitimate point of the search, and a log link
+    # would have put it at -Inf. Top 0.08: the data's SD of log g_ACH at 17 is 0.033 and
+    # the AR(1) arithmetic (sigma_3 = 0.41) reaches it at about 0.03; 0.08 is the SD the
+    # CDS panel shows at age 3, before any of the mean reversion. Identified by sd_ga17.
+    # Fitted at 0.0315 in exp16b, now the block default (PARENT_DEFAULTS).
+    SMMParam(:sigma_eta, 0.0, 0.08, :level, :parent),
+
+    # sigma_eps -- SD of the college taste shock, a CHILD parameter. Log link: a scale,
+    # strictly positive. Box [0.1, 2.0] around the long-standing 0.5: below 0.1 the
+    # enrolment margin is a cliff on 5 Hermite nodes and the objective is a step
+    # function; 2.0 is where the earlier sweep (P13) still left g0 at 0.009, so the box
+    # covers everything the current moments can distinguish. Identified by kse_w_gap.
+    SMMParam(:sigma_eps, 0.1, 2.0, :log, :child),
 ]
+
+# The experiment is SIXTEEN parameters: eleven parent, five child. Asserted, because a
+# stray entry in either default set would be routed silently.
+let np = count(q -> q.owner === :parent, SMM_PARAMS), nc = count(q -> q.owner === :child, SMM_PARAMS)
+    (np, nc) == (11, 5) || error("SMM_PARAMS has $np parent + $nc child parameters; the " *
+                                 "2026-09-11 experiment is 11 + 5 = 16")
+end
+# R_1, the age slope of the HC productivity term, is FIXED AT ZERO and never estimated.
+any(q -> q.name === :R_1, SMM_PARAMS) && error("R_1 must not be estimated; it is fixed at 0")
+PARENT_DEFAULTS.R_1 == 0.0 || error("PARENT_DEFAULTS.R_1 = $(PARENT_DEFAULTS.R_1); the experiment fixes it at 0")
 
 # A moment-count check is necessary but does not establish local identification.
 length(SMM_MOMENTS) >= length(SMM_PARAMS) || error("""
@@ -1239,7 +1327,7 @@ function unpack(z::AbstractVector{Float64})
     return NamedTuple{Tuple(q.name for q in SMM_PARAMS)}(Tuple(vals))
 end
 
-incumbent() = [to_search(param_default(q.name), q) for q in SMM_PARAMS]
+incumbent() = [to_search(smm_start(q.name), q) for q in SMM_PARAMS]
 
 # =============================================================================
 # THE CHILD SOLUTION -- rebuilt per evaluation, from a complete dependency key
@@ -1377,10 +1465,13 @@ partly-failed solve cannot leave state behind for the next draw to inherit.
 The terminal value is constructed from the SOLVED value functions -- `terminal_value_spline`
 reads `sol_tr_v_college` and `sol_tr_v_work` -- not from any simulation.
 """
-# The four estimated child parameters, and their SMM starting values. `CHILD_DEFAULTS`
-# also holds the eight fixed settings, so this is the subset a partial parameter point
-# must be completed with.
-const CHILD_ESTIMATED = (:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal)
+# The five estimated child parameters, and their SMM starting values. `CHILD_DEFAULTS`
+# also holds the fixed settings, so this is the subset a partial parameter point must be
+# completed with. `sigma_eps` is here and NOT in `child_config`: it rebuilds `t_grid`,
+# which only the study years (stage 2) and the transfer stage read -- the cached work and
+# graduate blocks are eps-free (their arrays carry no Nt dimension), verified by
+# tools/test_smm_tas.jl "cache parity" at a non-default sigma_eps.
+const CHILD_ESTIMATED = (:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal, :sigma_eps)
 const CHILD_ESTIMATED_DEFAULTS =
     NamedTuple{CHILD_ESTIMATED}(map(n -> getfield(CHILD_DEFAULTS, n), CHILD_ESTIMATED))
 
@@ -1683,12 +1774,14 @@ function report_fit(z::AbstractVector{Float64}, targets;
     println(out, "-"^62)
     for (i, q) in enumerate(SMM_PARAMS)
         @printf(out, "  %-12s %10.4f   (was %.4f)\n", q.name, getfield(kw, q.name),
-                param_default(q.name))
+                smm_start(q.name))
     end
 
     se = target_se(targets)
 
-    println(out, "\nTargeted moments -- 17 moments, 14 parameters (over-identified)")
+    @printf(out, "\nTargeted moments -- %d moments, %d parameters (%s)\n",
+            length(SMM_MOMENTS), length(SMM_PARAMS),
+            length(SMM_MOMENTS) > length(SMM_PARAMS) ? "over-identified" : "just identified")
     println(out, "-"^104)
     @printf(out, "  %-20s %11s %11s %9s %9s %8s   %s\n",
             "moment", "model", "data", "gap %", "t", "Q share", "source")
@@ -1739,13 +1832,30 @@ function report_fit(z::AbstractVector{Float64}, targets;
     println(out, "-"^76)
     @printf(out, "  college completion    %8.4f  vs data %.4f   (%d of %d simulated children)\n",
             m.k0_complete, targets["k0_complete"].mean, m.n_college, size(r.child.sim_college, 1))
-    @printf(out, "  ability gradient      T1 %.3f  T2 %.3f  T3 %.3f   (model)\n",
+    @printf(out, "  ability gap (log HC)  %+.4f  vs data %+.4f   (completers %.4f / non %.4f; data %.4f / %.4f)\n",
+            m.kth_ga17_gap, targets["kth_ga17_gap"].mean, m.kth_ga17_mean_c, m.kth_ga17_mean_n,
+            targets["kth_ga17_mean_c"].mean, targets["kth_ga17_mean_n"].mean)
+    @printf(out, "  SD log HC at 17       %.4f  vs data %.4f   (sample SD; the sigma_eta moment)\n",
+            m.sd_ga17, targets["sd_ga17"].mean)
+    @printf(out, "  ability tertiles      T1 %.3f  T2 %.3f  T3 %.3f   (model, DIAGNOSTIC since 2026-09-11)\n",
             m.kth_ga17_t1_c, m.kth_ga17_t2_c, m.kth_ga17_t3_c)
     @printf(out, "                        T1 %.3f  T2 %.3f  T3 %.3f   (data)\n",
             targets["kth_ga17_t1_c"].mean, targets["kth_ga17_t2_c"].mean, targets["kth_ga17_t3_c"].mean)
-    @printf(out, "                        T3-T1 model %+.3f  vs data %+.3f\n",
-            m.kth_ga17_t3_c - m.kth_ga17_t1_c,
-            targets["kth_ga17_t3_c"].mean - targets["kth_ga17_t1_c"].mean)
+    @printf(out, "  wealth gap (retained) %+.3f  vs data %+.3f   (10k USD, completers minus non; the sigma_eps moment)\n",
+            m.kse_w_gap, targets["kse_w_gap"].mean)
+    @printf(out, "  wealth tertiles       T1 %.3f  T2 %.3f  T3 %.3f   (model, diagnostic)\n",
+            m.kse_w_t1_c, m.kse_w_t2_c, m.kse_w_t3_c)
+    @printf(out, "                        T1 %.3f  T2 %.3f  T3 %.3f   (data; completion on the wealth frame %.3f -- data-only)\n",
+            targets["kse_w_t1_c"].mean, targets["kse_w_t2_c"].mean, targets["kse_w_t3_c"].mean,
+            targets["k0_w_c"].mean)
+    print(out, "  SD log HC by age      model ")
+    for a in 3:SMM_TAS_ACH_AGE; @printf(out, "%d:%.3f ", a, m.sd_hc_by_age[a]); end
+    print(out, "\n                        data  ")
+    for a in 3:SMM_TAS_ACH_AGE
+        k = "sd_ga_age$a"
+        haskey(targets, k) ? @printf(out, "%d:%.3f ", a, targets[k].mean) : print(out, "$a:-- ")
+    end
+    println(out, "  (CDS panel, data-only diagnostic)")
     @printf(out, "  parental education    g0 %.3f  g1 %.3f   (model; %d of %d are BothCollege)\n",
             m.kpe_g0_c, m.kpe_g1_c, m.n_bothcollege, size(r.child.sim_college, 1))
     @printf(out, "                        g0 %.3f  g1 %.3f   (data -- EITHER-parent, see ERRORS.md P7c)\n",

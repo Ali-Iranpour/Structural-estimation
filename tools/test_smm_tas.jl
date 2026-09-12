@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 # =============================================================================
-# test_smm_tas.jl -- validation of the fourteen-parameter / seventeen-moment SMM.
+# test_smm_tas.jl -- validation of the sixteen-parameter / seventeen-moment SMM.
 #
 #     julia --project=.. tools/test_smm_tas.jl [targets.toml]
 #
@@ -20,6 +20,10 @@
 #  11  mutation isolation       simulating a returned child cannot poison the cache
 #  12  partial points           an omitted kappa uses the SMM default, not the constructor's
 #  13  parent_extra             a non-estimated parent setting reaches the constructor
+#  14  the 2026-09-11 pair      sigma_eps rebuilds the taste grid and sigma_eta reaches the
+#                               parent; R_1 is fixed at 0; the two new moments respond
+#  15  controlled invalidity    an empty completion group is a penalised evaluation,
+#                               not a zero-valued gap
 #
 # Small grids throughout: this is a correctness harness, not an accuracy one.
 # =============================================================================
@@ -44,24 +48,39 @@ const G  = (Na = 16, Nk = 2, Nhc = 16)
 const CG = (Na = 16, Nk = 16, Nt = 3)
 const N  = 400
 base() = Dict{Symbol,Float64}(q.name => param_default(q.name) for q in SMM_PARAMS)
+# A point with INTERIOR college completion, at which every TAS moment is defined. The
+# block defaults have (nearly) nobody enrolling on these small grids, which is a valid
+# evaluation but leaves the two gap moments undefined -- see test 15.
+function interior()
+    v = base()
+    v[:kappa_0] = -0.45; v[:kappa_theta] = -2.0; v[:kappa_ParEd] = -0.25; v[:kappa_terminal] = 9.0
+    # Pinned (2026-09-12): the block defaults are now the FITTED vector, shock included,
+    # so the deterministic base this test reasons from has to be asked for explicitly.
+    v[:sigma_eta] = 0.0; v[:sigma_eps] = 0.5
+    v
+end
 ev(v; kw...) = evaluate_at(v, T; Na = G.Na, Nk = G.Nk, Nhc = G.Nhc, simN = N,
                            seed = 1234, child_grid = CG, kw...)
 
-@testset "SMM 14-parameter TAS specification" begin
+@testset "SMM 16-parameter TAS specification" begin
 
 # ---- 1. target reproduction ------------------------------------------------
 # The published moment file is the reference. The generator rebuilds these from the
 # microdata; if the two ever disagree, the target file is not what the codebook documents.
 @testset "1 target reproduction" begin
     pub = Dict{String,Float64}()
+    # The `measure` column is quoted and may contain commas, so the estimate is read as
+    # the fifth field FROM THE END (estimate, se, n_obs, n_clusters, n_clusters_system).
     for ln in readlines(joinpath(REPO, "Input", "SMM_TAS_Moments.csv"))[2:end]
         f = split(ln, ",")
-        length(f) >= 4 && (pub[f[1]] = parse(Float64, f[4]))
+        length(f) >= 8 && (pub[f[1]] = parse(Float64, f[end - 4]))
     end
-    for k in ("k0_complete", "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c",
-              "kpe_g0_c", "kpe_g1_c")
+    for k in ("k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c", "kse_w_gap", "sd_ga17",
+              "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c")
         @test isapprox(T[k].mean, pub[k]; atol = 1e-9)
     end
+    @test collect(SMM_TAS_MOMENTS) == ["k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c",
+                                       "kterm_x_strict_w99", "kse_w_gap", "sd_ga17"]
     # Wealth is winsorised and converted, so it is NOT the published raw number. Check the
     # conversion instead: it must be below the raw mean and in model units.
     raw = pub["kterm_x_strict"] / 10_000
@@ -101,15 +120,21 @@ end
 # report a converged fit for a parameter that does nothing -- the exact failure the old
 # parent-only invariant existed to prevent.
 @testset "3 every kappa moves the child solve" begin
-    v0 = base(); r0 = ev(v0)
+    # An INTERIOR completion point, so the two gap moments are defined on both sides.
+    v0 = interior(); r0 = ev(v0)
+    @test r0.nbad == 0 && all(isfinite, r0.r)
     for (nm, val) in ((:kappa_0, -0.60), (:kappa_theta, -3.0),
-                      (:kappa_ParEd, -0.50), (:kappa_terminal, 15.0))
-        v = base(); v[nm] = val
+                      (:kappa_ParEd, -0.50), (:kappa_terminal, 15.0),
+                      (:sigma_eps, 1.0), (:sigma_eta, 0.03))
+        v = interior(); v[nm] = val
         r = ev(v)
         @test r.r != r0.r          # the residual vector must move
         moved = r.moments.k0_complete != r0.moments.k0_complete ||
-                r.moments.kterm_x_strict_w99 != r0.moments.kterm_x_strict_w99
+                r.moments.kterm_x_strict_w99 != r0.moments.kterm_x_strict_w99 ||
+                r.moments.sd_ga17 != r0.moments.sd_ga17 ||
+                r.moments.kse_w_gap != r0.moments.kse_w_gap
         @test moved
+        nm === :sigma_eta && @test r.moments.sd_ga17 > 2 * r0.moments.sd_ga17
     end
 end
 
@@ -135,6 +160,18 @@ end
     g1, g2 = fin(c1.sol_v_grad, c2.sol_v_grad)
     @test maximum(abs.(w1 .- w2)) == 0.0
     @test maximum(abs.(g1 .- g2)) == 0.0
+    # The same for sigma_eps: it rebuilds t_grid, which the study years and the transfer
+    # stage read and the two cached blocks do not.
+    c3, _ = build_child_solution((; kappa_0 = 0.0587, kappa_theta = -0.0342,
+                                    kappa_ParEd = -0.007, kappa_terminal = 5.0, sigma_eps = 1.2), T;
+                                 Na = CG.Na, Nk = CG.Nk, Nt = CG.Nt, simN = N, seed = 1234)
+    @test c3.sigma_eps == 1.2 && c3.t_grid != c1.t_grid
+    v1, v3 = fin(c1.sol_tr_v_college, c3.sol_tr_v_college)
+    @test maximum(abs.(v1 .- v3)) > 1e-6
+    w1, w3 = fin(c1.sol_v_work, c3.sol_v_work)
+    g1, g3 = fin(c1.sol_v_grad, c3.sol_v_grad)
+    @test maximum(abs.(w1 .- w3)) == 0.0
+    @test maximum(abs.(g1 .- g3)) == 0.0
     # The cache must not be handing back a simulated object: nothing in it is a sim array.
     for (_, e) in CHILD_BASE_CACHE
         @test all(f -> startswith(String(f), "sol_"), keys(e))
@@ -226,7 +263,10 @@ end
 # compares the cached path against a model built and solved from scratch, which is the
 # claim actually being made ("bit-identical to a full re-solve").
 @testset "10 cache parity with a full solve" begin
-    kap = (kappa_0 = -0.45, kappa_theta = -2.0, kappa_ParEd = -0.25, kappa_terminal = 9.0)
+    # NON-DEFAULT sigma_eps on purpose: the parity must hold when the taste grid differs
+    # from the one the cached base blocks were solved beside.
+    kap = (kappa_0 = -0.45, kappa_theta = -2.0, kappa_ParEd = -0.25, kappa_terminal = 9.0,
+           sigma_eps = 0.8)
     cached, Vc = build_child_solution(kap, T; Na = CG.Na, Nk = CG.Nk, Nt = CG.Nt,
                                       simN = N, seed = 1234)
     cfg = child_config(T; Na = CG.Na, Nk = CG.Nk, Nt = CG.Nt, simN = N, seed = 1234)
@@ -288,6 +328,7 @@ end
     @test c.kappa_theta    == CHILD_DEFAULTS.kappa_theta
     @test c.kappa_ParEd    == CHILD_DEFAULTS.kappa_ParEd
     @test c.kappa_terminal == CHILD_DEFAULTS.kappa_terminal # 5.0, NOT 10.0
+    @test c.sigma_eps      == CHILD_DEFAULTS.sigma_eps      # 0.5, the estimated one
     @test c.m_psychic      == target_m_psychic(T)
     # Naming one leaves the other three at the SMM defaults, not the constructor's.
     c2, _ = build_child_solution((; kappa_theta = -2.0), T; Na = CG.Na, Nk = CG.Nk,
@@ -325,6 +366,42 @@ end
     @test_throws ErrorException run_pipeline(unpack(incumbent()), T; Na = G.Na, Nk = G.Nk,
         Nhc = G.Nhc, simN = N, seed = 1234, child_grid = CG,
         parent_extra = (phi_2 = 1.0,), demo_sim = false)
+end
+
+# ---- 14. the two 2026-09-11 parameters -------------------------------------
+@testset "14 sigma_eps and sigma_eta reach the model; R_1 is fixed" begin
+    @test length(SMM_PARAMS) == 16
+    @test length(SMM_PARENT_PARAMS) == 11 && length(SMM_CHILD_PARAMS) == 5
+    @test :sigma_eta in SMM_PARENT_PARAMS && :sigma_eps in SMM_CHILD_PARAMS
+    @test !any(q -> q.name === :R_1, SMM_PARAMS) && PARENT_DEFAULTS.R_1 == 0.0
+    # The block default IS the search start since 2026-09-12 (the fitted 0.0315).
+    @test smm_start(:sigma_eta) == param_default(:sigma_eta) == PARENT_DEFAULTS.sigma_eta > 0.0
+    v = interior(); v[:sigma_eps] = 0.8; v[:sigma_eta] = 0.02
+    r = ev(v)
+    ch, pa = r.pipeline.child, r.pipeline.parent
+    @test ch.sigma_eps == 0.8
+    nodes, _ = gausshermite(CG.Nt)
+    @test ch.t_grid == sqrt(2) * 0.8 .* nodes                 # rebuilt from THIS value
+    @test pa.sigma_eta == 0.02
+    @test all(==(pa.R_vector[1]), pa.R_vector)                # R_1 = 0: flat productivity
+    @test pa.Neta == 5 && length(pa.z_nodes) == 5
+    # sigma_eta = 0 through the pipeline is the deterministic technology, exactly.
+    v0 = interior(); v0[:sigma_eta] = 0.0
+    r0 = ev(v0)
+    @test r0.pipeline.parent.sigma_eta == 0.0
+    @test std(log.(r0.pipeline.parent.sim_hc[:, 17])) < 0.5 * std(log.(pa.sim_hc[:, 17]))
+end
+
+# ---- 15. an empty completion group is a controlled invalid evaluation -------
+@testset "15 empty group -> penalised, not zero" begin
+    v = interior(); v[:kappa_0] = 5.0                          # nobody enrols
+    r = ev(v)
+    @test r.moments.k0_complete == 0.0
+    @test isnan(r.moments.kth_ga17_gap) && isnan(r.moments.kse_w_gap)
+    @test r.nbad >= 2
+    z = [to_search(v[q.name], q) for q in SMM_PARAMS]
+    q = smm_objective(z, T; Na = G.Na, Nk = G.Nk, Nhc = G.Nhc, simN = N, seed = 1234, child_grid = CG)
+    @test q == SMM_PENALTY
 end
 
 end

@@ -24,7 +24,7 @@ The model is a parent stage (child ages 1–17) handing off to the child's own l
 | `tools/make_smm_targets.py` | builds the frozen targets + joint covariance from two Stata micro files |
 | `code/smm/run_smm.jl` | runner: cache warm-up, checkpoint compatibility, run records |
 | `tools/test_smm_tas.jl` | the validation suite (75 assertions) — check it tests what it claims |
-| `docs/SMM_14PARAM_TAS.md` | the claims, stated in one place |
+| `docs/SMM.md` | the claims, stated in one place (the 14-parameter material was merged in on 2026-09-12) |
 
 `sensitivity.jl`, `profile_param.jl`, `grid_sensitivity.jl`, `jacobian.jl`,
 `standard_errors.jl` were refactored onto one shared evaluation path; skim for drift.

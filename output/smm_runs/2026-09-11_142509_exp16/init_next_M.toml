@@ -1,0 +1,26 @@
+# Warm start for the SECOND sixteen-parameter run. Built 2026-09-11 18:30 from the
+# checkpoint of 2026-09-11_142509_exp16 after restart 2 (Q_best 424.51), with three
+# child parameters moved OFF the g0 = 0 corner: kappa_ParEd -1.198 -> -0.20,
+# kappa_0 0.705 -> -0.35, sigma_eps 0.278 -> 0.60. Evaluated at grid 30 / simN 2000:
+# Q = 313.3, k0 0.273, g0 0.055, g1 0.770, gap 0.0143, sd 0.0340, kterm 25.6, wgap 6.1.
+# Everything else is the checkpoint's best point unchanged. R_1 stays fixed at 0.
+source_checkpoint = "output/smm_runs/2026-09-11_142509_exp16/checkpoint.toml"
+Q_at_this_point   = 313.34
+
+[parameters]
+phi_2          = 0.19966383
+phi_3          = 1.50096428
+lambda_2       = 14.52569789
+R_0            = 48.34802409
+sigma_1_0      = -0.90648831
+sigma_1_1      = -0.08965592
+sigma_2_0      = -3.72723288
+sigma_2_1      = -0.09367660
+sigma_4_0      = -6.01984591
+sigma_4_1      = 0.12624784
+kappa_0        = -0.35000000
+kappa_theta    = -2.61070377
+kappa_ParEd    = -0.20000000
+kappa_terminal = 9.14258016
+sigma_eta      = 0.02924545
+sigma_eps      = 0.60000000

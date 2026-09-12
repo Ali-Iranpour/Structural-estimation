@@ -61,7 +61,28 @@ function argstr(flag, default)
     return ARGS[i + 1]
 end
 
+# EVERY FLAG IS CHECKED. An unknown flag used to be silently ignored, so `--workers 1`
+# started the full 20 processes and `--polish-eval 0` polished for 4,000 evaluations. A
+# flag the runner does not know is now an error before anything is written.
+const KNOWN_FLAGS = ("--quick", "--serial", "--report-only", "--seed", "--sobol", "--restarts",
+                     "--every", "--refine", "--local-evals", "--polish-evals", "--grid",
+                     "--procs", "--resume", "--temp", "--outdir", "--targets",
+                     "--init-from", "--skip-polish")
+let unknown = [a for a in ARGS if startswith(a, "--") && !(a in KNOWN_FLAGS)]
+    isempty(unknown) || error("unknown flag(s): " * join(unknown, ", ") *
+                              "\n    known: " * join(KNOWN_FLAGS, " "))
+end
+
 const QUICK       = "--quick"       in ARGS
+# --skip-polish is an EXPLICIT bypass of the final BOBYQA polish, for pilot runs whose
+# budget is the local stage. It is not `--polish-evals 0`: NLopt reads maxeval = 0 as
+# "no limit", which would have run the default 4,000-evaluation polish under a flag that
+# said the opposite. tiktak receives `skip_polish = true` and records :SKIPPED.
+const SKIP_POLISH = "--skip-polish" in ARGS
+# --init-from FILE loads the incumbent from a previous run's estimates.toml BY NAME. A
+# parameter the file lacks (the two 2026-09-11 shock scales, from a fourteen-parameter
+# run) starts at its SMM start; a parameter outside its current box is an error.
+const INIT_FROM   = argstr("--init-from", "")
 const SERIAL      = "--serial"      in ARGS
 const REPORT_ONLY = "--report-only" in ARGS
 # Arnoud-Guvenen-Kleineberg use N* = 0.1N. N = 1000 / N* = 100 is that standard.
@@ -226,7 +247,8 @@ function sayf(fmt, args...)
 end
 banner(s) = (say(); say("="^76); say(s); say("="^76))
 
-banner("SMM: 14 parameters (10 parent + 4 child) against 17 moments (10 parent + 7 TAS)" *
+# Printed before moments.jl is loaded, so a literal; asserted against the module below.
+banner("SMM: 16 parameters (11 parent + 5 child) against 17 moments (10 parent + 7 TAS)" *
        (QUICK ? "   [QUICK -- smoke test, not an estimate]" : ""))
 sayf("started    %s\n", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))
 sayf("host       %s\n", gethostname())
@@ -238,8 +260,9 @@ else
     sayf("workers    %d of %d cores (%.0f%%) -- capped by %s\n",
          NPROC, N_CORES, 100 * NPROC / N_CORES, bound_by())
 end
-sayf("budget     %d Sobol points, %d restarts (<= %d evals each, polish %d)\n",
-     N_SOBOL, N_RESTART, LOCAL_MAXEVAL, POLISH_MAXEVAL)
+sayf("budget     %d Sobol points, %d restarts (<= %d evals each, polish %s)\n",
+     N_SOBOL, N_RESTART, LOCAL_MAXEVAL, SKIP_POLISH ? "SKIPPED (--skip-polish)" : string(POLISH_MAXEVAL))
+isempty(INIT_FROM) || sayf("init-from  %s\n", INIT_FROM)
 if GRID_SEARCH != GRID_FULL
     sayf("grids      search at Na=Nhc=%d, fit REPORTED at Na=Nhc=%d\n", GRID_SEARCH, GRID_FULL)
 else
@@ -306,7 +329,44 @@ const SOURCE_SHA = bytes2hex(SHA.sha256(
 # Bumped whenever the moment set, the parameter set or the parameter MEANING changes. The
 # name/box checks below catch most of it; this catches the rest -- the 2026-09-10 psychic
 # centring changed what kappa_0 MEANS without changing any name or bound.
-const SPEC_VERSION = "smm14_tas7_centred_v1"
+(length(SMM_PARAMS), length(SMM_PARENT_PARAMS), length(SMM_CHILD_PARAMS),
+ length(SMM_MOMENTS), length(SMM_PARENT_MOMENTS), length(SMM_TAS_MOMENTS)) == (16, 11, 5, 17, 10, 7) ||
+    error("the banner says 16 = 11 + 5 parameters against 17 = 10 + 7 moments; moments.jl disagrees")
+const SPEC_VERSION = "smm16_tas7_gap_v1"   # 2026-09-11: +sigma_eta, +sigma_eps; tertiles -> gap, +kse_w_gap, +sd_ga17
+
+# -----------------------------------------------------------------------------
+# The initial point: the block starts, or a previous run's estimates by name
+# -----------------------------------------------------------------------------
+"""
+    initial_point() -> (x0, natural)
+
+The search-space incumbent and its natural-unit values. Without --init-from it is
+`incumbent()` (the SMM starts). With it, every parameter the file names is taken from it
+and every parameter it lacks starts at `smm_start` -- reported per parameter so a run
+record never has to be reverse-engineered. A loaded value outside its box is refused:
+silently clamping the incumbent of a sixteen-parameter search onto a wall is how a
+"warm start" turns into a boundary artefact.
+"""
+function initial_point()
+    nat = Dict{Symbol,Float64}(q.name => smm_start(q.name) for q in SMM_PARAMS)
+    src = Dict{Symbol,String}(q.name => "smm_start" for q in SMM_PARAMS)
+    if !isempty(INIT_FROM)
+        isfile(INIT_FROM) || error("--init-from: no such file: $INIT_FROM")
+        raw = TOML.parsefile(INIT_FROM)
+        haskey(raw, "parameters") || error("--init-from: $INIT_FROM has no [parameters] table")
+        for q in SMM_PARAMS
+            haskey(raw["parameters"], String(q.name)) || continue
+            v = Float64(raw["parameters"][String(q.name)])
+            q.lo <= v <= q.hi || error(@sprintf(
+                "--init-from: %s = %.6g from %s is outside its box [%g, %g]", q.name, v, INIT_FROM, q.lo, q.hi))
+            nat[q.name] = v; src[q.name] = "init-from"
+        end
+        extra = [k for k in keys(raw["parameters"]) if !any(q -> String(q.name) == k, SMM_PARAMS)]
+        isempty(extra) || @warn "--init-from: ignoring parameters not in this specification" extra
+    end
+    return [to_search(nat[q.name], q) for q in SMM_PARAMS], nat, src
+end
+const X0, X0_NAT, X0_SRC = initial_point()
 
 # -----------------------------------------------------------------------------
 # A5. The reproducible run record -- written TWICE
@@ -356,14 +416,18 @@ function write_run_record(result = nothing, q_final = NaN, q_search = NaN,
         println(io, "hi           = [", join((q.hi for q in SMM_PARAMS), ", "), "]")
         println(io, "link         = [", join(("\"$(q.link)\"" for q in SMM_PARAMS), ", "), "]")
         println(io, "start        = [",
-                join((@sprintf("%.17g", v) for v in incumbent()), ", "),
+                join((@sprintf("%.17g", v) for v in X0), ", "),
                 "]   # search coords; the incumbent, forced into the Sobol pool")
+        println(io, "init_from    = \"", INIT_FROM, "\"   # empty = the SMM starts")
         for q in SMM_PARAMS
-            @printf(io, "%-12s = %.10g   # starting value, natural units\n",
-                    "start_" * String(q.name), param_default(q.name))
+            @printf(io, "%-18s = %.10g   # starting value, natural units (%s)\n",
+                    "start_" * String(q.name), X0_NAT[q.name], X0_SRC[q.name])
         end
-        println(io, "fixed_note   = \"mu_1 is NOT estimated; it holds at PARENT_DEFAULTS\"")
+        println(io, "fixed_note   = \"mu_1 and R_1 are NOT estimated; they hold at PARENT_DEFAULTS\"")
         println(io, "mu_1         = ", PARENT_DEFAULTS.mu_1)
+        println(io, "R_1          = ", PARENT_DEFAULTS.R_1, "   # HC productivity is flat in child age")
+        println(io, "spec_version = \"", SPEC_VERSION, "\"")
+        println(io, "source_sha   = \"", SOURCE_SHA, "\"")
         println(io, "\n[numerical]")
         println(io, "seed         = ", SEED_, "   # common random numbers, identical across evaluations")
         println(io, "simN         = ", SIM_N)
@@ -379,8 +443,11 @@ function write_run_record(result = nothing, q_final = NaN, q_search = NaN,
         println(io, "local_maxeval  = ", LOCAL_MAXEVAL)
         println(io, "polish_alg   = \"LN_BOBYQA\"")
         println(io, "polish_tol   = 1e-10")
-        println(io, "polish_maxeval = ", POLISH_MAXEVAL)
+        println(io, "polish_maxeval = ", SKIP_POLISH ? 0 : POLISH_MAXEVAL,
+                SKIP_POLISH ? "   # --skip-polish: the polish stage is bypassed" : "")
+        println(io, "skip_polish  = ", SKIP_POLISH)
         println(io, "refine_maxeval = ", REFINE_MAXEVAL)
+        println(io, "Neta         = 5   # Gauss-Hermite nodes for the HC shock (parent constructor default)")
         println(io, "theta_schedule = \"clamp((j/Nstar)^0.5, 0.1, 0.995), restart 1 pinned at 0\"")
         println(io, "penalty      = ", SMM_PENALTY)
         println(io, "workers      = ", max(0, nprocs() - 1))
@@ -578,7 +645,12 @@ end
 # -----------------------------------------------------------------------------
 # Time one evaluation, then predict the run
 # -----------------------------------------------------------------------------
-x0 = incumbent()
+x0 = X0
+say("initial point")
+for q in SMM_PARAMS
+    sayf("  %-14s %12.6g   (%s)\n", q.name, X0_NAT[q.name], X0_SRC[q.name])
+end
+sayf("  %-14s %12.6g   (FIXED, not estimated)\n", "R_1", PARENT_DEFAULTS.R_1)
 print("timing one objective evaluation ... "); flush(stdout)
 t = time(); q0 = objective(x0); T_EVAL = time() - t
 sayf("%.1fs\n", T_EVAL)
@@ -691,7 +763,7 @@ function load_resume(dir::AbstractString)
     # required. `require` makes "cannot verify" mean "refuse".
     require(f) = haskey(ck, f) || refuse(
         "that checkpoint has no `$f` field, so this run cannot verify that it describes " *
-        "the same\n    objective. It predates the fourteen-parameter TAS specification. " *
+        "the same\n    objective. It predates the current specification. " *
         "Start a fresh run.")
 
     for f in ("spec_version", "source_sha", "moment_names", "m_psychic",
@@ -930,6 +1002,7 @@ result = tiktak(objective_tracked, lo, hi;
                 extra_seeds = [x0],             # the incumbent competes like any Sobol point
                 map_fn = USE_PMAP ? pmap : map,
                 local_maxeval = LOCAL_MAXEVAL, polish_maxeval = POLISH_MAXEVAL,
+                skip_polish = SKIP_POLISH,
                 resume = RESUME_STATE,
                 on_seeds = save_seeds!,
                 # tick! does the per-evaluation reporting, so on_sobol would only
@@ -995,9 +1068,13 @@ for (k, v) in sort(collect(RET_TALLY); by = last, rev = true)
     sayf("  %-22s %5d   (%s)\n", k, v, ret_class(k))
 end
 sayf("  %-22s %5d converged / %d hit a budget / %d other\n", "", N_CONVERGED, N_LIMIT, N_OTHER)
-sayf("polish: ret %s (%s), %d evaluations, %s\n", result.polish_ret,
-     ret_class(result.polish_ret), result.n_eval_polish,
-     result.polish_improved ? "improved the incumbent" : "did not improve the incumbent")
+if result.polish_ret === :SKIPPED
+    say("polish: SKIPPED by --skip-polish (0 evaluations); the pre-polish point is final")
+else
+    sayf("polish: ret %s (%s), %d evaluations, %s\n", result.polish_ret,
+         ret_class(result.polish_ret), result.n_eval_polish,
+         result.polish_improved ? "improved the incumbent" : "did not improve the incumbent")
+end
 if result.n_exception > 0
     sayf("\n!! %d local search(es) THREW. That is a bug in the objective, not a bad draw --\n",
          result.n_exception)
@@ -1252,6 +1329,10 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
                  "   # kappa_0 is the psychic cost AT THIS log-ability, not at log theta = 0")
     println(io, "child_grid   = \"", CHILD_G_.Na, "x", CHILD_G_.Nk, "x", CHILD_G_.Nt, "\"")
     println(io, "child_params = [", join(("\"$n\"" for n in SMM_CHILD_PARAMS), ", "), "]")
+    println(io, "parent_params = [", join(("\"$n\"" for n in SMM_PARENT_PARAMS), ", "), "]")
+    println(io, "R_1_fixed    = ", PARENT_DEFAULTS.R_1, "   # NOT estimated: HC productivity is flat in child age")
+    println(io, "init_from    = \"", INIT_FROM, "\"")
+    println(io, "skip_polish  = ", SKIP_POLISH)
     println(io, "weighting    = \"diagonal inverse-variance on the joint clustered covariance\"")
     println(io, "generated  = \"", Dates.format(now(), "yyyy-mm-dd HH:MM"), "\"")
     println(io, "git_commit = \"", git_sha(), "\"")

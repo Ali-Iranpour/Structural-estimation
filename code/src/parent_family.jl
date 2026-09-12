@@ -111,48 +111,35 @@ sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity abo
 HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
-# Promoted 2026-09-10 from run 2026-09-09_123333, full-precision checkpoint search vector.
-# Previous baseline: run 2026-09-09_003312 -- SUPERSEDED, not merely updated: that
-# baseline was fitted under the SCHOOL-PLUS-STUDY specification (child choosing
-# c_time_hrs, ~41 hrs/wk). 3636d43 respecified the child's time so it chooses OWN STUDY
-# only (study_hrs, ~4-6 hrs/wk) with school as an exogenous time cost, and froze
-# sigma_4_1 as a tenth ESTIMATED parameter rather than holding it at 0.02. The two
-# baselines are not comparable point for point; this one is a fresh fit, not a
-# refinement of the old one.
+# Promoted 2026-09-12 from the sixteen-parameter run 2026-09-11_182836_exp16b
+# (docs/SMM.md, Part 3), full-precision values from its checkpoint's search vector.
+# Previous baseline: the ten-parameter own-study fit 2026-09-09_123333, which had no
+# child block and no HC shock. Not comparable point for point: exp16b is a joint
+# sixteen-parameter fit against seventeen moments (ten parent + seven TAS) with
+# inverse-variance weights, on a specification that has NOT been through the advisor.
 #
-# THE SOURCE RUN WAS ACCEPTED. Every condition held:
+# THE SOURCE RUN WAS ACCEPTED:
 #
 #   winner came from the polish, its own return code FTOL_REACHED (converged)
-#   1 of 5 restarts converged, 4 hit a budget, 0 other -- the winning restart converged;
-#     acceptance is about the RETAINED WINNER, not the other four (see run_smm.jl)
+#   3 of 3 restarts converged, 0 hit a budget, 0 other
 #   0 objective exceptions, 0 invalid simulation cells
-#   NO parameter on a bound, and none even within 5% of one
-#   Q = 0.0016389 (against Q = 19.98 at the stale nine-parameter incumbent)
+#   NO parameter on a bound; kappa_ParEd within 5% of its wall at 0 (reported only)
+#   Q = 313.34 (the exp16 pilot's warm start) -> 61.80
 #
-# FIT is close on every targeted moment -- worst gap 3.6% (mean_c_p), most under 0.5%:
-#   mean_i_c_early   0.0393 vs 0.0393   (-0.1%)   the moment sigma_4_0's floor exists for
-#   mean_i_c_late    0.0496 vs 0.0496   ( 0.0%)
-#   mean_t_p_late    0.3334 vs 0.3333   ( 0.0%)
-#   mean_e_p_late    0.3913 vs 0.3911   ( 0.1%)
-#   mean_hc_early    6.0745 vs 6.0737   ( 0.1%)
+# The parent block fits: every parent moment within 5% and |t| <= 1.9 (worst
+# mean_i_c_early -4.6%). What does NOT fit is two child-block gaps -- kse_w_gap (2.14 vs
+# 36.84, -94%) and kth_ga17_gap (0.0167 vs 0.0312, -47%) carry 69% of Q -- which is a
+# specification question, not a box one, and is what Structural-estimation-v2 was forked
+# to work on.
 #
-# THE sigma_4_0 FLOOR WIDENING (579b8f7, this session) DID ITS JOB. sigma_4_0 landed at
-# -5.771, interior at 47.0% of [-10.0, -1.0] -- nowhere near either the old -6.0 floor
-# (which pinned) or the new one. sigma_4_1 is now estimated at +0.133, interior at 91.4%
-# of [-0.05, 0.15]; not flagged (the near-bound threshold is 95%) but the highest position
-# of any parameter in this run and worth re-checking next time the box is touched.
+# sigma_eta = 0.0315 IS NOW THE BASELINE TECHNOLOGY. Until this promotion the block
+# default was 0 (deterministic) and the SMM started the shock at 0.03 through SMM_START;
+# the shock is now part of the fitted model and everything that builds "the baseline"
+# gets it. `sigma_eta = 0.0` remains a legitimate explicit choice and is bit-identical to
+# the pre-shock solver (tools/test_hc_process_shock.jl).
 #
-# sigma_2_1 = -0.0830, interior at 62.0% of [-0.30, 0.05] -- well clear of the -0.15 wall
-# it pinned against under the old specification. lambda_2 = 10.67, interior at 70.6% of
-# [0.05, 100] -- an order of magnitude below the 60.25 the old specification needed to
-# make a child choose 41 hrs/wk of "study"; with school now exogenous, the taste
-# parameter no longer has to explain a legal requirement, which is the specification fix
-# working as intended.
-#
-# UNTARGETED, for context: implied saving rate 31.2%, terminal assets 37.60 model units
-# ($376,030) against the data's mean 17.56 / median 3.04 at child age 17 -- still a large
-# untargeted gap, unaffected by this specification change. 0 households off the asset
-# grid (max simulated 93.8 against a_max = 100).
+# UNTARGETED, for context: retained assets 25.16 ($251,570) against a data mean of
+# $331,977 measured ~11 years later; 0 households off the asset grid.
 #
 const PARENT_DEFAULTS = (
     # phi and lambda are TIME-INVARIANT by instruction (2026-08-30): they are
@@ -160,8 +147,8 @@ const PARENT_DEFAULTS = (
     # vectors are gone. phi_1 and lambda_1 are NORMALISED to 1 -- utility is only
     # defined up to the relative weights, so two of the five must be pinned.
     phi_1 = 1.0,              # NORMALISATION, not estimated
-    phi_2 = 0.18966337502260514, # estimated: mean hours of work
-    phi_3 = 1.247773975252876,   # estimated: parental time + monetary investment
+    phi_2 = 0.19627800368797635, # estimated: mean hours of work
+    phi_3 = 1.5337270332793986,  # estimated: parental time + monetary investment
     # -----------------------------------------------------------------------------
     # HUMAN CAPITAL IS IN THE DATA'S UNITS (PCA W-score), not model units
     # -----------------------------------------------------------------------------
@@ -184,22 +171,31 @@ const PARENT_DEFAULTS = (
 #
     # M = 753.4, the ratio of the new mean HC at age 0 (376.7, from the data) to the old
     # Uniform(0,1) mean of 0.5.
-    R_0 = 50.451874986448765,  R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
-    sigma_1_0 = -0.73742469047958237, sigma_1_1 = -0.08508122744006319,
-    # sigma_2_1 is INTERIOR at 62.0% of [-0.30, 0.05], well clear of the old -0.15 wall.
-    sigma_2_0 = -3.6232611097640031, sigma_2_1 = -0.082970149883598854,
+    R_0 = 48.335683631852916,  R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
+    sigma_1_0 = -0.8885904752581663, sigma_1_1 = -0.0926896519868781,
+    # sigma_2_1 is INTERIOR at 57.7% of [-0.30, 0.05], well clear of the old -0.15 wall.
+    sigma_2_0 = -3.6917922068267726, sigma_2_1 = -0.09795756849517166,
     # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
     # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
     sigma_3_0 = -0.90, sigma_3_1 =  0.0,
-    # sigma_4_1 is now ESTIMATED (own-study respecification, 3636d43), not fixed at 0.02.
-    # sigma_4_0 is INTERIOR at 47.0% of its widened [-10.0, -1.0] floor -- see 579b8f7.
-    sigma_4_0 = -5.7706831937452918, sigma_4_1 =  0.1327287728066934,
+    # sigma_4_1 is ESTIMATED (own-study respecification, 3636d43), not fixed at 0.02. It
+    # landed at 90.1% of the old [-0.05, 0.15] box after 91.4% in the ten-parameter fit,
+    # which is why the box is now [-0.05, 0.30]. sigma_4_0 is INTERIOR at 43.3% of [-10, -1].
+    sigma_4_0 = -6.098536575992962, sigma_4_1 =  0.13013171836583348,
     lambda_1 = 1.0,           # NORMALISATION, not estimated
-    # Interior at 70.6% of [0.05, 100] -- an order of magnitude below what the old
-    # school-plus-study specification needed. See the header of PARENT_DEFAULTS.
-    lambda_2 = 10.672227279089897, # estimated: the child's own study time
+    # Interior at 74.0% of [0.05, 100] (in logs) -- an order of magnitude below what the
+    # old school-plus-study specification needed. See the header of PARENT_DEFAULTS.
+    lambda_2 = 13.86200306163239,  # estimated: the child's own study time
     mu_0 = 1.0,        mu_1 = -0.04,
     tau = 0.18,        y = 0.6,
+    # IDIOSYNCRATIC HC SHOCK (2026-09-11, docs/ERRORS.md P13):
+    #     log HC_{t+1} = log F_t(inputs, HC_t) + sigma_eta * z_{t+1},   z ~ N(0,1) i.i.d.
+    # ESTIMATED since exp16b (2026-09-12): 0.0315, interior at 39% of [0, 0.08], identified
+    # by sd_ga17 (model 0.0365 vs data 0.0329). Pass sigma_eta = 0.0 explicitly for the
+    # deterministic technology every result before 2026-09-11 was built on; that case is
+    # EXACT -- the quadrature nodes collapse to the point and every array is bit-identical
+    # to the pre-shock solver (tools/test_hc_process_shock.jl).
+    sigma_eta = 0.031513225851586016,
 )
 
 
@@ -409,6 +405,14 @@ mutable struct Parent_child_interaction_age_specific_AR1
     draws_uniform_p::Matrix{Float64}  # Pre-drawn uniforms for the AR(1) path [simN, simT]
     seed::Int                         # Seed actually used (the kwarg was previously ignored)
 
+    # --- Idiosyncratic HC shock: log HC' = log F + sigma_eta * z, z ~ N(0,1) ---
+    sigma_eta::Float64                # SD of the log shock; 0.0 = deterministic technology
+    Neta::Int                         # Gauss-Hermite nodes for E_z[.] in the continuation
+    z_nodes::Vector{Float64}          # standard-normal nodes  (sqrt(2) * Hermite nodes)
+    z_weights::Vector{Float64}        # their weights          (Hermite weights / sqrt(pi))
+    draws_eta::Matrix{Float64}        # standard-normal draws [simN, simT+1]; column t+1 is
+                                      # the shock on the transition INTO t+1 (column 1 unused)
+
     V_child_interp::Any           # child terminal value, set after construction
 
     # --- Regression coefficients (from Stata output) ---
@@ -467,6 +471,7 @@ function Parent_child_interaction_age_specific_AR1(;
         # ---- HC block, recalibrated together (see the note below) ----
         phi_3 = PARENT_DEFAULTS.phi_3,
         R_0 = PARENT_DEFAULTS.R_0, R_1 = PARENT_DEFAULTS.R_1,
+        sigma_eta = PARENT_DEFAULTS.sigma_eta, Neta::Int = 5,
         sigma_1_0 = PARENT_DEFAULTS.sigma_1_0, sigma_1_1 = PARENT_DEFAULTS.sigma_1_1,
         sigma_2_0 = PARENT_DEFAULTS.sigma_2_0, sigma_2_1 = PARENT_DEFAULTS.sigma_2_1,
         sigma_3_0 = PARENT_DEFAULTS.sigma_3_0, sigma_3_1 = PARENT_DEFAULTS.sigma_3_1,
@@ -640,6 +645,18 @@ function Parent_child_interaction_age_specific_AR1(;
     # Previously `sample(...)` was called against the GLOBAL RNG.
     draws_uniform_p = rand(rng_p, simN, simT)
 
+    # --- the HC shock: quadrature for the solver, a DEDICATED stream for the simulator ---
+    # `seed + 4` so that adding these draws moves none of the four existing streams: the
+    # asset, BothCollege, initial-HC and wage draws are bit-identical with or without the
+    # shock, which is what makes sigma_eta = 0 reproduce the baseline exactly.
+    sigma_eta >= 0.0 || error("sigma_eta must be non-negative, got $sigma_eta")
+    1 <= Neta <= 5 || error("Neta = $Neta: shock discretisation is capped at 5 nodes by instruction")
+    z_nodes, z_weights = let (xi, om) = gausshermite(Neta)
+        (sqrt(2.0) .* xi, om ./ sqrt(pi))          # exact for N(0,1): sum w = 1, sum w z^2 = 1
+    end
+    rng_eta   = MersenneTwister(seed + 4)
+    draws_eta = randn(rng_eta, simN, simT + 1)
+
 
 
     
@@ -658,6 +675,7 @@ function Parent_child_interaction_age_specific_AR1(;
     simN, simT,
     sim_c, sim_h, sim_t, sim_e, sim_a, sim_i, sim_k, sim_hc, sim_wage, sim_income, sim_tr, sim_p,
     sim_a_init, sim_k_init, sim_hc_init, sim_p_init, draws_uniform_p, seed,
+    float(sigma_eta), Neta, z_nodes, z_weights, draws_eta,
     nothing, β0, β_bothcollege, β_age, β_age2, β_age2_capital, β_age_capital)
 end
 
@@ -766,6 +784,24 @@ end
             model.sigma_2_vector[t] * log(e_p) + 
             model.sigma_3_vector[t] * log(HC))
 end
+
+"""
+    hc_apply_shock(model, F, z) -> HC_next
+
+THE ONE transition law for the idiosyncratic HC shock, shared by the solver (which
+integrates it over `z_nodes`) and every simulator (which applies it to a drawn `z`):
+
+    HC_{t+1} = F_t(inputs, HC_t) * exp(sigma_eta * z),      z ~ N(0,1)
+
+`F_t` is `HC_technology_full` / `HC_technology_parentonly` -- the deterministic part,
+which `R_1 = 0` leaves flat in t. The shock is ZERO-MEAN IN LOGS: E[log HC'] = log F
+exactly, so the targeted mean-log-HC moments are untouched, while the conditional mean in
+LEVELS is F * exp(sigma_eta^2 / 2) -- a factor 1.00045 at sigma_eta = 0.03, recorded here
+so nobody looks for it later. Timing: realised AFTER the period-t inputs are chosen and
+observed through HC_{t+1}, so the parent invests under it and never conditions on it.
+"""
+@inline hc_apply_shock(model::Parent_child_interaction_age_specific_AR1, F::Float64, z::Float64) =
+    F * exp(model.sigma_eta * z)
 
 """
     snap_parent(x, lo, hi; tol = 1e-10)
@@ -1135,6 +1171,54 @@ function expected_interp(model::Parent_child_interaction_age_specific_AR1,
         PchipContinuation(ag, kg, hg, V, D)
     end for i_p in 1:model.Np]
 end
+"""
+    eta_expected_interp(model, interp) -> Vector{PchipContinuation}
+
+The continuation ALSO integrated over the idiosyncratic HC shock, once per period:
+
+    V_tilde(a, k, hc) = sum_j w_j * V(a, k, hc * exp(sigma_eta * z_j))
+
+evaluated at every node of the (a, k, hc) grid and refitted with Fritsch-Carlson slopes,
+exactly as `create_interp` fits the raw value function. The objective then evaluates ONE
+interpolant per call, as before; the `Neta`-fold sum is paid once per period on
+Na*Nk*Nhc points instead of once per SLSQP function call -- the same reason
+`expected_interp` pre-integrates the wage shock. The two integrations commute (both are
+linear in V) and are applied wage-shock first, then this.
+
+WHY REFIT rather than average stored slopes: the shock moves the ARGUMENT, not the node
+weights, so V_tilde is a genuinely different function of hc and its node slopes have to
+be recomputed. Refitting keeps the no-overshoot guarantee the solver relies on
+(docs of PchipContinuation). Evaluations above `hc_max` use the interpolant's linear
+extrapolation with the boundary slope -- a consistent (value, derivative) pair, which is
+what SLSQP needs; `tools/test_hc_process_shock.jl` reports how much quadrature mass
+lands there.
+
+EXACT AT sigma_eta = 0: the input is returned untouched -- not re-evaluated -- so the
+deterministic solve is bit-identical to the pre-shock code.
+"""
+function eta_expected_interp(model::Parent_child_interaction_age_specific_AR1,
+                             interp::Vector{PchipContinuation})
+    model.sigma_eta == 0.0 && return interp
+    ag, kg, hg = interp[1].ag, interp[1].kg, interp[1].hg
+    mult = exp.(model.sigma_eta .* model.z_nodes)
+    return [begin
+        V = zeros(model.Na, model.Nk, model.Nhc)
+        D = zeros(model.Na, model.Nk, model.Nhc)
+        @inbounds for ihc in 1:model.Nhc, ik in 1:model.Nk, ia in 1:model.Na
+            acc = 0.0
+            for j in eachindex(mult)
+                v, _ = _herm(P, ia, ik, hg[ihc] * mult[j])
+                acc += model.z_weights[j] * v
+            end
+            V[ia, ik, ihc] = acc
+        end
+        @inbounds for ik in 1:model.Nk, ia in 1:model.Na
+            @views D[ia, ik, :] .= _pchip_slopes(hg, V[ia, ik, :])
+        end
+        PchipContinuation(ag, kg, hg, V, D)
+    end for P in interp]
+end
+
 # -----------------------------------------------------------------------------
 # Spline domain: why the gradient must be clamped together with the value
 # -----------------------------------------------------------------------------
@@ -1196,6 +1280,37 @@ end
         Dierckx.derivative(V_child_interp, a_next, HC_next, 0, 1))
 end
 
+"""
+    eval_child_value_eta(model, V_child_interp, a_next, HC_next, bc, want_grad)
+
+The parent's period-T continuation integrated over the HC shock on the handoff:
+
+    E_z[ V_child(a', HC' * exp(sigma_eta z)) ]     and its derivatives in (a', HC')
+
+by Gauss-Hermite over `z_nodes`. The chain rule puts a factor exp(sigma_eta z_j) on each
+node's dV/dHC. Each node goes through `eval_child_value`, so the domain clamp applies to
+value and gradient together at every node, as it must. With sigma_eta = 0 this is ONE
+call to `eval_child_value` -- identical to the pre-shock code, not merely equivalent.
+
+Done by quadrature here rather than by pre-integrating the terminal spline: the spline is
+a SMOOTHING fit (s = 10) and refitting a smoothed surface would add a second layer of
+approximation; five spline evaluations per objective call in the one terminal period is
+cheap enough not to.
+"""
+@inline function eval_child_value_eta(model::Parent_child_interaction_age_specific_AR1,
+                                      V_child_interp, a_next::Float64, HC_next::Float64,
+                                      bc::Float64, want_grad::Bool)
+    model.sigma_eta == 0.0 && return eval_child_value(V_child_interp, a_next, HC_next, bc, want_grad)
+    V = 0.0; dV_da = 0.0; dV_dHC = 0.0
+    @inbounds for j in eachindex(model.z_nodes)
+        w = model.z_weights[j]
+        mult = exp(model.sigma_eta * model.z_nodes[j])
+        Vj, daj, dHCj = eval_child_value(V_child_interp, a_next, HC_next * mult, bc, want_grad)
+        V += w * Vj; dV_da += w * daj; dV_dHC += w * mult * dHCj
+    end
+    return (V, dV_da, dV_dHC)
+end
+
 # ===========================================================================
 # Objectives
 # ===========================================================================
@@ -1219,8 +1334,9 @@ function obj_last_period_full(model::Parent_child_interaction_age_specific_AR1, 
     # `capital` IS the parent's BothCollege indicator -- see the file header. It selects
     # the terminal surface, so a college-educated parent's continuation reflects the
     # kappa_ParEd shift its own child will get.
-    V_next, dV_da, dV_dHC = eval_child_value(V_child_interp, a_next, HC_next, capital,
-                                             length(grad) > 0)
+    # Integrated over the HC shock on the handoff -- see eval_child_value_eta.
+    V_next, dV_da, dV_dHC = eval_child_value_eta(model, V_child_interp, a_next, HC_next, capital,
+                                                 length(grad) > 0)
     f = util_now + model.beta_vector[t] * V_next
 
     # Gradient calculations
@@ -1559,9 +1675,10 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         other_dict = Dict{Symbol, Int}()
         itercounts = Int[]
         total = 0
-        # Integrate over next period's shock ONCE per period, not once per objective
-        # call -- see expected_interp. `interp[i_p]` is E[V_{t+1} | z_t = i_p].
-        interp = expected_interp(model, create_interp(model, model.sol_v, t+1))
+        # Integrate over next period's shocks ONCE per period, not once per objective
+        # call -- see expected_interp (wage) and eta_expected_interp (HC).
+        # `interp[i_p]` is E[V_{t+1} | z_t = i_p], also integrated over the HC shock.
+        interp = eta_expected_interp(model, expected_interp(model, create_interp(model, model.sol_v, t+1)))
         for i_a in 1:Na, i_k in 1:Nk, i_hc in 1:Nhc, i_p in 1:Np
             assets = a_grid[i_a]
             capital = k_grid[i_k]
@@ -1644,9 +1761,10 @@ function solve_model!(model::Parent_child_interaction_age_specific_AR1;
         other_dict = Dict{Symbol, Int}()
         itercounts = Int[]
         total = 0
-        # Integrate over next period's shock ONCE per period, not once per objective
-        # call -- see expected_interp. `interp[i_p]` is E[V_{t+1} | z_t = i_p].
-        interp = expected_interp(model, create_interp(model, model.sol_v, t+1))
+        # Integrate over next period's shocks ONCE per period, not once per objective
+        # call -- see expected_interp (wage) and eta_expected_interp (HC).
+        # `interp[i_p]` is E[V_{t+1} | z_t = i_p], also integrated over the HC shock.
+        interp = eta_expected_interp(model, expected_interp(model, create_interp(model, model.sol_v, t+1)))
         for i_a in 1:Na, i_k in 1:Nk, i_hc in 1:Nhc, i_p in 1:Np
             assets = a_grid[i_a]
             capital = k_grid[i_k]
@@ -1817,7 +1935,9 @@ function simulate_model!(model::Parent_child_interaction_age_specific_AR1)
                               model.sigma_3_vector[t] * log(max(hc, 1e-8)) +
                               model.sigma_4_vector[t] * log(max(sim_i[i, t], 1e-8)))
             end
-            sim_hc[i, t+1] = hc_next
+            # The idiosyncratic shock on the transition into t+1 -- including t = T, the
+            # age-18 handoff column the child block reads. Zero at sigma_eta = 0.
+            sim_hc[i, t+1] = hc_apply_shock(model, hc_next, model.draws_eta[i, t+1])
         end
     end
 
@@ -1953,22 +2073,21 @@ function simulate_model_hetero!(
                                         sim_c[i, t] - sim_e[i, t], pm.a_min, pm.a_max)
             sim_k[i, t+1] = k
 
-            if t < T_CHILD_VOICE
-                sim_hc[i, t+1] = exp(
+            hc_det = t < T_CHILD_VOICE ? exp(
                     log(pm.R_vector[t]) +
                     pm.sigma_1_vector[t] * log(max(sim_t[i, t], 1e-8)) +
                     pm.sigma_2_vector[t] * log(max(sim_e[i, t], 1e-8)) +
                     pm.sigma_3_vector[t] * log(max(hc, 1e-8))
-                )
-            else
-                sim_hc[i, t+1] = exp(
+                ) : exp(
                     log(pm.R_vector[t]) +
                     pm.sigma_1_vector[t] * log(max(sim_t[i, t], 1e-8)) +
                     pm.sigma_2_vector[t] * log(max(sim_e[i, t], 1e-8)) +
                     pm.sigma_3_vector[t] * log(max(hc, 1e-8)) +
                     pm.sigma_4_vector[t] * log(max(sim_i[i, t], 1e-8))
                 )
-            end
+            # Shock from the BASE model's stream (common random numbers across belief
+            # arms), scaled by the arm's own sigma_eta.
+            sim_hc[i, t+1] = hc_apply_shock(pm, hc_det, model.draws_eta[i, t+1])
         end
     end
 

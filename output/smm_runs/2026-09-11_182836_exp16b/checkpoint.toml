@@ -1,0 +1,46 @@
+# Written after each restart by code/smm/run_smm.jl. Safe to read
+# while the run is going; rewritten atomically.
+# Resume with:  julia --project=../.. run_smm.jl --resume <this dir>
+stage         = "final"
+restarts_done = 3
+param_names   = ["phi_2", "phi_3", "lambda_2", "R_0", "sigma_1_0", "sigma_1_1", "sigma_2_0", "sigma_2_1", "sigma_4_0", "sigma_4_1", "kappa_0", "kappa_theta", "kappa_ParEd", "kappa_terminal", "sigma_eta", "sigma_eps"]
+param_lo      = [0.01, 0.05, 0.05, 0.5, -4.0, -0.2, -5.0, -0.3, -10.0, -0.05, -2.0, -10.0, -3.0, 0.5, 0.0, 0.1]
+param_hi      = [20.0, 20.0, 100.0, 100.0, -0.1, 0.05, -0.5, 0.05, -1.0, 0.15, 5.0, 0.0, 0.0, 40.0, 0.08, 2.0]
+param_link    = ["log", "log", "log", "log", "level", "level", "level", "level", "level", "level", "level", "level", "level", "log", "level", "log"]
+targets_sha   = "4c516620aa57fe38"
+source_sha    = "5609303c8c59dbc3"   # child_lifecycle + parent_family + moments
+spec_version  = "smm16_tas7_gap_v1"
+m_psychic     = 6.263396877461691   # the psychic-cost centring this run used
+moment_names  = ["mean_c_p", "mean_h_p", "mean_t_p_early", "mean_t_p_late", "mean_e_p_early", "mean_e_p_late", "mean_i_c_early", "mean_i_c_late", "mean_hc_early", "mean_hc_late", "k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c", "kterm_x_strict_w99", "kse_w_gap", "sd_ga17"]
+child_grid    = "30x30x5"
+seed          = 1234
+sim_n         = 2000
+restarts_total= 3
+Q_best        = 61.79774489057339
+objective_grid= 30   # the grid Q_best was computed at
+Q_incumbent   = 313.34296555057574   # at grid_search
+grid_search   = 30
+grid_report   = 30
+minutes       = 443.6
+updated       = "2026-09-12 01:53:56"
+
+[search_vector]
+z = [-1.6282232385479609, 0.42770074270390829, 2.6291515043608955, 3.8781700794361393, -0.88859047525816626, -0.092689651986878105, -3.6917922068267726, -0.097957568495171662, -6.098536575992962, 0.13013171836583348, -0.3565912994458334, -3.6193790303472806, -0.1081080950368823, 2.1732485922077136, 0.031513225851586016, 0.13298690441668065]
+
+[parameters]
+phi_2      = 0.19627800
+phi_3      = 1.53372703
+lambda_2   = 13.86200306
+R_0        = 48.33568363
+sigma_1_0  = -0.88859048
+sigma_1_1  = -0.09268965
+sigma_2_0  = -3.69179221
+sigma_2_1  = -0.09795757
+sigma_4_0  = -6.09853658
+sigma_4_1  = 0.13013172
+kappa_0    = -0.35659130
+kappa_theta = -3.61937903
+kappa_ParEd = -0.10810810
+kappa_terminal = 8.78678240
+sigma_eta  = 0.03151323
+sigma_eps  = 1.14223504

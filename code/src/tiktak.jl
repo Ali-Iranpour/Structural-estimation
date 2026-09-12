@@ -248,6 +248,9 @@ Keyword arguments
                            0 -- see the note in the signature. Do not set to 0.
   polish_alg/tol/maxeval   final polish (default BOBYQA, 1e-10)
   polish_ftol_abs          same, for the polish
+  skip_polish         true bypasses the polish stage entirely; `polish_ret` is :SKIPPED
+                      and the pre-polish incumbent is returned. The explicit switch,
+                      because `polish_maxeval = 0` means NO LIMIT to NLopt.
   extra_seeds         points forced into the pre-testing pool
   stop_tol            early stop on |Z* - Z*_prev|; 0.0 disables
   on_sobol/on_local   callbacks for progress reporting. on_local also receives the
@@ -275,6 +278,7 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 local_ftol_abs::Float64 = 1e-10, local_xtol_rel::Float64 = 1e-8,
                 polish_alg::Symbol = :LN_BOBYQA, polish_tol::Float64 = 1e-10,
                 polish_maxeval::Int = 4000, polish_ftol_abs::Float64 = 1e-14,
+                skip_polish::Bool = false,
                 extra_seeds::Vector{Vector{Float64}} = Vector{Vector{Float64}}(),
                 stop_tol::Float64 = 0.0,
                 # A4. What to do when `f` THROWS.
@@ -492,6 +496,11 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     f_prepolish = fZ
 
     # ---- polishing ----------------------------------------------------------
+    if skip_polish
+        return TikTakResult(Z, fZ, n_eval, f_sobol_best, f_prepolish, trace, n_exception,
+                            :SKIPPED, false, 0, winner_stage, winner_j, winner_ret)
+    end
+    polish_maxeval > 0 || error("polish_maxeval = 0 would mean NO LIMIT to NLopt; use skip_polish = true")
     # `polish_opt`, not `opt`: a bare `opt` here is what boxed the local stage's
     # optimizer for years. Keep these names distinct.
     polish_opt = Opt(polish_alg, length(lo))

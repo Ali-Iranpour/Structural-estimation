@@ -233,16 +233,38 @@ banner("Specification is frozen as instructed")
 # 2026-09-10: was "ten and ten". Those two checks necessarily FAILED under the
 # fourteen-parameter specification, so this self-test could not pass at all -- and its
 # closing banner is "do not run the estimation", which would have been the standing advice.
-check("fourteen estimated parameters", length(SMM_PARAMS) == 14, "$(length(SMM_PARAMS))")
+# 2026-09-11: sixteen parameters (the two shock scales added), seventeen moments (the
+# three ability tertiles replaced by the mean gap; the wealth gap and the age-17 SD added).
+check("sixteen estimated parameters", length(SMM_PARAMS) == 16, "$(length(SMM_PARAMS))")
 check("seventeen targeted moments", length(SMM_MOMENTS) == 17, "$(length(SMM_MOMENTS))")
-check("ten parent + four child parameters",
-      length(SMM_PARENT_PARAMS) == 10 && length(SMM_CHILD_PARAMS) == 4,
+check("eleven parent + five child parameters",
+      length(SMM_PARENT_PARAMS) == 11 && length(SMM_CHILD_PARAMS) == 5,
       "$(length(SMM_PARENT_PARAMS)) + $(length(SMM_CHILD_PARAMS))")
 check("ten parent + seven TAS moments",
       length(SMM_PARENT_MOMENTS) == 10 && length(SMM_TAS_MOMENTS) == 7,
       "$(length(SMM_PARENT_MOMENTS)) + $(length(SMM_TAS_MOMENTS))")
-check("the four child parameters are the kappas",
-      Set(SMM_CHILD_PARAMS) == Set((:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal)))
+check("the five child parameters are the kappas and sigma_eps",
+      Set(SMM_CHILD_PARAMS) == Set((:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal, :sigma_eps)))
+check("sigma_eta is a parent parameter, box [0, 0.08] level, starts at the fitted baseline",
+      (q = SMM_PARAMS[findfirst(x -> x.name === :sigma_eta, SMM_PARAMS)];
+       q.owner === :parent && q.lo == 0.0 && q.hi == 0.08 && q.link === :level &&
+       smm_start(:sigma_eta) == PARENT_DEFAULTS.sigma_eta && 0 < PARENT_DEFAULTS.sigma_eta < 0.08))
+check("sigma_eps is a child parameter, box [0.1, 2.0] log, starts at the fitted baseline",
+      (q = SMM_PARAMS[findfirst(x -> x.name === :sigma_eps, SMM_PARAMS)];
+       q.owner === :child && q.lo == 0.1 && q.hi == 2.0 && q.link === :log &&
+       smm_start(:sigma_eps) == CHILD_DEFAULTS.sigma_eps))
+check("the 2026-09-12 boxes: kappa_0 [-3, 1], kappa_ParEd [-1, 0.5], sigma_4_1 [-0.05, 0.30]",
+      (box(n) = (q = SMM_PARAMS[findfirst(x -> x.name === n, SMM_PARAMS)]; (q.lo, q.hi));
+       box(:kappa_0) == (-3.0, 1.0) && box(:kappa_ParEd) == (-1.0, 0.5) && box(:sigma_4_1) == (-0.05, 0.30)))
+check("every search start is inside its box",
+      all(q -> q.lo <= smm_start(q.name) <= q.hi, SMM_PARAMS))
+check("the baseline kappas and the target centring agree (CHILD_DEFAULTS.m_psychic)",
+      isfinite(CHILD_DEFAULTS.m_psychic) && CHILD_DEFAULTS.m_psychic > 6.0)
+check("R_1 is NOT estimated and holds at 0",
+      !any(q -> q.name === :R_1, SMM_PARAMS) && PARENT_DEFAULTS.R_1 == 0.0)
+check("the seven TAS targets, in order",
+      collect(SMM_TAS_MOMENTS) == ["k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c",
+                                   "kterm_x_strict_w99", "kse_w_gap", "sd_ga17"])
 check("moment order is parent block then TAS block",
       collect(SMM_MOMENTS) == vcat(collect(SMM_PARENT_MOMENTS), collect(SMM_TAS_MOMENTS)))
 check("every estimated parameter routes to exactly one block",
