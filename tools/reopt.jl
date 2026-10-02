@@ -421,7 +421,9 @@ end
 
 print("warming the child cache on every process ... "); flush(stdout)
 let t0 = time()
-    @everywhere let cfg = child_config(TARGETS; Na = 30, Nk = 30, Nt = 5, simN = PSIMN, seed = PSEED)
+    # child_wage: memo 19's child_config requires the wage loading (as the runner's warm-up; 2026-10-02 merge fix)
+    @everywhere let cfg = child_config(TARGETS; Na = 30, Nk = 30, Nt = 5, simN = PSIMN, seed = PSEED,
+                                       child_wage = child_wage_config())
         child_base(cfg)
     end
     sayf("%.1fs\n", time() - t0)
