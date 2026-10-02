@@ -8,7 +8,10 @@ end
 include(joinpath(REPO, "code/smm/moments.jl"))
 targets = load_targets(smm_targets_file())
 school = target_school_time(targets)
-p = Parent_child_interaction_age_specific_AR1(Na=12, Nhc=12, simN=200, school_time=school)
+# the parent's wage process and initial assets are REQUIRED constructor keywords since 2026-10-02 (no defaults):
+# every construction below passes the target file's values
+const CAL = parent_calibration(targets)
+p = Parent_child_interaction_age_specific_AR1(Na=12, Nhc=12, simN=200, school_time=school; CAL...)
 @testset "Own study specification and frozen targets" begin
     # Was `== 10 == 10` for the square parent-only design, then 14 / 17. Since 2026-09-11
     # the specification is sixteen parameters against seventeen moments; this pins BOTH
@@ -28,9 +31,9 @@ p = Parent_child_interaction_age_specific_AR1(Na=12, Nhc=12, simN=200, school_ti
     @test targets["mean_i_c_late"].mean ≈ 0.0496 atol=1e-4
     @test targets["mean_hc_late"].mean ≈ 6.2589 atol=1e-4
     @test child_leisure(p, 0.2, 0.05, 12) ≈ 0.75-school[12]
-    @test_throws ArgumentError Parent_child_interaction_age_specific_AR1(school_time=fill(NaN,17))
-    @test_throws ArgumentError Parent_child_interaction_age_specific_AR1(school_time=fill(0.3,17))
-    @test_throws ArgumentError Parent_child_interaction_age_specific_AR1(school_time=zeros(16))
+    @test_throws ArgumentError Parent_child_interaction_age_specific_AR1(school_time=fill(NaN,17); CAL...)
+    @test_throws ArgumentError Parent_child_interaction_age_specific_AR1(school_time=fill(0.3,17); CAL...)
+    @test_throws ArgumentError Parent_child_interaction_age_specific_AR1(school_time=zeros(16); CAL...)
     # Excluding ages 10/11 is verified with distinct values, not a constant trajectory.
     for t in 1:18; p.sim_hc[:,t] .= exp(t/10); end
     for f in (:sim_c,:sim_e,:sim_h,:sim_t,:sim_i); getfield(p,f) .= 0.05; end
@@ -43,7 +46,7 @@ p = Parent_child_interaction_age_specific_AR1(Na=12, Nhc=12, simN=200, school_ti
     end
     # School changes the time cost, not the production function at fixed own study.
     # `legacy` must now ask for zeros EXPLICITLY: the default is the real schedule.
-    legacy = Parent_child_interaction_age_specific_AR1(Na=12,Nhc=12,simN=200,school_time=zeros(17))
+    legacy = Parent_child_interaction_age_specific_AR1(Na=12,Nhc=12,simN=200,school_time=zeros(17); CAL...)
     @test HC_technology_full(p,0.2,0.3,500.0,0.05,12) ==
           HC_technology_full(legacy,0.2,0.3,500.0,0.05,12)
     @test child_leisure(legacy,0.2,0.05,12) ≈ 0.75
@@ -51,7 +54,7 @@ p = Parent_child_interaction_age_specific_AR1(Na=12, Nhc=12, simN=200, school_ti
     # The DEFAULT is the real median-school schedule, and it is the same schedule the
     # frozen targets carry. A default of zeros silently solved PARENT_DEFAULTS -- which
     # were fitted WITH school -- against a budget that has none, and no test caught it.
-    defaulted = Parent_child_interaction_age_specific_AR1(Na=12,Nhc=12,simN=200)
+    defaulted = Parent_child_interaction_age_specific_AR1(Na=12,Nhc=12,simN=200; CAL...)
     @test defaulted.school_time == SCHOOL_TIME_BY_AGE
     @test defaulted.school_time ≈ school
     @test all(iszero, SCHOOL_TIME_BY_AGE[1:T_CHILD_VOICE-1])

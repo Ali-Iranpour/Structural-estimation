@@ -370,6 +370,44 @@ function check_composition(comp, out, path)
     return nothing
 end
 
+# The SMM_Constants rows the parent model reads (Child_Time_Study block K3: 29_initial_assets.do and
+# 30_wage_process.do; Ali, 2026-10-02), and the constructor keyword each becomes. wage_sd_z is read
+# only to check rho and sigma_p against it; wage_var_m (measurement error) is not part of the model.
+const PARENT_CALIB_CONSTANTS = (
+    init_asset_p0 = "init_asset_p0", init_asset_mu = "init_asset_mu", init_asset_sd = "init_asset_sd",
+    β0 = "wage_b0", β_bothcollege = "wage_b_bc", β_age = "wage_b_age", β_age2 = "wage_b_age2",
+    β_age2_capital = "wage_b_age2_bc", β_age_capital = "wage_b_age_bc",
+    p_ar1 = "wage_rho", sigma_p = "wage_sig_p", wage_var_0 = "wage_var_0")
+
+"""
+    _parent_calibration(raw, path) -> NamedTuple
+
+The parent's wage process and initial assets from `[constants]` of a parsed target file. Every key is
+REQUIRED: a missing one is an error naming it, and the model has no default to fall back on.
+"""
+function _parent_calibration(raw::AbstractDict, path::AbstractString)
+    haskey(raw, "constants") || error("""
+        target file $path has no [constants] table. Since 2026-10-02 the parent's wage process and
+        initial assets are read from it (every row of Child_Time_Study's SMM_Constants.csv, passed
+        through by tools/make_smm_targets.py); regenerate the targets.""")
+    c = raw["constants"]
+    get_(k) = (haskey(c, k) || error("[constants] in $path has no `$k` (Child_Time_Study block K3: " *
+                                     "29_initial_assets.do / 30_wage_process.do); regenerate the targets");
+               v = Float64(c[k]); isfinite(v) || error("[constants] $k = $v is not finite: $path"); v)
+    cal = NamedTuple{keys(PARENT_CALIB_CONSTANTS)}(map(get_, values(PARENT_CALIB_CONSTANTS)))
+    0 <= cal.init_asset_p0 < 1 || error("init_asset_p0 = $(cal.init_asset_p0) is not a share in [0, 1): $path")
+    cal.init_asset_sd > 0 || error("init_asset_sd = $(cal.init_asset_sd) must be positive: $path")
+    0 <= cal.p_ar1 < 1 || error("wage_rho = $(cal.p_ar1) must lie in [0, 1): $path")
+    cal.sigma_p > 0 || error("wage_sig_p = $(cal.sigma_p) must be positive: $path")
+    cal.wage_var_0 >= 0 || error("wage_var_0 = $(cal.wage_var_0) must be non-negative: $path")
+    # the stationary SD the two imply must be Stata's own (sigma_p is the INNOVATION SD, not the stationary one)
+    sd_z = get_("wage_sd_z")
+    isapprox(cal.sigma_p / sqrt(1 - cal.p_ar1^2), sd_z; rtol = 1e-6) || error(
+        "wage_sig_p / sqrt(1 - wage_rho^2) = $(cal.sigma_p / sqrt(1 - cal.p_ar1^2)) differs from wage_sd_z = $sd_z: " *
+        "is wage_sig_p the innovation SD? $path")
+    return cal
+end
+
 """
     load_targets(path; require_composition = true) -> Dict{String,NamedTuple}
 
@@ -410,6 +448,9 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
     init = (m0 = Float64(_req(raw, "init_m0", path)), mBC = Float64(_req(raw, "init_mBC", path)),
             s0 = Float64(_req(raw, "init_s0", path)))
     all(isfinite, values(init)) && init.s0 >= 0 || error("invalid init_* constants: " * path)
+
+    # ---- the parent's wage process and initial assets (Ali, 2026-10-02) -----------
+    parent_calib = _parent_calibration(raw, path)
 
     # ---- the child's bargaining weight ---------------------------------------
     Int.(_req(raw, "mu_ages", path)) == collect(T_CHILD_VOICE:SMM_AGE_HI) ||
@@ -474,7 +515,7 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
     end
 
     out["_spec"] = (school_time = school, m_psychic = m_psychic, L0 = L0, sd_lnk17 = sd_lnk17,
-                    init = init, mu_by_age = mu_by_age, mu_half = mu_half,
+                    init = init, mu_by_age = mu_by_age, mu_half = mu_half, parent_calib = parent_calib,
                     se = se, Sigma = Sigma, cov_names = cov_names,
                     n_clusters = Int.(get(mc, "n_clusters_by_moment", zeros(Int, length(se)))),
                     composition = comp,
@@ -503,6 +544,13 @@ end
 
 # Metadata travels with the frozen targets to every solve, including diagnostics.
 target_school_time(targets) = targets["_spec"].school_time
+"""
+    parent_calibration(targets) -> NamedTuple
+
+The parent constructor's REQUIRED wage-process and initial-asset keywords, from the target file's
+[constants] (see `_parent_calibration`). Splat it into `Parent_child_interaction_age_specific_AR1`.
+"""
+parent_calibration(targets) = targets["_spec"].parent_calib
 target_m_psychic(targets)   = targets["_spec"].m_psychic
 target_L0(targets)          = targets["_spec"].L0
 target_init(targets)        = targets["_spec"].init
@@ -1579,6 +1627,7 @@ function run_pipeline(kw::NamedTuple, targets;
                                                          init_m0 = ini.m0, init_mBC = ini.mBC,
                                                          init_s0 = ini.s0,
                                                          mu_child_by_age = target_mu_by_age(targets),
+                                                         parent_calibration(targets)...,   # wage process, initial assets
                                                          pk..., parent_extra...)   # no `w` -- see smm_objective
     parent.V_child_interp = V_child
     redirect_stdout(devnull) do

@@ -41,3 +41,42 @@ A_age15,.5091120004653931,.0073892674408853,929,"A Overall autonomy index mean a
 A_age16,.5410598516464233,.0081592667847872,888,"A Overall autonomy index mean at age 16 (21, 2014 conditions)"
 A_age17,.5808646678924561,.0089525077491999,773,"A Overall autonomy index mean at age 17 (21, 2014 conditions)"
 A_age18,.6540442705154419,.0169372763484716,274,"A Overall autonomy index mean at age 18 (21, 2014 conditions)"
+init_asset_p0,.2537878751754761,.027411786839366,264,"K3 initial assets (29): share zero or negative, point mass at the floor - overall incl home"
+init_asset_mu,1.144389629364014,.1035647317767143,264,"K3 initial assets (29): mean ln a on the positive part, model units - overall incl home"
+init_asset_sd,1.367276906967163,.0690579116344452,264,K3 initial assets (29): SD ln a on the positive part - overall incl home
+init_asset_p0_excl,.3333333432674408,.0296781286597252,264,"K3 initial assets (29): share zero or negative, point mass at the floor - overall excl home"
+init_asset_mu_excl,.6789749264717102,.1162597686052322,264,"K3 initial assets (29): mean ln a on the positive part, model units - overall excl home"
+init_asset_sd_excl,1.402975797653198,.0749922171235085,264,K3 initial assets (29): SD ln a on the positive part - overall excl home
+init_asset_p0_bc0,.2385786771774292,.0303125847131014,197,"K3 initial assets (29): share zero or negative, point mass at the floor - BothCollege_0 incl home"
+init_asset_mu_bc0,1.125893831253052,.123636320233345,197,"K3 initial assets (29): mean ln a on the positive part, model units - BothCollege_0 incl home"
+init_asset_sd_bc0,1.416200399398804,.0820382833480835,197,K3 initial assets (29): SD ln a on the positive part - BothCollege_0 incl home
+init_asset_p0_bc0_excl,.3096446692943573,.0327113792300224,197,"K3 initial assets (29): share zero or negative, point mass at the floor - BothCollege_0 excl home"
+init_asset_mu_bc0_excl,.6494580507278442,.1371086537837982,197,"K3 initial assets (29): mean ln a on the positive part, model units - BothCollege_0 excl home"
+init_asset_sd_bc0_excl,1.46177077293396,.0889605358242989,197,K3 initial assets (29): SD ln a on the positive part - BothCollege_0 excl home
+init_asset_p0_bc1,.28125,.0590776354074478,64,"K3 initial assets (29): share zero or negative, point mass at the floor - BothCollege_1 incl home"
+init_asset_mu_bc1,1.166652083396912,.1864723563194275,64,"K3 initial assets (29): mean ln a on the positive part, model units - BothCollege_1 incl home"
+init_asset_sd_bc1,1.196624040603638,.1261352449655533,64,K3 initial assets (29): SD ln a on the positive part - BothCollege_1 incl home
+init_asset_p0_bc1_excl,.390625,.062676303088665,64,"K3 initial assets (29): share zero or negative, point mass at the floor - BothCollege_1 excl home"
+init_asset_mu_bc1_excl,.7287617921829224,.1945295035839081,64,"K3 initial assets (29): mean ln a on the positive part, model units - BothCollege_1 excl home"
+init_asset_sd_bc1_excl,1.163980722427368,.1335177570581436,64,K3 initial assets (29): SD ln a on the positive part - BothCollege_1 excl home
+wage_b_bc,.3313063551896253,.0429340867414195,8796,"K3 wage profile (30), baseline: term BC; t = mean parental age - 25"
+wage_b_age,.0160862634642307,.0032485249065847,8796,"K3 wage profile (30), baseline: term t; t = mean parental age - 25"
+wage_b_age2,-.0002636705696902,.0000892478978413,8796,"K3 wage profile (30), baseline: term t2; t = mean parental age - 25"
+wage_b_age2_bc,-.0003119809161533,.0001815003874998,8796,"K3 wage profile (30), baseline: term t2_bc; t = mean parental age - 25"
+wage_b_age_bc,.0135194158958899,.0063039008152876,8796,"K3 wage profile (30), baseline: term t_bc; t = mean parental age - 25"
+wage_b0,2.859935404085456,.0249338705746604,8796,"K3 wage profile (30), baseline: term _cons; t = mean parental age - 25"
+wage3_1_ed_type,.084769466015178,.0490922131466974,8796,"K3 wage profile (30), three_types: term 1.ed_type; t = mean parental age - 25"
+wage3_2_ed_type,.3652351174546164,.0469590605454382,8796,"K3 wage profile (30), three_types: term 2.ed_type; t = mean parental age - 25"
+wage3_t,.00749305558321,.0038886505639499,8796,"K3 wage profile (30), three_types: term t; t = mean parental age - 25"
+wage3_t2,-.0000469098623261,.0001035210567547,8796,"K3 wage profile (30), three_types: term t2; t = mean parental age - 25"
+wage3_1_ed_type_c_t,.019703945658169,.0065124808376749,8796,"K3 wage profile (30), three_types: term 1.ed_type#c.t; t = mean parental age - 25"
+wage3_2_ed_type_c_t,.0221126237766899,.0066654928585687,8796,"K3 wage profile (30), three_types: term 2.ed_type#c.t; t = mean parental age - 25"
+wage3_1_ed_type_c_t2,-.0004458840885584,.0001842296937676,8796,"K3 wage profile (30), three_types: term 1.ed_type#c.t2; t = mean parental age - 25"
+wage3_2_ed_type_c_t2,-.0005287416235107,.0001890854083676,8796,"K3 wage profile (30), three_types: term 2.ed_type#c.t2; t = mean parental age - 25"
+wage3_cons,2.826006641821635,.0313271899113116,8796,"K3 wage profile (30), three_types: term _cons; t = mean parental age - 25"
+wage_rho,.9787995902302651,.0055650539908144,,"K3 wage shock (30): AR(1) persistence, annual"
+wage_sig_p,.0754447576429852,.0099356538168757,,K3 wage shock (30): SD of the AR(1) innovation (the model's sigma_p)
+wage_sd_z,.3683460646374045,.0073090559942592,,K3 wage shock (30): Stationary SD of the AR(1) component
+wage_v,.135678823333863,.0053745222478772,,K3 wage shock (30): Stationary variance of the AR(1) component
+wage_var_m,.0633099535352729,.0031756511375544,,K3 wage shock (30): Measurement-error variance: lag-0 autocovariance minus v
+wage_var_0,.0936636596301352,.0193416247855098,,K3 wage shock (30): Variance of the AR(1) component at t <= 2 (initial dispersion)

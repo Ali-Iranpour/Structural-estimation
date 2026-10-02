@@ -49,7 +49,8 @@ const CH, VCH = build_child_solution((;), T; Na = CG.Na, Nk = CG.Nk, Nt = CG.Nt,
 
 function parent_at(sigma_eta; Neta = 5, seed = 1234, solve = true)
     p = Parent_child_interaction_age_specific_AR1(; Na = G.Na, Nk = G.Nk, Nhc = G.Nhc, simN = N,
-            seed = seed, school_time = target_school_time(T), sigma_eta = sigma_eta, Neta = Neta)
+            seed = seed, school_time = target_school_time(T), sigma_eta = sigma_eta, Neta = Neta,
+            parent_calibration(T)...)   # the wage process and initial assets: required since 2026-10-02
     p.V_child_interp = VCH
     solve && redirect_stdout(devnull) do
         solve_model!(p; verbose = false); simulate_model!(p)

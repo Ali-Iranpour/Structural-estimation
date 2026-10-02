@@ -401,9 +401,10 @@ mutable struct Parent_child_interaction_age_specific_AR1
     sim_a_init::Vector{Float64}   # Initial assets          [simN]
     sim_k_init::Vector{Float64}   # BothCollege draw        [simN]
     sim_hc_init::Vector{Float64}  # Initial human capital   [simN]
-    sim_p_init::Vector{Int}    # Initial AR1 shocks      [Np, simN]
+    sim_p_init::Vector{Int}    # Initial AR1 shock: node index per household [simN]
     draws_uniform_p::Matrix{Float64}  # Pre-drawn uniforms for the AR(1) path [simN, simT]
     seed::Int                         # Seed actually used (the kwarg was previously ignored)
+    sim_a_init_redrawn::Int           # initial-asset draws redrawn for lying outside [a_min, a_max]
 
     # --- Idiosyncratic HC shock: log HC' = log F + sigma_eta * z, z ~ N(0,1) ---
     sigma_eta::Float64                # SD of the log shock; 0.0 = deterministic technology
@@ -415,7 +416,7 @@ mutable struct Parent_child_interaction_age_specific_AR1
 
     V_child_interp::Any           # child terminal value, set after construction
 
-    # --- Regression coefficients (from Stata output) ---
+    # --- Regression coefficients (Child_Time_Study 30_wage_process.do, via targets.toml [constants]) ---
     β0::Float64                # _cons
     β_bothcollege::Float64     # Both_College
     β_age::Float64             # Age
@@ -483,13 +484,24 @@ function Parent_child_interaction_age_specific_AR1(;
         mu_child_by_age::AbstractVector{<:Real} = MU_CHILD_BY_AGE,
         # Np = 5. MEASURED: 7 -> 5 -> 3 leaves every moment flat to the third digit, so
         # the Rouwenhorst grid is converged by 3 and 5 is margin. docs/ERRORS.md, grid caps.
-        p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
-        β0 = 2.798937,
-        β_bothcollege = 0.3077394,
-        β_age = 0.0230108,
-        β_age2 = -0.0004319,
-        β_age2_capital = -0.0004296,
-        β_age_capital = 0.0173774,
+        Np::Int=5,
+        # ---- THE WAGE PROCESS AND THE INITIAL ASSETS: REQUIRED, NO DEFAULTS (Ali, 2026-10-02) ----
+        # Calibrated outside the SMM in Child_Time_Study (30_wage_process.do, 29_initial_assets.do;
+        # SMM_Constants block K3) and read from targets.toml [constants] by moments.jl
+        # (`parent_calibration(targets)`, which run_pipeline splats in). A call that omits any of them
+        # fails with UndefKeywordError: there is deliberately no fallback to the old numbers
+        # (rho 0.9, sigma 0.1, beta0 2.798937 ..., LogNormal(0.2962227, 1.401793), middle node).
+        #   p_ar1, sigma_p   the AR(1) of the log wage shock, ANNUAL: persistence and INNOVATION SD
+        #                    (QuantEcon's rouwenhorst takes the innovation SD) -- wage_rho, wage_sig_p
+        #   β*               the log hourly wage profile in t = mean parental age - 25 (age 26 = period 1),
+        #                    the same six-term regression as before, re-estimated -- wage_b0 ... wage_b_age_bc
+        #   wage_var_0       variance of the AR(1) component at model start (initial dispersion)
+        #   init_asset_*     initial assets: a point mass p0 at a_min, LogNormal(mu, sd) otherwise
+        p_ar1::Float64, sigma_p::Float64,
+        β0::Float64, β_bothcollege::Float64, β_age::Float64, β_age2::Float64,
+        β_age2_capital::Float64, β_age_capital::Float64,
+        wage_var_0::Float64,
+        init_asset_p0::Float64, init_asset_mu::Float64, init_asset_sd::Float64,
         )  
 
 
@@ -590,42 +602,38 @@ function Parent_child_interaction_age_specific_AR1(;
     rng_k  = MersenneTwister(seed + 1)
     rng_hc = MersenneTwister(seed + 2)
     rng_p  = MersenneTwister(seed + 3)
-    # INITIAL ASSETS: the fitted LogNormal, RESAMPLED where it lands above the grid.
+    # INITIAL ASSETS (Ali, 2026-10-02; Child_Time_Study 29_initial_assets.do, block K3): net worth
+    # including home equity of fathers whose first child was born at 25-27, at the child's age 0-1,
+    # model units ($10k, 2015 USD). Per simulated household, from the seeded rng_a:
+    #     with probability init_asset_p0       a = a_min          (zero or negative net worth: the
+    #                                                              model cannot hold negative assets)
+    #     otherwise                            a ~ LogNormal(init_asset_mu, init_asset_sd)
+    # The lognormal part is TRUNCATED to [a_min, a_max] by rejection: a draw outside is redrawn, so the
+    # distribution below the ceiling keeps its exact shape (no pile-up on the top node); the number of
+    # redraws is kept in `sim_a_init_redrawn`. Independent of BothCollege in the baseline (the by-group
+    # values *_bc0 / *_bc1 are in the target file and unused). Replaces the hard-coded
+    # LogNormal(0.2962227, 1.401793) without a point mass.
     #
-    # The distribution is unchanged below the ceiling -- this is the same LogNormal,
-    # conditioned on a_min <= a <= a_max -- and only the draws that fall outside get
-    # redrawn. Every other household keeps its original value bit for bit, so a run before
-    # and after this change differs in exactly the households that were off-grid.
-    #
-    # WHY, measured at seed = 1234, simN = 2000: the raw draw produces exactly TWO values
-    # above a_max = 100, at 136.4 and 214.4. Those two are the entire off-grid population
-    # the diagnostics have been reporting -- 2 households above in every period 1..17 and
-    # at the age-18 handoff, with a simulated maximum of 254 after they save. They are
-    # outliers of the fitted tail, not a feature of the data, and above the top node the
-    # policy is Flat()-extrapolated, so their whole path is the boundary policy repeated.
-    # P(X > 100) = 0.106%, i.e. 2.1 households of 2000 in expectation -- the tail this
-    # removes is a thousandth of the mass.
-    #
-    # RESAMPLED, NOT CLAMPED. Clamping would pile both households exactly on the top node
-    # and leave a spike in the wealth distribution that is an artefact of the grid;
-    # redrawing keeps the shape of the distribution below the ceiling exactly right. This
-    # is the standard rejection sampler for a truncated distribution and is exact, not an
-    # approximation.
-    #
-    # A CAP IS KEPT on the retries so a mis-specified a_max cannot spin forever: if the
-    # ceiling were ever set below the bulk of the distribution this fails loudly instead
-    # of hanging.
-    sim_a_init = rand(rng_a, LogNormal(0.2962227, 1.401793), simN)
-    let d = LogNormal(0.2962227, 1.401793), n_redrawn = 0
+    # A CAP IS KEPT on the retries so a mis-specified a_max cannot spin forever: if the ceiling were
+    # ever set below the bulk of the distribution this fails loudly instead of hanging.
+    0.0 <= init_asset_p0 < 1.0 || throw(ArgumentError("init_asset_p0 must be in [0, 1), got $init_asset_p0"))
+    isfinite(init_asset_mu) && init_asset_sd > 0.0 ||
+        throw(ArgumentError("init_asset_mu must be finite and init_asset_sd positive, got ($init_asset_mu, $init_asset_sd)"))
+    at_floor = rand(rng_a, simN) .< init_asset_p0
+    sim_a_init = fill(a_min, simN)
+    sim_a_init_redrawn = 0
+    let d = LogNormal(init_asset_mu, init_asset_sd)
         for i in eachindex(sim_a_init)
-            tries = 0
-            while (sim_a_init[i] > a_max || sim_a_init[i] < a_min) && tries < 10_000
-                sim_a_init[i] = rand(rng_a, d); tries += 1; n_redrawn += 1
+            at_floor[i] && continue
+            x = rand(rng_a, d); tries = 0
+            while (x > a_max || x < a_min) && tries < 10_000
+                x = rand(rng_a, d); tries += 1; sim_a_init_redrawn += 1
             end
             tries >= 10_000 && error(
                 "initial asset draw could not be placed inside [a_min, a_max] = " *
                 "[$a_min, $a_max] after 10,000 tries. The grid range is inconsistent " *
-                "with LogNormal(0.2962227, 1.401793); check a_max before changing this.")
+                "with LogNormal($init_asset_mu, $init_asset_sd); check a_max before changing this.")
+            sim_a_init[i] = x
         end
     end
     sim_k_init = Float64.(rand(rng_k, Bernoulli(0.3), simN))  # 70% zeros, 30% ones
@@ -636,7 +644,13 @@ function Parent_child_interaction_age_specific_AR1(;
     # is the same rng_hc draw the old W-score lognormal used.
     init_s0 >= 0.0 || throw(ArgumentError("init_s0 must be non-negative, got $init_s0"))
     sim_hc_init = exp.(init_m0 .+ init_mBC .* sim_k_init .+ init_s0 .* randn(rng_hc, simN))
-    sim_p_init = fill(ceil(Int, Np/2), simN)
+    # THE INITIAL WAGE SHOCK (Ali, 2026-10-02; 30_wage_process.do): z0 ~ N(0, wage_var_0), the dispersion
+    # of the AR(1) component among households at mean parental age 27 or less, and each household
+    # starts at the NEAREST Rouwenhorst node (in log units, mc.state_values). Was: every household at the
+    # middle node. Its own stream, `seed + 5`, so none of the other streams moves.
+    wage_var_0 >= 0.0 || throw(ArgumentError("wage_var_0 must be non-negative, got $wage_var_0"))
+    rng_p0 = MersenneTwister(seed + 5)
+    sim_p_init = [argmin(abs.(mc.state_values .- z)) for z in sqrt(wage_var_0) .* randn(rng_p0, simN)]
     # Pre-drawn uniforms for the AR(1) transition: reproducible, and identical across arms.
     # Previously `sample(...)` was called against the GLOBAL RNG.
     draws_uniform_p = rand(rng_p, simN, simT)
@@ -670,7 +684,7 @@ function Parent_child_interaction_age_specific_AR1(;
     sol_c, sol_i, sol_h, sol_t, sol_e, sol_v, sol_tr, sol_t_asset,
     simN, simT,
     sim_c, sim_h, sim_t, sim_e, sim_a, sim_i, sim_k, sim_hc, sim_wage, sim_income, sim_tr, sim_p,
-    sim_a_init, sim_k_init, sim_hc_init, sim_p_init, draws_uniform_p, seed,
+    sim_a_init, sim_k_init, sim_hc_init, sim_p_init, draws_uniform_p, seed, sim_a_init_redrawn,
     float(sigma_eta), Neta, z_nodes, z_weights, draws_eta,
     nothing, β0, β_bothcollege, β_age, β_age2, β_age2_capital, β_age_capital)
 end
@@ -1484,7 +1498,13 @@ MEASURED 2026-09-06, 2000 random points, `Na = Nhc = 10`:
 """
 function continuation_selftest(; n::Int = 2000, seed::Int = 20260906, verbose::Bool = true)
     rng = MersenneTwister(seed)
-    p = Parent_child_interaction_age_specific_AR1(; Na = 10, Nk = 2, Nhc = 10, simN = 10, seed = 1234)
+    # the wage process and initial assets are REQUIRED keywords (no defaults since 2026-10-02); this algebra
+    # check fills the value function with random numbers, so any admissible values serve -- these are
+    # arbitrary test inputs, not a calibration
+    p = Parent_child_interaction_age_specific_AR1(; Na = 10, Nk = 2, Nhc = 10, simN = 10, seed = 1234,
+            p_ar1 = 0.5, sigma_p = 0.1, β0 = 2.0, β_bothcollege = 0.0, β_age = 0.0, β_age2 = 0.0,
+            β_age2_capital = 0.0, β_age_capital = 0.0, wage_var_0 = 0.0,
+            init_asset_p0 = 0.0, init_asset_mu = 0.0, init_asset_sd = 1.0)
     for i in eachindex(p.sol_v); p.sol_v[i] = randn(rng); end
     interp = create_interp(p, p.sol_v, 5)
     E      = expected_interp(p, interp)

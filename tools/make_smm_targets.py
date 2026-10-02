@@ -86,6 +86,10 @@ TARGET_BLOCKS = {"P", "S", "T", "W"}
 # The child weight is a calibrated per-age vector: ages 6..17 are the bargaining periods,
 # mu_half is the age-18 half period. Parent weight = 1 - mu_t (1 before age 6).
 MU_AGES = list(range(6, 18))
+# The SMM_Constants rows the parent model reads from [constants] (moments.jl PARENT_CALIB_CONSTANTS, 2026-10-02).
+PARENT_CALIB_CONSTANTS = ("init_asset_p0", "init_asset_mu", "init_asset_sd",
+                          "wage_b0", "wage_b_bc", "wage_b_age", "wage_b_age2", "wage_b_age2_bc", "wage_b_age_bc",
+                          "wage_rho", "wage_sig_p", "wage_sd_z", "wage_var_0")
 
 
 def git_sha():
@@ -159,7 +163,10 @@ def read_stata_vector():
     for c in ("name", "value"):
         if c not in k.columns:
             raise ValueError(f"SMM_Constants.csv lacks column {c}")
-    need = ["m_psychic", "mu_half"] + [f"mu_age{a}" for a in MU_AGES]
+    if k["name"].duplicated().any():
+        raise ValueError(f"SMM_Constants.csv: duplicate names {k.loc[k.name.duplicated(), 'name'].tolist()}")
+    # the parent's initial assets and wage process (block K3, 29/30; Ali 2026-10-02): moments.jl requires them
+    need = (["m_psychic", "mu_half"] + [f"mu_age{a}" for a in MU_AGES] + list(PARENT_CALIB_CONSTANTS))
     absent = [c for c in need if c not in set(k.name)]
     if absent:
         raise ValueError(f"SMM_Constants.csv lacks {absent}")
@@ -295,6 +302,18 @@ def main():
         f'bc_share_children_skill = {const.get("bc_share_children_skill", float("nan")):.17g}',
         "",
     ]
+    # [constants] (Ali, 2026-10-02): EVERY row of SMM_Constants.csv, by name, value as %.17g (se, n and
+    # desc stay in the CSV). A TOML table, so it comes after the top-level keys above and before the
+    # moment tables below. The parent model reads its initial-asset distribution and wage process
+    # (Child_Time_Study 29_initial_assets.do / 30_wage_process.do, block K3) from here.
+    lines += ["# ---- every row of Input/SMM_Constants.csv, by name ----", "[constants]"]
+    for name, value in zip(k.name, k.value):
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", str(name)):
+            raise ValueError(f"SMM_Constants.csv: {name!r} is not a bare TOML key")
+        if not np.isfinite(value):
+            raise ValueError(f"SMM_Constants.csv: {name} = {value} is not finite")
+        lines.append(f"{name} = {float(value):.17g}")
+    lines.append("")
     print(f"{'moment':28s} {'block':5s} {'tgt':>3s} {'estimate':>13s} {'se':>11s} {'N':>6s}")
     print("-" * 72)
     for _, row in m.iterrows():
