@@ -1240,35 +1240,55 @@ check_psychic_centring(target_m_psychic(TARGETS))
 mutable struct Tracker
     stage::Symbol      # :sobol or :local
     done::Int          # evaluations finished in the current stage
-    total::Int         # expected evaluations, :sobol only (:local has no known total)
-    best::Float64
+    total::Int         # expected evaluations, :sobol only (:local has no known total); the attempt CAP with --sobol-valid
+    valid::Int         # :sobol: VALID values received so far (not penalised)
+    target::Int        # :sobol with --sobol-valid: the valid values that end the stage; 0 = a fixed number of attempts
+    best::Float64      # the best VALID Q so far (a penalised value is not a Q)
     restart::Int
     nrestart::Int
     t0::Float64        # start of the CURRENT stage, for the Sobol ETA
     trun::Float64      # start of the whole search, so every line agrees on the clock
     tlast::Float64
 end
-const TRACKER = Tracker(:sobol, 0, 0, Inf, 1, N_RESTART, time(), time(), time())
+const TRACKER = Tracker(:sobol, 0, 0, 0, 0, Inf, 1, N_RESTART, time(), time(), time())
 
-function stage!(s::Symbol, total::Int = 0)
+function stage!(s::Symbol, total::Int = 0; target::Int = 0)
     TRACKER.stage = s; TRACKER.done = 0; TRACKER.total = total
+    TRACKER.valid = 0; TRACKER.target = target
     TRACKER.t0 = time(); TRACKER.tlast = time()
 end
+
+"The best valid Q for a progress line, or a plain statement that there is none yet (it used to print the penalty, 1e+12)."
+bstr(q) = isfinite(q) ? @sprintf("%11.4g", q) : " (none valid)"
 
 function tick!(q::Float64)
     T = TRACKER
     T.done += 1
-    isfinite(q) && q < T.best && (T.best = q)
+    ok = isfinite(q) && q < SMM_PENALTY                  # a penalised value is neither valid nor a "best Q"
+    ok && q < T.best && (T.best = q)
+    T.stage === :sobol && ok && (T.valid += 1)
     now_ = time()
     last = T.stage === :sobol && T.done == T.total      # always print the final line
     (last || now_ - T.tlast >= EVERY_SEC) || return
     T.tlast = now_
-    if T.stage === :sobol
+    if T.stage === :sobol && T.target > 0
+        # --sobol-valid (fixed 2026-10-02, Ali: "the way you print the sobol stage is wrong"): the stage
+        # ends when T.target values are VALID, so progress and the ETA count valid values; the attempts
+        # are shown against their cap. It printed attempts / valid target ("1236/151  819%") and a
+        # negative time left.
+        el   = (now_ - T.t0) / 60
+        frac = min(T.valid / T.target, 1.0)
+        eta  = T.valid >= T.target ? "target reached" :
+               T.valid == 0 ? "no ETA before the first valid draw" :
+               @sprintf("~%.0f min left", el * (T.target - T.valid) / T.valid)
+        sayf("  sobol    valid %4d/%-4d %3.0f%%   attempts %5d (cap %d)   best Q %s   %5.1f min elapsed, %s\n",
+             T.valid, T.target, 100frac, T.done, T.total, bstr(T.best), el, eta)
+    elseif T.stage === :sobol
         el   = (now_ - T.t0) / 60
         frac = T.done / max(T.total, 1)
         eta  = frac > 0 ? el * (1 - frac) / frac : 0.0
-        sayf("  sobol    %5d/%-5d %3.0f%%   best Q %11.4g   %5.1f min elapsed, ~%.0f min left\n",
-             T.done, T.total, 100frac, T.best, el, eta)
+        sayf("  sobol    %5d/%-5d %3.0f%%   valid %4d   best Q %s   %5.1f min elapsed, ~%.0f min left\n",
+             T.done, T.total, 100frac, T.valid, bstr(T.best), el, eta)
     else
         sayf("  restart %3d/%-3d  eval %5d   this Q %s   best Q %s   %5.1f min\n",
              T.restart, T.nrestart, T.done, qstr(q), qstr(T.best), (now_ - T.trun) / 60)
@@ -1574,6 +1594,15 @@ if RESUMING && RESUME_MODE !== :pretest
     # incumbent) but the log said something untrue, which on a two-day run is how a
     # perfectly good resume gets killed and restarted by hand.
     TRACKER.best = RESUME_MODE === :state ? RESUME_INFO.fZ : RESUME_STATE.fZ
+elseif N_VALID_TARGET > 0
+    # the progress line counts every valid value it receives, the supplied start's too, so the
+    # target it shows is the module's (valid SOBOL draws) plus the start when the start is valid
+    let start_valid = isfinite(q0) && q0 < SMM_PENALTY
+        stage!(:sobol, N_SOBOL + 1; target = N_VALID_TARGET + (start_valid ? 1 : 0))
+        sayf("pre-testing: until %d Sobol' draws are valid (at most %d attempts); the progress line counts the supplied start too (%s)%s\n",
+             N_VALID_TARGET, N_SOBOL, start_valid ? "valid" : "penalised",
+             RESUMING ? "; values evaluated before this resume are not in its counts" : "")
+    end
 else
     stage!(:sobol, N_SOBOL_EVAL)
 end
@@ -1597,8 +1626,8 @@ result = tiktak(objective_tracked, lo, hi; TIKTAK_KW...,
                         TICK_FROM_SOBOL && (TRACKER.done = i - 1; tick!(fx))
                         return
                     end
-                    sayf("  sobol    complete: %d values, best Q %s, %.1f min\n",
-                         TRACKER.done, strip(qstr(best)), elapsed())
+                    sayf("  sobol    complete: %d values, %d valid (the supplied start included), best Q %s, %.1f min\n",
+                         TRACKER.done, TRACKER.valid, strip(qstr(best)), elapsed())
                     stage!(:local)
                 end,
                 on_local = function (j, ns, th, fl, best, best_x, row)
