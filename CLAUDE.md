@@ -55,6 +55,76 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
 - **Model/specification changes go through the advisor** before results built on them
   circulate. Numerical fixes (grid bounds, interpolation, solver settings) do not.
 
+## Where things are decided (Ali, standing instructions)
+
+- **Ask before deciding anything open.** Whenever unsure -- a parameter value, a moment, which
+  run or file is current, how to word a rule -- ask Ali first; never write a guess into code or
+  docs.
+- **Never change a parameter value or a calibrated constant on your own**, and in a merge never
+  resolve a conflict over a parameter value, or over anything Ali edited earlier, by a rule such
+  as "the newer side wins": list each item with both values and ask.
+- Specification changes (technology, moments, what is estimated) also go through the advisor
+  before results built on them circulate.
+
+## Two repositories
+
+- **Child_Time_Study** (`/srv/project/speech/apps/Child_Time_Study`, GitHub
+  `Ali-Iranpour/child-time-study`, branch `feat/stylized-facts-enhancements`) builds the data side
+  in Stata: `Code/28_smm_moments.do` writes the moment vector, its joint covariance and the
+  calibrated constants to `Output/Data/SMM/SMM_Moments.csv`, `SMM_VCov.csv`, `SMM_Constants.csv`
+  (initial assets in `29_initial_assets.do`, the wage process in `30_wage_process.do`). **Stata runs
+  on Ali's Mac** (the do-files carry Mac/Windows paths), so a server session cannot rerun it.
+- **This repository** consumes them: copy the three CSVs into `Input/`, run
+  `tools/make_smm_targets.py`, use the new `output/smm_runs/<stamp>_targets/targets.toml`.
+- In Child_Time_Study, if a pull would touch locally modified files, **stop and ask**; never stash,
+  reset, check out or force. Do not pull, fetch or reset **this** repository on the server without
+  asking: the server copy can hold work that is not on GitHub.
+
+## Handover
+
+**`docs/HANDOVER.md`** is the single handover: current branch and worktrees, what is running,
+decisions taken, open decisions, next actions. Read it first; update it at the end of each phase
+(move superseded state into its History section).
+
+## Long-running computation
+
+- Run approved long computations only through a standalone driver script in a detached `tmux`
+  session (`output/diagnostics/<date>_<tag>/run_*.sh`), which writes a `STATUS` file and a `DONE`
+  or `FAILED` sentinel and advances between approved jobs on its own.
+- After launch, verify once that it started and wrote its first status line; report the tmux
+  session, the output and status paths and how to resume; then stop. **Do not poll.**
+- If a gate fails or an unexpected error occurs, preserve the diagnostics and report. **Never
+  weaken a check, loosen a tolerance, or launch a new experiment to get past a failure**; wait for
+  Ali's decision. Ask before expanding an experiment budget.
+
+## Shell pitfalls on this server
+
+- The interactive shell is **zsh, which does not word-split `$VARS`**: `J="julia --project=."; $J x.jl`
+  fails (exit 127). Put multi-word commands in a `sh` script.
+- **`$T:path` is a zsh modifier**: write `git show "${T}:code/x.jl"`, with braces.
+- **`$` inside a Julia docstring interpolates**: "150,000 USD", not "$150k".
+- An `rm` on a variable path (`rm $C/*`) is blocked by a safety check; use `"${C:?}"/...` or a
+  literal path.
+
+## Before the estimation can run (status 2026-10-02; details `docs/SMM.md` §7)
+
+1. The composition tables: block C of `28_smm_moments.do` run in Stata, merged with commit
+   `5aa297f`, pushed, the CSVs copied, the targets regenerated.
+2. sd(log AFQT) for the child's wage return to skill (`docs/WAGE_RETURN_ANCHOR.md`).
+3. Ali's decisions: the p99 caps, the BothCollege share, parents' mean schooling, the `sigma_j`
+   boxes, the asset grid (the advisor's rule: at least 60% of nodes below 150k USD).
+4. The advisor's sign-off on memo 18/19, sigma_eta = 0 and the 2026-10-02 calibration.
+5. The stale tests rewritten for memo 19; the valid share of random draws measured at the
+   production grids; the recovery test rerun with the real inputs.
+
+## Correlations as moments
+
+S5–S7 are pooled correlations (Letter-Word with itself 5 years later, each input with the LW
+level, each input with the 5-year LW change). The model rebuilds each as the data pool it: a
+mixture over the data's composition cells (ages, or base and end ages, and odd/even money
+waves) with the data's counts as weights, including the between-age term; the LW test noise
+enters only the variances, never the covariances. `docs/SMM.md` §3.1 has the formulas.
+
 ## The estimation (current state: `docs/SMM.md`)
 
 **Memo 19: 20 parameters against 67 moments** (2 parent P, 59 skill S, 5 college T, 1 wealth W),

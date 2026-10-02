@@ -247,6 +247,52 @@ pairs, base ages) in the data's proportions, and the model counterpart uses the 
 from the target file's `[composition]` tables. **Not yet exported**; `load_targets` refuses a
 target file without them ([`SMM_COMPOSITION.md`](SMM_COMPOSITION.md) specifies the frames).
 
+### 3.1 How a correlation is used as a moment
+
+Fifteen of the S rows are correlations: S5, the 5-year autocorrelation of Letter-Word (3 rows);
+S6, each input (active parental time, own study, money) with the LW level (3); S7, each input
+with the 5-year LW change (9). In the data, each is one correlation over all observations of its
+frame: S6 parental time, for example, pools every child-wave aged 3–17. A correlation is
+unit-free, so it does not depend on how skill or the inputs are scaled; its standard error comes
+from Stata's joint bootstrap like every other row.
+
+**The model rebuilds the same pooled statistic** (`s_pooled`, `moments.jl`). The data's
+observations fall into composition cells $c$ (an age; for pairs, a base age and an end age; for
+money, also an even or odd CDS wave) with counts $w_c$, read from the target file. The model
+simulates every household at every age, so it forms the moments of each cell and mixes them with
+the data's weights, including the between-age term that pooling creates:
+
+$$\mu(y) = \sum_c w_c\,\bar y_c, \qquad
+\mathrm{Cov}(y,z) = \sum_c w_c\big[\mathrm{cov}_c(y,z) + (\bar y_c - \mu(y))(\bar z_c - \mu(z))\big]$$
+
+(weights normalised to one; population moments, $1/N$). The between-age term matters because both the inputs and LW change with age: a pooled correlation
+is not the average of the per-age correlations, and the data's age mix decides how much each age
+counts.
+
+**Test noise enters only where it belongs.** The model uses each child's expected score
+$\pi = 57p$ and the binomial variance $v = 57p(1-p)$, never a drawn score. Measurement noise is
+independent of the inputs and across test waves, so it adds to variances and not to
+covariances:
+
+$$\mathrm{corr}(x, LW) = \frac{\mathrm{Cov}(x,\pi)}{\sqrt{\mathrm{Var}(x)\,(\mathrm{Var}(\pi) + \bar v)}},
+\qquad
+\mathrm{corr}(x, \Delta LW) = \frac{\mathrm{Cov}(x,\Delta\pi)}{\sqrt{\mathrm{Var}(x)\,(\mathrm{Var}(\Delta\pi) + \bar v_a + \bar v_{a_2})}},$$
+
+with $\Delta\pi = \pi_{a_2} - \pi_a$ between the base age $a$ and the end age $a_2$ of each pair, and the S5 autocorrelation has the noise of each wave in its own variance only. This is what the
+data's correlations contain: noise attenuates them, and the model reproduces the attenuation
+rather than comparing noise-free model correlations with noisy data ones.
+
+**Inputs**: parental time and own study are the model's choices at the cell's age. Money at an
+odd CDS wave (1997, 2007) is, in the data, the mean of the two adjacent even PSID years, so the
+model uses the mean of ages $a-1$ and $a+1$ (age 16 alone at 17).
+
+**What they carry.** S7, the association between an input and the *growth* of skill that
+follows, is the main information on that input's elasticity; S5, how strongly skill persists
+over 5 years, informs persistence ($\sigma_{3\cdot}$) together with the SDs (S3); S6, the
+association with the *level*, mixes technology with the fact that inputs respond to skill and
+income, and informs the elasticity levels jointly. These are the intended mappings
+([§2.1](#21-estimated-20)), not proofs of identification.
+
 **The objective** is $Q(\theta) = \sum_j (m_j - \hat m_j)^2/\text{se}_j^2$, the diagonal
 inverse-variance weight from the joint bootstrap covariance Stata exports (`SMM_VCov.csv`);
 the residual vector every tool must agree on is $(m_j - \hat m_j)/\text{se}_j$ in
