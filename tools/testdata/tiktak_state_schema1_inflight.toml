@@ -1,0 +1,204 @@
+# TikTak run state, schema 1 (code/src/TikTak/checkpoint.jl). Machine-written;
+# the sha256 on the last line covers everything above it. Do not edit by hand.
+checkpoint_seq = 5
+kind = "tiktak_state"
+purpose = "custom"
+resume_semantics = "fresh"
+run_id = "20260928_100142_4b3ddb1b"
+schema_version = 1
+stage = "local"
+status = "failed"
+tiktak_version = "2.0.0-dev"
+written = "2026-09-28 10:01:45"
+
+[counters]
+counts_complete = true
+evals_abandoned = 0
+evals_local = 21
+evals_polish = 0
+evals_pretest = 30
+jobs_lost = 0
+retries = 0
+
+[[events]]
+detail = "K = 4 of 4 requested; pre-testing pool 30 draws (planned)"
+kind = "start"
+seq = 1
+time = "2026-09-28 10:01:42"
+[[events]]
+detail = "master-side error: fixture: abort before job 2 is sent"
+kind = "abort"
+seq = 2
+time = "2026-09-28 10:01:45"
+[[events]]
+detail = "master-side error; 1 job(s) left in flight for replay: fixture: abort before job 2 is sent"
+kind = "failure"
+seq = 3
+time = "2026-09-28 10:01:45"
+
+[incumbent]
+f = 8.951536777427354
+version = 2
+x = [2.0399999999999996, 2.0399999999999996]
+
+    [incumbent.origin]
+    attempt = 1
+    candidate = 0
+    objective_id = "unspecified"
+    restart = 1
+    ret = "MAXEVAL_REACHED"
+    stage = "local"
+
+    [incumbent.verification]
+    attempt = 0
+    coord_tol = nan
+    distance = nan
+    f_tested = nan
+    objective_id = ""
+    restart = 0
+    ret = "NONE"
+    solver = ""
+    stage = "none"
+    status = "none"
+    x_tested = []
+
+[[inflight]]
+attempt = 1
+commits_at_dispatch = 1
+dispatch_seq = 2
+dispatched = 1.790582505096822e9
+incumbent_version = 2
+j = 2
+stage = "local"
+step_scale = 1.0
+theta = 0.7071067811865476
+worker = 2
+x0 = [0.5052395334175089, 0.8801428534987281]
+
+[objective]
+id = "unspecified"
+
+    [objective.fields]
+
+[optimizer]
+id = "5d10d1657efaa24a"
+
+    [optimizer.fields]
+    bootstrap = "first_alone"
+    hi = [5.12, 5.12]
+    invalid_value = +inf
+    lo = [-5.12, -5.12]
+    n_sobol = 30
+    n_supplied = 0
+    n_valid_target = 0
+    nlopt_jl_version = "1.1.2"
+    nlopt_version = "2.10.0"
+    normalize = false
+    nstar_requested = 4
+    on_error = "rethrow"
+    require_valid_target = false
+    skip_first = true
+    skip_polish = true
+    sobol_version = "1.5.0"
+    stop_tol = 0.0
+    supplied_seeds_sha = "e3b0c44298fc1c14"
+    theta = [0.5, 0.1, 0.995]
+    tiktak_source_sha = "5c0e8f422805656c"
+    tiktak_version = "2.0.0-dev"
+    verify = [1.0e-9, 1.0e-8, 1.0e-12]
+
+        [optimizer.fields.local]
+        alg = "LN_NELDERMEAD"
+        ftol_abs = 1.0e-10
+        ftol_rel = 0.001
+        initial_step = 0.0
+        maxeval = 20
+        step_min = 0.1
+        step_schedule = "fixed"
+        xtol_rel = 1.0e-8
+
+        [optimizer.fields.polish]
+        alg = "LN_BOBYQA"
+        ftol_abs = 1.0e-14
+        ftol_rel = 1.0e-10
+        initial_step = 0.0
+        maxeval = 4000
+        step_min = 0.0
+        step_schedule = "fixed"
+        xtol_rel = 1.0e-10
+
+[plan]
+hi = [5.12, 5.12]
+lo = [-5.12, -5.12]
+nstar_effective = 4
+nstar_requested = 4
+schedule_denominator = 4
+
+[polish]
+done = false
+improved = false
+n_eval = 0
+ret = "NOT_RUN"
+
+[pretest]
+attempted = 30
+errors = 0
+invalid = 0
+nonfinite = 0
+overshoot = 0
+reused = 0
+selected = 4
+selected_supplied = 0
+stop_reason = "planned"
+supplied = 0
+supplied_valid = 0
+target = 0
+target_reached = true
+valid = 30
+
+[progress]
+commit_seq = 1
+dispatch_seq = 2
+fZ_prev_distinct = 22.009427451571767
+f_prepolish = nan
+n_exception = 0
+next_j = 3
+stopped_early = false
+
+[[records]]
+action = "improved"
+attempt = 1
+commit_seq = 1
+commits_at_dispatch = 0
+dispatch_seq = 1
+elapsed = 0.006754875183105469
+error = ""
+f_local = 8.951536777427354
+f_start = 22.009427451571767
+incumbent_version = 1
+j = 1
+legacy = false
+n_eval = 21
+ret = "MAXEVAL_REACHED"
+theta = 0.0
+version_after = 2
+worker = 2
+x = [2.0399999999999996, 2.0399999999999996]
+x0 = [2.88, 2.88]
+
+[seeds]
+candidate = [28, 7, 8, 11]
+f = [22.009427451571767, 22.07316325581189, 22.07316325581189, 22.07316325581189]
+f_sobol_best = 22.009427451571767
+origin = ["sobol", "sobol", "sobol", "sobol"]
+x = [[2.88, 2.88], [-3.2, -1.92], [1.92, 3.2], [-1.92, -3.2]]
+
+[[segments]]
+index = 1
+mode = "async_process"
+next_j = 1
+note = "start"
+started = "2026-09-28 10:01:42"
+stop_after = 9223372036854775807
+workers = 1
+# sha256 90ef6caf78e0463867305af8a00f5a3e1bf2b4c09093bc8ed2e0ef5b379efec0

@@ -1390,11 +1390,12 @@ function evaluate_at(vals::AbstractDict{Symbol,<:Real}, targets;
                      simN::Int = 2000, seed::Int = 1234,
                      child_grid = (Na = 30, Nk = 30, Nt = 5),
                      parent_extra::NamedTuple = (;),
+                     child_extra::NamedTuple = (;),
                      weights::Union{Nothing,Vector{Float64}} = nothing,
                      demo_sim::Bool = false)
     r = run_pipeline(named_point(vals), targets; Na = Na, Nk = Nk, Nhc = Nhc,
                      simN = simN, seed = seed, child_grid = child_grid,
-                     parent_extra = parent_extra, demo_sim = demo_sim)
+                     parent_extra = parent_extra, child_extra = child_extra, demo_sim = demo_sim)
     m = model_moments(r, targets)
     v = simulation_violations(r.parent)
     return (r = residuals_from(m, targets; weights = weights),
@@ -1577,8 +1578,16 @@ const CHILD_ESTIMATED_DEFAULTS =
     NamedTuple{CHILD_ESTIMATED}(map(n -> getfield(CHILD_DEFAULTS, n), CHILD_ESTIMATED))
 
 function build_child_solution(ckw::NamedTuple, targets;
-                              Na::Int, Nk::Int, Nt::Int, simN::Int, seed::Int)
+                              Na::Int, Nk::Int, Nt::Int, simN::Int, seed::Int,
+                              child_extra::NamedTuple = (;))
     cfg = child_config(targets; Na = Na, Nk = Nk, Nt = Nt, simN = simN, seed = seed)
+    # `child_extra` carries NON-ESTIMATED child constructor settings a diagnostic or a re-optimization needs to
+    # vary (e.g. a fixed omega; ported from apps/Structural-estimation-v2 on 2026-10-02 with the TikTak tools). It is
+    # merged into `cfg`, so it is part of BOTH cache keys; an estimated name here is an error. The default (;)
+    # leaves `cfg`, the keys and the solution exactly as before.
+    clash = [n for n in keys(child_extra) if n in CHILD_ESTIMATED]
+    isempty(clash) || error("child_extra would override estimated parameter(s): $(join(clash, ", "))")
+    cfg = merge(cfg, child_extra)
 
     # EVERY ESTIMATED CHILD PARAMETER IS SET EXPLICITLY, even when the caller omitted it.
     #
@@ -1670,13 +1679,15 @@ function run_pipeline(kw::NamedTuple, targets;
                       simN::Int = 2000, seed::Int = 1234,
                       child_grid = (Na = 30, Nk = 30, Nt = 5),
                       parent_extra::NamedTuple = (;),
+                      child_extra::NamedTuple = (;),
                       demo_sim::Bool = true)
     pk, ck = split_params(kw)
 
     # ---- 1. child lifecycle and transfer problems ---------------------------
     child, V_child = build_child_solution(ck, targets;
                                           Na = child_grid.Na, Nk = child_grid.Nk,
-                                          Nt = child_grid.Nt, simN = simN, seed = seed)
+                                          Nt = child_grid.Nt, simN = simN, seed = seed,
+                                          child_extra = child_extra)
 
     # ---- 2. initial (demonstration) child simulation ------------------------
     if demo_sim
@@ -1779,7 +1790,13 @@ function smm_objective(z::AbstractVector{Float64}, targets;
                        simN::Int = 2000, seed::Int = 1234,
                        child_grid = (Na = 30, Nk = 30, Nt = 5),
                        weights::Union{Nothing,Vector{Float64}} = nothing,
-                       demo_sim::Bool = true)
+                       demo_sim::Bool = true,
+                       # HOOKS (ported from apps/Structural-estimation-v2 on 2026-10-02, with the TikTak re-optimization
+                       # tool). Non-estimated constructor settings passed through to `run_pipeline` (a fixed `omega`;
+                       # grid / numerical overrides of a run), and extra targeted rows `(name, target, weight)` appended
+                       # to Q for an experiment. The defaults leave the objective exactly as before.
+                       child_extra::NamedTuple = (;), parent_extra::NamedTuple = (;),
+                       extra_moments::Vector{Tuple{Symbol,Float64,Float64}} = Tuple{Symbol,Float64,Float64}[])
     kw = unpack(z)
     w  = weights === nothing ? moment_weights(targets) : weights
 
@@ -1794,7 +1811,8 @@ function smm_objective(z::AbstractVector{Float64}, targets;
 
     try
         r = run_pipeline(kw, targets; Na = Na, Nk = Nk, Nhc = Nhc, simN = simN,
-                         seed = seed, child_grid = child_grid, demo_sim = demo_sim)
+                         seed = seed, child_grid = child_grid, demo_sim = demo_sim,
+                         child_extra = child_extra, parent_extra = parent_extra)
         m = model_moments(r, targets)
 
         # A simulation that leaves the model's domain is not a bad parameter draw, it is
@@ -1820,6 +1838,11 @@ function smm_objective(z::AbstractVector{Float64}, targets;
             mj   = getfield(m, Symbol(k))
             isfinite(mj) || return _penalize!(:nonfinite_moment)
             q += w[j] * (mj - mhat)^2
+        end
+        for (k, mhat, wk) in extra_moments
+            mj = getfield(m, k)
+            isfinite(mj) || return _penalize!(:nonfinite_moment)
+            q += wk * (mj - mhat)^2
         end
         return q
     catch err
@@ -1870,11 +1893,14 @@ function report_fit(z::AbstractVector{Float64}, targets;
                     simN::Int = 2000, seed::Int = 1234,
                     child_grid = (Na = 30, Nk = 30, Nt = 5),
                     weights::Union{Nothing,Vector{Float64}} = nothing,
-                    out::IO = stdout)
+                    out::IO = stdout,
+                    # grid / numerical overrides of the run (run_smm.jl --parent-extra/--child-extra; ported from
+                    # apps/Structural-estimation-v2 on 2026-10-02); the defaults leave the report exactly as before
+                    child_extra::NamedTuple = (;), parent_extra::NamedTuple = (;))
     kw = unpack(z)
     w  = weights === nothing ? moment_weights(targets) : weights
     r  = run_pipeline(kw, targets; Na = Na, Nk = Nk, Nhc = Nhc, simN = simN,
-                      seed = seed, child_grid = child_grid)
+                      seed = seed, child_grid = child_grid, child_extra = child_extra, parent_extra = parent_extra)
     p  = r.parent
     m  = model_moments(r, targets)
     d  = moment_diagnostics(p)

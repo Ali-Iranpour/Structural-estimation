@@ -160,15 +160,15 @@ let boom2(x) = sum(x) < 0.5 ? throw(MethodError(+, (1, "a"))) : sum(x .^ 2)
 end
 
 # -----------------------------------------------------------------------------
-banner("A2 -- acceptance follows the RETAINED WINNER")
+banner("A2 -- acceptance follows the REPORTED POINT's own evidence")
 # Sphere: every search converges, and the winner is the polish.
 let r = tiktak(x -> sum(x .^ 2), fill(-5.0, 3), fill(5.0, 3); N = 60, Nstar = 4)
-    check("winner_stage is recorded", r.winner_stage in (:sobol, :local, :polish),
+    check("winner_stage is recorded", r.winner_stage in (:sobol, :supplied, :local, :polish),
           "got :$(r.winner_stage)")
     check("winner_ret is a real return code", r.winner_ret !== :SOBOL_ONLY || r.f == r.f_sobol_best,
           "$(r.winner_ret)")
-    check("winner's own code classifies as converged",
-          ret_class(r.winner_ret) === :converged, "$(r.winner_ret)")
+    check("the returned point has convergence evidence (TikTak.local_converged)",
+          TikTak.local_converged(r), "$(r.winner_ret), verification $(r.incumbent.verification.status)")
 end
 # A budget so small that every local search stops on maxeval. The population contains no
 # converged search, so acceptance must be false however good the objective looks.
@@ -177,69 +177,79 @@ let r = tiktak(x -> sum(abs.(x) .^ 1.5), fill(-5.0, 6), fill(5.0, 6);
     tally = ret_tally(r)
     n_conv = sum(v for (k, v) in tally if ret_class(k) === :converged; init = 0)
     check("budget-starved run: winner did NOT converge",
-          ret_class(r.winner_ret) !== :converged || n_conv > 0,
+          !TikTak.local_converged(r) || n_conv > 0,
           "winner_ret=$(r.winner_ret) converged_restarts=$n_conv")
     check("ret_class buckets MAXEVAL_REACHED as :limit",
           ret_class(:MAXEVAL_REACHED) === :limit)
     check("ret_class buckets FTOL_REACHED as :converged",
           ret_class(:FTOL_REACHED) === :converged)
 end
+# 2026-09-27 (finding 5): a supplied point that is already optimal is VERIFIED by the
+# searches that return it, instead of being reported as never converged.
+let r = tiktak(x -> sum(abs2, x), [-1.0, -1.0], [1.0, 1.0]; N = 8, Nstar = 2, extra_seeds = [[0.0, 0.0]])
+    check("an unchanged supplied optimum is verified, not reported unconverged",
+          r.f == 0.0 && r.winner_stage === :supplied && TikTak.local_converged(r),
+          "origin $(r.winner_ret), verification $(r.incumbent.verification.status)")
+end
+# 2026-09-27 (finding 2): a refinement on another objective that IMPROVES but stops on its
+# evaluation cap is budget-limited there, whatever the coarse search's certificate said.
+let r = tiktak(x -> sum(abs2, x .- 0.1), fill(-1.0, 4), fill(1.0, 4); N = 20, Nstar = 2, objective_id = "coarse"),
+    out = TikTak.refine(x -> sum(abs2, x .- 0.1) + 0.3 * sum(x), r.x, fill(-1.0, 4), fill(1.0, 4);
+                        settings = TikTak.SolverSettings(:LN_BOBYQA, 1e-6, 1e-10, 1e-6, 12),
+                        cfg = r.config, objective_id = "fine")
+    acc(ev) = TikTak.acceptance(; execution_ok = true, candidate_valid = true, search_budget_complete = true,
+                                  local_converged = TikTak.local_converged(ev, "fine"))
+    check("the coarse search converged (the precondition of this check)", TikTak.local_converged(r))
+    check("an improving refinement stopped on MAXEVAL is NOT accepted",
+          out.status === :improved && out.ret === :MAXEVAL_REACHED && !acc(out.incumbent).accepted,
+          "status $(out.status), ret $(out.ret)")
+end
 
 # -----------------------------------------------------------------------------
-banner("A3 -- resume refuses an incompatible or finished run")
-# load_resume lives in run_smm.jl, which is a script. Rather than include it (it would
-# start a run), the refusal LOGIC is re-checked here against the fields the checkpoint
-# carries, so a change to either side breaks this test.
+banner("A3 -- resume refuses an incompatible run (the TikTak checkpoint)")
+# 2026-09-27: the checkpoint is the TikTak module's versioned tiktak_state.toml, and its identity
+# fields come from THIS configuration (SMM_PARAMS, SMM_MOMENTS), never from a hard-coded list --
+# the old block asserted one historical R_1 box and failed under any specification switch.
+# The runner-level refusals (every identity field, the legacy formats) are tools/test_smm_resume.jl.
 mktempdir() do dir
-    names_now = [String(q.name) for q in SMM_PARAMS]
-    lo_now    = [q.lo for q in SMM_PARAMS]
-    hi_now    = [q.hi for q in SMM_PARAMS]
-    q(x) = string('"', x, '"')            # quoting, without nested escapes
-    lines = [
-        "stage         = " * q("local"),
-        "restarts_done = 2",
-        "restarts_total= 5",
-        "Q_best        = 1.5",
-        "objective_grid= 30",
-        "grid_search   = 30",
-        "grid_report   = 30",
-        "param_names   = [" * join((q(n) for n in names_now), ", ") * "]",
-        "param_lo      = [" * join(lo_now, ", ") * "]",
-        "param_hi      = [" * join(hi_now, ", ") * "]",
-        "param_link    = [" * join((q(String(x.link)) for x in SMM_PARAMS), ", ") * "]",
-        "targets_sha   = " * q("deadbeefdeadbeef"),
-        "",
-        "[search_vector]",
-        "z = [" * join(incumbent(), ", ") * "]",
-    ]
-    write(joinpath(dir, "checkpoint.toml"), join(lines, "\n"))
-    ck = TOML.parsefile(joinpath(dir, "checkpoint.toml"))
-
-    check("a checkpoint records the current parameter names",
-          String.(ck["param_names"]) == names_now)
-    check("a checkpoint records the current boxes",
-          Float64.(ck["param_lo"]) == lo_now && Float64.(ck["param_hi"]) == hi_now)
-    let i = findfirst(==("R_0"), names_now)
-        check("R_0's box in the checkpoint is the CURRENT one [0.5, 100]",
-              ck["param_lo"][i] == 0.5 && ck["param_hi"][i] == 100.0,
-              "[$(ck["param_lo"][i]), $(ck["param_hi"][i])]")
+    lo_s, hi_s = search_bounds()
+    fields = Dict{String,Any}("param_names" => [String(q.name) for q in SMM_PARAMS],
+                              "param_lo" => [q.lo for q in SMM_PARAMS], "param_hi" => [q.hi for q in SMM_PARAMS],
+                              "param_link" => [String(q.link) for q in SMM_PARAMS],
+                              "moment_names" => collect(String, SMM_MOMENTS))
+    oid = TikTak.fields_id(fields)
+    quad(z) = sum(abs2, (z .- incumbent()) ./ (hi_s .- lo_s))          # a cheap stand-in objective
+    path = joinpath(dir, "tiktak_state.toml")
+    run1 = tiktak(quad, lo_s, hi_s; N = 30, Nstar = 3, local_maxeval = 20, skip_polish = true,
+                  state_path = path, objective_id = oid, objective_fields = fields, stop_after_restarts = 1)
+    d = TOML.parsefile(path)
+    check("a checkpoint records the current parameter names, boxes and links",
+          d["objective"]["fields"]["param_names"] == fields["param_names"] &&
+          Float64.(d["objective"]["fields"]["param_lo"]) == fields["param_lo"] &&
+          d["optimizer"]["fields"]["lo"] == lo_s)
+    check("the checkpoint is versioned, checksummed and paused where it was asked to",
+          d["schema_version"] == TikTak.STATE_SCHEMA && run1.status === :paused && d["progress"]["next_j"] == 2 &&
+          occursin("# sha256 ", read(path, String)))
+    base = (N = 30, Nstar = 3, local_maxeval = 20, skip_polish = true, state_path = path, resume = true,
+            preflight_only = true)
+    refused(kw) = try
+        tiktak(quad, lo_s, hi_s; merge(base, kw)...)       # merge: a later field replaces, never repeats
+        false
+    catch e
+        e isa TikTak.ResumeRefused
     end
-    check("stage is recorded so a finished run can be refused", ck["stage"] == "local")
-    check("objective_grid is recorded separately from grid_search",
-          haskey(ck, "objective_grid") && haskey(ck, "grid_search"))
-    check("targets are identified by CONTENT hash, not by filename",
-          haskey(ck, "targets_sha"))
-
-    # The four refusal conditions the loader applies, exercised against this checkpoint.
-    check("a \"refined\" checkpoint is not resumable into the local stage",
-          "refined" != ck["stage"])
-    check("the OLD R_0 box [5, 300] would be refused",
-          Float64.(ck["param_lo"]) != [x.name === :R_0 ? 5.0 : x.lo for x in SMM_PARAMS])
-    check("a changed search grid would be refused", Int(ck["grid_search"]) != 20)
-    check("a changed targets file would be refused",
-          ck["targets_sha"] != "0000000000000000")
-    check("a dropped parameter would be refused",
-          String.(ck["param_names"]) != names_now[1:end-1])
+    check("the same objective and optimizer resume", !refused((objective_id = oid, objective_fields = fields)))
+    let f2 = deepcopy(fields)
+        f2["param_hi"][1] += 1.0
+        check("a changed parameter box is refused", refused((objective_id = TikTak.fields_id(f2), objective_fields = f2)))
+    end
+    let f3 = deepcopy(fields)
+        f3["moment_names"] = f3["moment_names"][1:end-1]
+        check("a changed moment set is refused", refused((objective_id = TikTak.fields_id(f3), objective_fields = f3)))
+    end
+    check("a changed restart count is refused (a new search, not a continuation)",
+          refused((objective_id = oid, objective_fields = fields, Nstar = 4)))
+    check("a changed local budget is refused", refused((objective_id = oid, objective_fields = fields, local_maxeval = 21)))
 end
 
 # -----------------------------------------------------------------------------

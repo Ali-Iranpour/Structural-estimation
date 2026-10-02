@@ -145,33 +145,88 @@ directories are gitignored; delete a throwaway folder whenever.
 | `--targets PATH` | Select a saved target file; the runner freezes a copy beside the new run. A resume uses its own snapshot and refuses conflicting targets. |
 | `--outdir P` | Write the run folder to `P` instead of `output/smm_runs/<stamp>/`. |
 | `--serial` | Everything on one process. Slowest, but the easiest to debug. |
-| `--resume DIR` | Continue a killed run from `DIR/checkpoint.toml`. Exact continuation, not a warm start — see below. |
-| `--init-from FILE` | Warm start: load the incumbent from a previous run's `estimates.toml` **by name**. Parameters the file lacks start at their SMM starts; a value outside its box is an error. Recorded per parameter in `run_record.toml`. |
+| `--resume DIR` | Continue a killed or paused run from `DIR/tiktak_state.toml` — see below. |
+| `--init-from FILE` | Warm start from a previous run's `estimates.toml` or `checkpoint.toml`: **exact** (bit for bit) when the file has a `[search_vector]` whose parameter names and links equal this specification's; otherwise **by name** from `[parameters]` (8 decimals, so a ROUNDED start, recorded as such). Parameters the file lacks start at their SMM starts; a value outside its box is an error. Recorded per parameter in `run_record.toml`. |
+| `--expect-start-q Q` | A gate in the run itself: after the timing evaluation at the start point the run stops before the search unless Q equals the given value exactly (copy it from the `start Q (full precision)` line). |
 | `--skip-polish` | Bypass the final BOBYQA polish entirely (`polish_ret = SKIPPED`). This is a real switch, not `--polish-evals 0` — NLopt reads `maxeval = 0` as *no limit*, and the runner now refuses that. |
 | `--seed N` | Common-random-number seed (default 1234). Part of the checkpoint identity. |
+| `--preset P` | What the run is FOR: `smoke`, `integration`, `pilot` or `production` (2026-09-27). Supplies default budgets and gates, recorded with the run; explicit flags win. Without it the run is `custom` and every default is as above. See "Development tests and estimates" below. |
+| `--sobol-valid V` | Continue the Sobol' sequence until **V valid** draws (a penalised draw does not count); `--sobol` is then the hard cap on attempts (default 10V). |
+| `--reuse-pretest FILE` | Take another run's `pretest_cache.toml` values (same objective and design, verified) instead of re-evaluating them; reported as reused. |
+| `--pretest-chunk N` | Pre-testing values between cache writes (default 4 × workers, at least 8). |
+| `--local-mode M` | `async` (default with workers): restarts run asynchronously on the workers. `serial`: the published sequential algorithm on the master. |
+| `--local-procs N` | Local workers (default 0 = automatic: min(workers, floor(√restarts))). |
+| `--stop-after-restarts M` | **Pause** after M committed restarts, keeping `--restarts` as the schedule denominator; `--resume` continues at M+1. 0 = right after seed selection; = `--restarts` = before the polish. |
+| `--max-retries N` | Re-dispatches of a restart whose worker process died (default 1). An error in the objective is never retried. |
+| `--allow-fewer-restarts` / `--require-valid-target` | Override a preset's gates: run fewer restarts when the valid pool is small / make a missed `--sobol-valid` a failure. |
+| `--allow-optimizer-change` | Let `--resume` continue although a SOLVER setting (`--local-evals`, `--polish-evals`, `--skip-polish` …) or the optimizer SOFTWARE (`code/src/TikTak/*.jl`, NLopt) changed: recorded as an event and a new settings epoch (committed restarts and replayed jobs keep the settings they ran with), and the run is labelled `changed_optimizer`. A change of the search PLAN — box, `--restarts`, pre-testing design, supplied start, schedule — is refused even so (2026-09-28). |
+| `--print-identity` | Print the objective identity a checkpoint records, and exit (used by the tests). |
+| `--bootstrap B` | How the asynchronous local stage starts: `immediate_mixed` (the **default for a fresh run**, since 2026-10-01 in v2 -- every worker starts a restart at once, each mixed with the best point so far) or `first_alone` (restart 1 alone, then the pool). Part of the search plan: a resume keeps the policy its checkpoint was written with. |
+| `--local-ftol F` | Nelder-Mead's `ftol_rel` (default 1e-3): a local search stops when 2|f_worst - f_best| / (|f_worst| + |f_best|) < F across the simplex. The reference's amoeba uses 1e-4. A solver setting (resume needs `--allow-optimizer-change`). |
+| `--runtime-evals N1,N2,...` | Evaluations per restart observed in a COMPATIBLE earlier run, for the empirical runtime scenario the run prints. Display only. |
+| `--normalize`, `--local-init-step F`, `--local-step-schedule fixed\|theta_shrink`, `--local-step-min F`, `--polish-init-step F` | Search geometry: box-normalized coordinates; Nelder-Mead's initial step as a fraction of each box width (0 = NLopt's default); theta_shrink makes restart j's step F·max(min, 1 - θ_j); BOBYQA's initial trust radius. Defaults are the baseline. Optimizer settings (part of the checkpoint's identity). |
+| `--parent-extra k=v,...`, `--child-extra k=v,...` | NON-ESTIMATED constructor settings of the run (grid sizes, `a_max`, `Nap`, numerical options, a fixed `omega`), passed to every evaluation, the report and the refinement; recorded and verified on `--resume` (`grid_extra`). An estimated parameter here is an error. Note: the asset grids' focus share and curvature are not constructor keywords in this model. |
 
 **Every flag is validated.** An unknown flag (`--workers`, say) is an error before
 anything is written; it used to be silently ignored.
 
-### Resuming a killed run
+### Resuming a killed or paused run
 
-The local stage is ~99% of the wall clock and runs for the better part of a day, so on a
-server a disconnect, a wall-clock limit or a pre-emption will eventually catch one. The run
-writes `checkpoint.toml` after **every** restart (atomically, via a temp file and rename),
-and `seeds.toml` once after pre-testing.
+Since 2026-09-27 the authoritative checkpoint is **`tiktak_state.toml`**, written by the
+TikTak module (`../src/TikTak/`) right after seed selection, after every committed restart,
+at a pause and after the polish. It is versioned (schema 2 since 2026-09-28; a schema-1 file is
+migrated on reading and says so in its events), checksummed (a sha256 trailer)
+and written atomically, with the previous generation kept as `tiktak_state.toml.prev`: a
+truncated or edited file fails its checksum and the previous generation is used, and the
+log says so. It holds the seeds and the schedule denominator K, the incumbent **with its
+origin and any verification**, every committed restart (start, endpoint, evaluations,
+return code, worker), the restarts in flight, and the lifetime evaluation counts.
+`pretest_cache.toml` holds every pre-testing value, written chunk by chunk, so a run killed
+during pre-testing loses at most one chunk. `checkpoint.toml`, `seeds.toml` and
+`restarts.csv` are derived from the state after every write (`--init-from` still reads
+`checkpoint.toml`).
 
 ```bash
-cd code/smm && julia --project=../.. run_smm.jl --resume ../../output/smm_runs/2026-09-06_014210
+cd code/smm && julia --project=../.. run_smm.jl <the same flags> --resume ../../output/smm_runs/2026-09-06_014210
 ```
 
-This re-enters the local stage at the next restart with the saved incumbent **and the
-saved pre-testing seeds**, so restart *j* sees exactly the mixture it would have seen in
-the original run — continuation is exact, not approximate. The Sobol stage is skipped
-(its evaluations are the expensive part; the points themselves are deterministic). The run
-directory is reused and its log appended, so the original transcript survives.
+Before anything is solved, the resume is refused unless the OBJECTIVE is the same (every
+field of the identity: targets by content, model source, parameter names/boxes/links,
+moments, centring, grids, simN, seed, overrides) and the OPTIMIZER is the same (every
+TikTak setting, the requested `--restarts`, the Sobol design, the software). Each refusal
+names what changed. A different `--restarts` is refused: it changes the mixing schedule, so
+it is a new search (warm-start it with `--init-from DIR/checkpoint.toml`).
 
-Pass the same `--restarts` and `--grid` you used originally. The loader refuses rather than
-guesses if the parameter count, restart budget or search grid differ from the saved run.
+What a resume promises (2026-09-28): the saved state is checked for consistency first — a
+checkpoint that claims completion with a restart missing or in flight, commits a restart
+twice, or holds an incumbent outside its box is refused, never continued or reported.
+Restarts that were IN FLIGHT are replayed from their recorded starts, theta and settings in
+EITHER local mode (until 2026-09-28 a serial resume skipped them). The record's
+`resume_semantics` describes the whole history: `serial_exact` only when every segment ran
+serially or on one local worker and nothing was replayed — then the answer is the
+uninterrupted one (tested after seed selection, after restart 2 and before the polish);
+`async_continuation` when a segment used several workers or a job was replayed (completion
+order can change later starts); `changed_optimizer` after an allowed solver or software change.
+The acceptance gate `search_budget_complete` is validated from the state —
+every planned restart committed once, none in flight — not read from the status symbol.
+NLopt's internal simplex is never serialised: an interrupted local search restarts from its
+start.
+
+**Workers** (2026-09-28): the runner starts in a fresh process and owns its pool; each worker
+gets `--threads=1` explicitly (workers inherit a `JULIA_NUM_THREADS` from the environment, not
+the master's `--threads`), and the log and `run_record.toml` record the Julia and BLAS threads
+every process actually runs with. A worker still solving when an aborted stage's drain deadline
+passes is removed (the pool is the runner's own); an exception the worker itself delivered —
+an `EOFError` from the objective included — is an objective error, never a lost worker.
+
+**Pausing on purpose.** `--stop-after-restarts M` pauses after M restarts; `touch
+<run dir>/PAUSE` pauses an asynchronous run gracefully (no new restart starts, the running
+ones are committed). Either way the polish is not run and `--resume` continues.
+
+**Runs written before the TikTak port (2026-10-02)** -- every earlier run of this repository -- have
+`checkpoint.toml` + `seeds.toml` and no `tiktak_state.toml`. `--resume` refuses them, and there is no
+`--legacy-import` here (Ali, 2026-10-02; v2 has one). Warm-start a new run from one with `--init-from
+<its dir>/checkpoint.toml` instead.
 
 ## How many cores does it use?
 
@@ -195,32 +250,39 @@ project — with threads the objective killed the process with exit 0 and no err
 message. Worker *processes* each own their NLopt state, so the hazard cannot
 arise. `Threads.@threads` must not be reintroduced here.
 
-### Only half the run is parallel — this matters for your budget
+### Both stages run on the workers (since 2026-09-27)
 
-| Stage | Parallel? | Why |
+| Stage | Parallel? | How |
 |---|---|---|
-| Sobol pre-testing | **yes** | N independent evaluations, nothing shared. |
-| Local restarts | **no** | Restart `j` starts from the best point found by restarts `1..j-1`. It cannot begin before `j-1` finishes. |
+| Sobol pre-testing | **yes** | Every worker gets the next candidate as soon as it is free (no batch barrier); values cached chunk by chunk. |
+| Local restarts | **yes, asynchronously** (`--local-mode async`) | By default (`--bootstrap immediate_mixed`) every local worker starts a restart at once; each idle worker then immediately gets the next restart, mixed with the best point *committed* so far — restarts still running are not waited for. With `--bootstrap first_alone` restart 1 runs alone first. |
 
-So the local stage runs on one core no matter how many workers you start, and on
-a wide machine it dominates the wall clock. The run prints the two halves
-separately before the search begins:
+The asynchronous local stage is TikTak's asynchronous variant (the reference repository's
+way to scale), **not** the published sequential algorithm: restart *j* may be mixed with an
+incumbent that does not yet include restarts still running, so the search path depends on
+completion order. With one local worker it is exactly the sequential algorithm, and
+`--local-mode serial` keeps the sequential algorithm on the master as the reproducible
+reference.
+
+**How many local workers.** The default is min(workers, floor(√restarts)): about 2 for 5
+restarts, 10 for 100, the full 20 for 1,000. That follows the reference's empirical
+suggestion of roughly √(restarts) workers; it is a conservative default, not a mathematical
+limit (`--local-procs` overrides it). Too many workers for few restarts turns TikTak into
+plain multistart, because the mixing then sees little of the other searches.
+
+The run prints both stages before the search begins:
 
 ```
 projected runtime
-  sobol stage      201 evals / 20 workers  =    1.7 min   (parallel)
-  local stage      600 evals, sequential    =   49.5 min   (cannot be parallelised)
-  total                                        51.2 min
+  sobol stage     1001 evals / 20 workers  =   33.4 min   (parallel)
+  local stage   165000 evals / 20 workers  = ...          (asynchronous; 20 at a time from the start)
 ```
 
-**The practical consequence: to spend a big machine on this problem, raise
-`--sobol`, not `--restarts`.** More Sobol points are nearly free (they divide by
-20) and they give the local stage better seeds to start from. More restarts are
-paid for one at a time.
+The local projection is optimistic: restarts of unequal length leave workers idle at the end.
 
 ## Making the local stage faster
 
-Since workers cannot help here, the only levers are *cheaper evaluations* and
+Besides the asynchronous workers above, the levers are *cheaper evaluations* and
 *fewer of them*. Measured on this machine, in order of value:
 
 **1. Search on a coarser grid — 2.5× (`--grid 20`).** 98% of an evaluation is
@@ -250,11 +312,16 @@ is the one thing common random numbers exist to keep out of the objective.
 Combining 1 and 2, `--grid 20 --restarts 5 --sobol 400` is roughly **30 minutes**
 instead of 2.6 hours, and the reported fit is still at full resolution.
 
-What is *not* worth doing: parallelising the restarts. `tiktak.jl` supports a
-`batch` argument, but its measured cost on Rastrigin is severe (`f` 2.985
-sequential → 6.965 at batch 4) — it degrades TikTak toward plain multistart,
-which is the one thing the algorithm exists to beat. The two levers above are
-larger and cost nothing.
+A note on the old `batch` option (removed 2026-09-27): it ran SYNCHRONOUS batches of
+restarts on threads, all reading one frozen incumbent and waiting for the slowest member, and
+its measured cost on Rastrigin was severe (`f` 2.985 sequential → 6.965 at batch 4). The
+asynchronous process-parallel stage that replaced it is a different scheme — every restart
+is mixed with the latest committed incumbent — and at √(restarts) workers it is the
+reference's way to scale. Measured on a synthetic CPU-bound objective (16 restarts, 2 ms per
+evaluation; `apps/Structural-estimation-v2/output/diagnostics/2026-09-27_tiktak_fix/bench/`): the local stage took 3.18 s
+serially, 1.88 s on 2 workers and 1.03 s on 4, with final values 2.9859 / 2.9863 / 2.9860.
+One synthetic function is not evidence about the SMM objective's quality/time trade-off; a
+pilot at 1, 2, 4 and 8 workers on the real objective is the way to settle it.
 
 ### A stopping-rule bug this uncovered — fixed 2026-08-27
 
@@ -267,9 +334,11 @@ running at 290.
 
 At 15.5 s an evaluation that is **8 hours per restart instead of 15 minutes** —
 the default run would have taken days, not hours. `local_ftol_abs` and
-`local_xtol_rel` now stop it: absolute criteria work at any scale, and a collapsed
-simplex means converged whatever `f` is worth there. The self-test still passes
-(sphere reaches 7.7e-45), so accuracy is unaffected.
+`local_xtol_rel` now stop it. A correction (2026-09-27 review): neither is scale-free.
+`ftol_abs` is in units of Q (a sum of inverse-variance-weighted squared errors), and
+`xtol_rel` is relative to |x|; NLopt 2.10's relative test also accepts two equal values,
+including 0. They are backstops set far below `ftol_rel`, which still stops a search with a
+non-zero optimum first. The self-test still passes (sphere reaches 7.7e-45).
 
 ## Watching a run
 
@@ -286,11 +355,28 @@ Progress prints every 2 seconds (`--every N` to change), to both the console and
 `best Q` should fall and then flatten. If it is still dropping at the last
 restart, the budget was too small — raise `--sobol` first.
 
-The Sobol lines need a word of explanation. `pmap` hands the whole batch to the
-workers and returns only when all of it is done, so the optimizer's own callback
-fires *after* the stage rather than during it. Instead each worker reports its
-value through a `RemoteChannel` the moment it finishes, and the master prints as
-they land — which is why the count can jump by several at a time.
+With workers, the Sobol lines are printed as each value reaches the master. The local stage
+prints ONE LINE PER FINISHED EVALUATION of each running restart, and nothing while an
+evaluation is still running (since 2026-09-29; before, the running restarts' state was
+reprinted every `--every` seconds, so a 35 s evaluation gave ~15 identical lines). The polish
+on a worker prints NOTHING until it ends (the module dispatches it without progress
+telemetry): at production grids, 200 polish evaluations are ~2 h of a silent `run.log`
+before the `Finished` banner.
+
+```
+  restart   1/21   eval    17   this Q     917.2345   best in this search     916.3000   incumbent     916.3000    47.3 min   [1 running]
+  restart   1/21  DONE  FTOL_REACHED     start Q     916.3000   end Q     915.8120   incumbent     915.8120   512.0 min
+```
+
+`this Q` is the value just evaluated, `best in this search` the restart's best so far,
+`[n running]` how many restarts are in progress (1 while restart 1 runs alone, then up to
+`--local-procs`). The `DONE` line says why the search stopped: `FTOL_REACHED` /
+`XTOL_REACHED` (the tolerance test) or `MAXEVAL_REACHED` (`--local-evals` ran out); its
+worker then takes the next restart. Q is printed with four decimals so a small improvement
+is visible. The telemetry is coalesced — at most one message per job per 0.2 s, only the
+latest kept — and never blocks a worker. (Until 2026-09-27 workers pushed every value into a
+bounded `RemoteChannel` that only the Sobol stage drained; a parallel local stage would have
+filled it and stalled the workers.)
 
 ## What is being matched
 
@@ -519,6 +605,88 @@ It cannot reach the data's dispersion — leisure SD is 7.4× too small, consump
 variance the model structurally cannot generate, and damage the means doing it.
 Adding heterogeneity is a model change, not an estimation setting.
 
+## Development tests and estimates
+
+Five restarts are a **development test**; a final estimation may use 100 to 1,000 restarts
+with a pre-testing pool about ten times larger (the paper's benchmark ratio). `--preset`
+records which one a run is:
+
+| preset | budgets it supplies | passing means |
+|---|---|---|
+| `smoke` | 64 Sobol', 5 restarts × 60 evals, no polish | it ran: finite outputs, workers, checkpoints. **Convergence not required** — the verdict line says `execution PASSED` |
+| `integration` | 150 valid draws (cap 1,500), 5 × 500, polish 200 | a realistic local solve and a bounded polish converge and are reported correctly; no global-fit claim |
+| `pilot` | 1,000 valid (cap 10,000), 50 × 1,500, polish 1,000; a too-small valid pool fails | quality against time, cap adequacy, basins, worker counts |
+| `production` | 10,000 valid (cap 100,000), 1,000 × 2,000, polish 4,000; refuses `--quick` | a substantial global search — to be followed by the validation below. Set `--local-evals` from pilot traces. |
+
+The budgets are starting points from `tiktak_fix_plan.md`'s run ladder, not tuned values.
+
+**A five-restart run is not the first five restarts of a 1,000-restart run.** The mixing
+weight is θ_j = min(max(0.1, √(j/K)), 0.995): with K = 5 the five restarts walk the whole
+schedule (0, 0.63, 0.77, 0.89, 0.995); with K = 1000 the first five all sit at 0.1. To look
+at the start of a production run, run the production configuration with
+`--stop-after-restarts 5` (and `--reuse-pretest` to avoid paying for its pool twice), then
+continue it with `--resume`.
+
+## What a run reports — execution, convergence, acceptance
+
+`estimates.toml` and the log keep separate things separate (2026-09-27):
+
+| field | meaning |
+|---|---|
+| `point_origin`, `point_origin_ret` | where the reported point came from (sobol, supplied, local restart, polish, refine) and that search's own NLopt code |
+| `verification` | `verified` when a later converged solve returned the same point (distance ≤ 1e-9 of the box) — so an unchanged optimum is no longer reported as unconverged. Equal Q at a different point is not a verification |
+| `execution_ok` | no stage threw (objective exceptions, a failed refinement) |
+| `candidate_valid` | a valid point with a valid, in-domain value |
+| `local_converged` | convergence evidence for the reported point **on the reporting objective**: after a coarse `--grid` search only the full-grid refinement's own evidence counts, and a refinement that stopped on `MAXEVAL_REACHED` is budget-limited however much it improved |
+| `search_budget_complete` | the planned restarts ran (not paused) |
+| `accepted`, `acceptance_reasons` | all of the above, plus no parameter within 2% of a bound; each failing condition listed |
+| `verdict` | the line that separates execution from estimation by purpose (a smoke run passes on clean execution) |
+| `n_restarts_effective`, `n_sobol_valid` | how many restarts actually ran and how many pre-testing draws were valid (never assume N = 1000 means 1000 useful points) |
+
+None of these is a claim of global optimality. Optimizer termination, economic fit and
+identification are separate claims: a converged restart says the local test was met; `Q`
+says how far the moments are; neither says the parameters are identified.
+
+**On Q and the moment count.** Just-identification by counting moments and parameters does
+not guarantee Q = 0 — the model may not reach the data, and the moments are not independent
+(the budget ties them). Over-identification does not logically force Q > 0 either. Count is
+not rank.
+
+**Before a result travels**, use the existing tools rather than new definitions:
+`jacobian.jl` / `tools/check_jacobian_rank.jl` (local identification: singular values, weak
+directions — over several finite-difference steps), `profile_param.jl` (weak directions and
+bound pressure), `grid_sensitivity.jl` (numerical accuracy), `standard_errors.jl`. If the
+search ran on a coarse grid, refine SEVERAL distinct good candidates on the reporting grid,
+not only the winner — a coarse ranking of basins can change. Keep common random numbers within
+an optimisation; check other simulation seeds and sample sizes separately afterwards.
+
+## Re-optimizing from a point: `tools/reopt.jl`
+
+A bounded re-optimization from one or more given points, without a new global search (ported from v2's
+`tools/reopt_v5e.jl` on 2026-10-02). `--targets` and `--start` are required.
+
+```bash
+julia --project=. tools/reopt.jl --outdir <dir> --targets <targets.toml> --start <estimates.toml>[,<toml>...]
+      [--fix name=value,...] [--bounds name=lo:hi,...] [--local-evals 300] [--procs 1]
+      [--sobol 0 | --sobol N --restarts K [--polish-evals P]] [--extra-moments a,b --extra-targets <toml>]
+      [--free omega=LO:HI] [--parent-extra k=v,...] [--child-extra k=v,...] [--resume]
+```
+
+- `--sobol 0` (default): pure local Nelder-Mead (or `--local-alg bobyqa`) from every start, in parallel over
+  `--procs` workers; `--ftol-rel` (default 1e-4), `--init-step`, checkpoints every `--checkpoint-every` evaluations,
+  `--resume` restarts from the checkpointed best (not an exact optimizer-state resume, and the record says so).
+- `--sobol N`: a bounded TikTak run through the module (its checkpoints, pre-testing cache, asynchronous restarts
+  on `--procs` > 1, `--stop-after-restarts`, `--resume`).
+- `--fix` holds estimated parameters (or `omega`) at a value; `--bounds` sets run-specific boxes; `--free omega`
+  estimates omega as one extra coordinate (allowed because mu is not searched here); `--extra-moments` adds rows to
+  Q for an experiment, reported apart as `Q_extra`.
+- A start is VALIDATED, never clamped: non-finite or out-of-box values refuse the run. The objective identity
+  (`tools/reopt_identity.jl`: target contents, extra rows, moments, parameters and boxes, numerics, overrides,
+  model and adapter source) is checked against any checkpoint before the model is warmed up.
+- Writes `results.toml`, `best_estimates.toml` (usable with `run_smm.jl --init-from`), `table.txt` (Q and each
+  row's t-statistic and share, `tools/experiment_table.jl`) and `run.log`.
+
+
 ## Reading the output
 
 `Q` is the weighted relative distance — a sum of squared percentage gaps, so
@@ -560,10 +728,17 @@ chasing the random number generator instead of the parameters.
 
 | File | What |
 |---|---|
-| `run_smm.jl` | Driver: worker setup, budget, progress, TikTak, logging, reporting. |
-| `moments.jl` | Targets, model moments, objective, fit report. The economics. |
-| `jacobian.jl` | Saves the residual Jacobian with its full metadata: singular values, condition number, weak directions, pairwise cosines. **Run this before arguing about identification** — the numbers in this file's text came from it. |
-| `standard_errors.jl` | The clustered minimum-distance sandwich, from a saved Jacobian plus `[moment_cov]`. Sampling uncertainty only — read its header for what it does not cover. |
-| `sensitivity.jl` | The target-moment response exercise: perturb one target, jointly re-estimate all nine, 90 curves. Checkpoint/resume built in. |
-| `../src/tiktak.jl` | The optimizer (Arnoud, Guvenen & Kleineberg 2022). Shared. |
-| `../../archive/smm_14param_legacy.jl` | **Retired** 2026-09-06: the older 14-parameter, 12-moment estimation. Non-functional against the current model; kept in `archive/` as a record, referenced by nothing. |
+| `run_smm.jl` | Driver: worker setup, budget, progress, TikTak, logging, reporting. Ported from v2 on 2026-10-02 (v1's specification). |
+| `moments.jl` | Targets, model moments, objective, fit report. The economics. Since 2026-10-02 the objective takes `child_extra`, `parent_extra` and `extra_moments` (defaults leave Q bit-identical). |
+| `runtime_projection.jl` | The runtime scenarios the runner prints. |
+| `jacobian.jl`, `standard_errors.jl`, `sensitivity.jl`, `profile_param.jl`, `grid_sensitivity.jl`, `finite_differences.jl` | Post-estimation tools (identification, sampling uncertainty, target sensitivity, profiles, grid accuracy). |
+| `selftest.jl` | Injects each failure a guard exists for and checks that it fires; its optimizer checks (A2, A3) run on the TikTak module. |
+| `../src/TikTak/` | The optimizer as a module (Arnoud, Guvenen & Kleineberg 2022), identical to v2's: configuration and validation, status and acceptance, local solves, pre-testing and its cache, the versioned checkpoint, the asynchronous scheduler, presets. Loading it starts no worker. |
+| `../src/tiktak.jl` | The adapter every caller includes; brings `tiktak`, `ret_class`, `ret_tally`, `tiktak_selftest` into scope. |
+| `../../tools/test_tiktak.jl` | 455 synthetic regression tests (no model). |
+| `../../tools/test_smm_resume.jl` | `--resume` on real checkpoints: every identity field refused by name; old-format runs refused. |
+| `../../tools/test_runner_start.jl`, `test_runner_geometry.jl`, `test_tiktak_integration.jl`, `test_runtime_projection.jl` | The runner's flags end to end, its geometry flags, the optimizer on the real objective at `--quick` grids, the runtime estimator. |
+| `../../tools/reopt.jl` (+ `reopt_identity.jl`, `reopt_settings.jl`, `reopt_objective.jl`, `start_loader.jl`, `run_bounds.jl`, `experiment_table.jl`) | Re-optimization from given points (above); `test_reopt_identity.jl`, `test_reopt_integration.jl` test it. |
+| `../../tools/test_penalties.jl` | The penalty and failure-origin rules the optimizer relies on. |
+| `../../tools/bench_tiktak.jl` | Measurements: step sizes and geometry, scheduling, checkpoint cost, the real objective's start-up and cold/warm cost. |
+
