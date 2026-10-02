@@ -35,7 +35,9 @@ const ONLY = let o = argstr("--only", ""); isempty(o) ? nothing : Set(split(o, '
 want(n) = ONLY === nothing || n in ONLY
 const RUNNER = joinpath(REPO, "code", "smm", "run_smm.jl")
 const SMOKE = ["--quick", "--sobol", "64", "--restarts", "5", "--local-evals", "60", "--skip-polish", "--targets", TFILE]
-const SMALL = ["--quick", "--sobol", "16", "--restarts", "4", "--local-evals", "15", "--skip-polish", "--targets", TFILE]
+# v1 (2026-10-02): --sobol-valid 4 (at most 200 attempts) -- most random draws are penalised at the --quick grids,
+# and 16 plain draws gave too few seeds for 4 restarts. The checks are unchanged.
+const SMALL = ["--quick", "--sobol", "200", "--sobol-valid", "4", "--restarts", "4", "--local-evals", "15", "--skip-polish", "--targets", TFILE]
 
 "Run the runner; the log goes to <OUT>/<name>.log. Returns (ok, seconds)."
 function runsmm(name, args)

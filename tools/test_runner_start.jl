@@ -112,7 +112,9 @@ cn2, ln2 = runner("n_resume_default", vcat(SMALL, ["--resume", dn, "--stop-after
 
 # m -- immediate_mixed on the real objective, 3 workers
 dm = joinpath(OUT, "m")
-cm, lm = runner("m_immediate_async", ["--quick", "--procs", "3", "--local-procs", "3", "--sobol", "6", "--restarts", "3",
+# v1 (2026-10-02): most random draws are penalised at the --quick grids, so the run draws until it has 3 VALID
+# Sobol' points (--sobol-valid 3, at most 150 attempts); with 6 plain draws it had too few seeds for 3 restarts.
+cm, lm = runner("m_immediate_async", ["--quick", "--procs", "3", "--local-procs", "3", "--sobol", "150", "--sobol-valid", "3", "--restarts", "3",
                                       "--local-evals", "3", "--skip-polish", "--targets", TFILE, "--bootstrap", "immediate_mixed",
                                       "--outdir", dm])
 

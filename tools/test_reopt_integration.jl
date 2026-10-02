@@ -23,6 +23,9 @@ length(ARGS) >= 2 || error("usage: test_reopt_integration.jl <targets.toml> <sta
 const TFILE = abspath(ARGS[1]); const START = abspath(ARGS[2])
 argstr(flag, default) = (i = findfirst(==(flag), ARGS); i === nothing ? default : ARGS[i + 1])
 const OUT = mkpath(argstr("--out", mktempdir(; prefix = "reopt_integration_", cleanup = false)))
+# v1 (2026-10-02): most random draws are penalised on this model at small grids, so the runs that need several
+# restarts (a/b: 3, e: 4) draw until they have that many VALID Sobol' points (--sobol-valid, capped by --sobol);
+# with v2's 6 and 8 plain draws only the supplied start was valid and the restarts were cut to 1. Checks unchanged.
 const COMMON = ["--grid", "10", "--simN", "500", "--local-evals", "3", "--polish-evals", "0", "--start", START]
 
 "Run reopt.jl; its output goes to <OUT>/<name>.log. Returns (exit code, log text)."
@@ -40,10 +43,10 @@ include(joinpath(REPO, "code", "src", "tiktak.jl"))
 
 println("reopt integration runs -> $OUT")
 da = joinpath(OUT, "run_ab")
-ca, la = reopt("a", vcat(COMMON, ["--targets", TFILE, "--sobol", "6", "--restarts", "3", "--procs", "1",
+ca, la = reopt("a", vcat(COMMON, ["--targets", TFILE, "--sobol", "150", "--sobol-valid", "3", "--restarts", "3", "--procs", "1",
                                   "--ftol-rel", "1e-4", "--init-step", "0.05", "--stop-after-restarts", "1", "--outdir", da]))
 const STATE_A = ca == 0 ? state(da) : Dict{String,Any}()     # b resumes the same folder: read a's state NOW
-cb, lb = reopt("b", vcat(COMMON, ["--targets", TFILE, "--sobol", "6", "--restarts", "3", "--procs", "1",
+cb, lb = reopt("b", vcat(COMMON, ["--targets", TFILE, "--sobol", "150", "--sobol-valid", "3", "--restarts", "3", "--procs", "1",
                                   "--ftol-rel", "1e-4", "--init-step", "0.05", "--resume", "--outdir", da]))
 # c: a private copy of the targets, a run on it, then a changed mean in that same file
 dc = joinpath(OUT, "run_c"); mkpath(dc)
@@ -59,7 +62,7 @@ cc2, lc2 = reopt("c2", vcat(COMMON, ["--targets", tcopy, "--sobol", "4", "--rest
 cd_, ld = reopt("d", vcat(COMMON, ["--targets", TFILE, "--sobol", "4", "--restarts", "2", "--procs", "1",
                                    "--local-alg", "bobyqa", "--outdir", joinpath(OUT, "run_d")]))
 de = joinpath(OUT, "run_e")
-ce, le = reopt("e", vcat(COMMON, ["--targets", TFILE, "--sobol", "8", "--restarts", "4", "--procs", "2", "--outdir", de]))
+ce, le = reopt("e", vcat(COMMON, ["--targets", TFILE, "--sobol", "200", "--sobol-valid", "4", "--restarts", "4", "--procs", "2", "--outdir", de]))
 
 @testset "reopt.jl on the real objective" begin
     @testset "a: paused after restart 1" begin

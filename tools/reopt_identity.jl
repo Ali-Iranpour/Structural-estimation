@@ -48,7 +48,7 @@ files_sha16(repo::AbstractString, files) = bytes2hex(SHA.sha256(reduce(vcat, [re
 
 "The SMM_* switches as this process sees them (unset = \"\")."
 # Switches recorded ONLY WHEN SET, so a run without them keeps its identity (v2: SMM_WEALTH_ROW). None here.
-const REOPT_SPEC_ENV_KEYS_IF_SET = ()
+const REOPT_SPEC_ENV_KEYS_IF_SET = ("SMM_TEST_FIXTURES",)   # 2026-10-02: the memo-19 test stand-ins
 spec_env(env = ENV) = merge(Dict{String,Any}(k => String(strip(get(env, k, ""))) for k in REOPT_SPEC_ENV_KEYS),
                             Dict{String,Any}(k => String(strip(env[k])) for k in REOPT_SPEC_ENV_KEYS_IF_SET
                                              if !isempty(strip(get(env, k, "")))))

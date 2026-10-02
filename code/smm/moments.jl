@@ -67,6 +67,17 @@ const NQ_LW = 57
 # decision is taken on -- the assessment precedes the decision, as in the data.
 const SMM_LW17_AGE = 17
 
+# SMM_TEST_FIXTURES=1 (Ali, 2026-10-02): run the memo-19 objective on the STAND-IN inputs of
+# tools/smm_test_fixtures.jl until the real ones exist -- a target file without [composition] gets
+# fixture_composition, and the wage loading defaults to PLACEHOLDER_CHILD_WAGE instead of refusing.
+# For TESTS only: run_smm.jl refuses it with --preset pilot or production, adds _TESTFIX to the
+# specification version (so a fixture checkpoint can never resume into a real run) and prints a
+# banner. Read once, at load; unset or 0 = the refusals stay exactly as they are.
+const SMM_TEST_FIXTURES = let s = strip(get(ENV, "SMM_TEST_FIXTURES", ""))
+    s in ("", "0", "1") || error("SMM_TEST_FIXTURES must be unset, 0 or 1, got $(repr(s))")
+    s == "1"
+end
+
 # The moments actually targeted, in [moment_cov].names order. load_targets refuses a file
 # whose order differs: these index the covariance matrix.
 const SMM_P_MOMENTS = ("mean_c_p", "mean_h_p")
@@ -452,7 +463,7 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
     if haskey(raw, "composition")
         comp = parse_composition(raw["composition"], path)
         check_composition(comp, out, path)
-    elseif require_composition
+    elseif require_composition && !SMM_TEST_FIXTURES
         error("""
             target file $path has no [composition] tables. The pooled S moments are mixtures
             over the DATA's age composition (memo 18 section 3), and the model counterpart needs
@@ -466,7 +477,13 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
                     init = init, mu_by_age = mu_by_age, mu_half = mu_half,
                     se = se, Sigma = Sigma, cov_names = cov_names,
                     n_clusters = Int.(get(mc, "n_clusters_by_moment", zeros(Int, length(se)))),
-                    composition = comp)
+                    composition = comp,
+                    composition_source = comp === nothing ? "none" : "target file")
+    # SMM_TEST_FIXTURES: a file without [composition] gets the FIXTURE one (tools/smm_test_fixtures.jl)
+    if comp === nothing && require_composition && SMM_TEST_FIXTURES
+        out = with_composition(out, fixture_composition(out))
+        out["_spec"] = merge(out["_spec"], (composition_source = "FIXTURE (SMM_TEST_FIXTURES=1)",))
+    end
     return out
 end
 
@@ -1263,6 +1280,8 @@ keep the mean child wage at BASELINE_MEAN_CHILD_WAGE (`lnw0_for_mean_wage`), and
 belongs here.
 """
 function child_wage_config(; sd_log_afqt::Real = CHILD_DEFAULTS.sd_log_afqt)
+    # SMM_TEST_FIXTURES: the labelled placeholder (tools/smm_test_fixtures.jl) while sd(log AFQT) is NOT PROVIDED
+    !(isfinite(sd_log_afqt) && sd_log_afqt > 0) && SMM_TEST_FIXTURES && return PLACEHOLDER_CHILD_WAGE
     isfinite(sd_log_afqt) && sd_log_afqt > 0 || error("""
         child_wage_config: sd(log AFQT raw score) is NOT PROVIDED (CHILD_DEFAULTS.sd_log_afqt =
         $(sd_log_afqt)). alpha_theta = 0.654 * sd(log AFQT) / $(SD_LNK17) cannot be set without it.
@@ -1823,3 +1842,8 @@ end
 
 report_fit(::AbstractVector{Float64}, targets, V_child; kwargs...) = error(
     "report_fit(z, targets, V_child) was removed on 2026-09-10 -- see smm_objective.")
+
+# The stand-ins, loaded only under SMM_TEST_FIXTURES=1 (see the switch near the top)
+if SMM_TEST_FIXTURES && !isdefined(@__MODULE__, :fixture_composition)
+    include(joinpath(@__DIR__, "..", "..", "tools", "smm_test_fixtures.jl"))
+end
