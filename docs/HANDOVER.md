@@ -39,8 +39,13 @@ starting a new file. Paths are relative to the repository root
 - tmux `v1_recovery_real` (started 19:38): the recovery test (tech and all) on the real inputs,
   about 3 hours; `output/smm_runs/2026-10-02_193856_recovery_real/` (its code = `9e2d760`).
 - Finished: the valid share (19:40, `output/diagnostics/2026-10-02_valid_share/`).
-- tmux `v1_suite_real`: the nine passing tests on the real inputs, in parallel, from the snapshot;
-  `temp/2026-10-02_merge_checks/real_inputs_suite/`.
+- Finished 20:03: the nine tests on the real inputs, in parallel, from the snapshot
+  (`temp/2026-10-02_merge_checks/real_inputs_suite/`). Pass: optimizer synthetic, runtime projection
+  78/78, reopt identity 38/38, reopt integration 20/20, resume 8/8. **Fail, one cause**: penalties
+  18/19, runner_start 13/30, runner_geometry 3/13, integration 25/27 -- each starts from the default
+  point with a handful of plain Sobol' draws (5 to 9), all invalid on the real inputs ("nothing to
+  seed the local stage"; penalties: the base point is not finite). To fix in the test rewrite: a
+  valid start (theta0) or `--sobol-valid`, no check weakened.
 
 ## Decisions taken (2026-10-02, Ali)
 
