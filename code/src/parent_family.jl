@@ -111,35 +111,10 @@ sigma_3_0 = -0.36. That gives sigma_3 = 2.945 at t = 17 -- self-productivity abo
 HC_{t+1} ~ HC_t^2.9 is explosive and the period-17 solve could not converge (64.4% against
 a 95% floor). The failure looked like a solver problem and was a stale-constant problem.
 """
-# Promoted 2026-09-12 from the sixteen-parameter run 2026-09-11_182836_exp16b
-# (docs/SMM.md, Part 3), full-precision values from its checkpoint's search vector.
-# Previous baseline: the ten-parameter own-study fit 2026-09-09_123333, which had no
-# child block and no HC shock. Not comparable point for point: exp16b is a joint
-# sixteen-parameter fit against seventeen moments (ten parent + seven TAS) with
-# inverse-variance weights, on a specification that has NOT been through the advisor.
-#
-# THE SOURCE RUN WAS ACCEPTED:
-#
-#   winner came from the polish, its own return code FTOL_REACHED (converged)
-#   3 of 3 restarts converged, 0 hit a budget, 0 other
-#   0 objective exceptions, 0 invalid simulation cells
-#   NO parameter on a bound; kappa_ParEd within 5% of its wall at 0 (reported only)
-#   Q = 313.34 (the exp16 pilot's warm start) -> 61.80
-#
-# The parent block fits: every parent moment within 5% and |t| <= 1.9 (worst
-# mean_i_c_early -4.6%). What does NOT fit is two child-block gaps -- kse_w_gap (2.14 vs
-# 36.84, -94%) and kth_ga17_gap (0.0167 vs 0.0312, -47%) carry 69% of Q -- which is a
-# specification question, not a box one, and is what Structural-estimation-v2 was forked
-# to work on.
-#
-# sigma_eta = 0.0315 IS NOW THE BASELINE TECHNOLOGY. Until this promotion the block
-# default was 0 (deterministic) and the SMM started the shock at 0.03 through SMM_START;
-# the shock is now part of the fitted model and everything that builds "the baseline"
-# gets it. `sigma_eta = 0.0` remains a legitimate explicit choice and is bit-identical to
-# the pre-shock solver (tools/test_hc_process_shock.jl).
-#
-# UNTARGETED, for context: retained assets 25.16 ($251,570) against a data mean of
-# $331,977 measured ~11 years later; 0 households off the asset grid.
+# 2026-10-02: THE MEMO-18 SPECIFICATION, NOT A FIT. The technology entries are DFVW Table-7
+# starting values (see below); phi_2, phi_3 and lambda_2 are still the exp16b estimates
+# (2026-09-11_182836, fitted under the old W-score technology), kept as starts. Nothing here
+# has been estimated against the memo-19 moments yet -- docs/SMM_MEMO19.md.
 #
 const PARENT_DEFAULTS = (
     # phi and lambda are TIME-INVARIANT by instruction (2026-08-30): they are
@@ -150,53 +125,66 @@ const PARENT_DEFAULTS = (
     phi_2 = 0.19627800368797635, # estimated: mean hours of work
     phi_3 = 1.5337270332793986,  # estimated: parental time + monetary investment
     # -----------------------------------------------------------------------------
-    # HUMAN CAPITAL IS IN THE DATA'S UNITS (PCA W-score), not model units
+    # THE SKILL TECHNOLOGY: memo 18, Del Boca, Flinn, Verriest & Wiswall (JPE 2026)
     # -----------------------------------------------------------------------------
-    # Rescaled 2026-08-30 by instruction. HC now IS the Woodcock-Johnson PCA composite,
-    # so sim_hc can be compared with mu_g_ACH directly and HC is targetable in the SMM --
-    # which is what separates the VALUATION parameters (phi_3, lambda_2) from the
-    # TECHNOLOGY parameters (sigma_1, sigma_2, sigma_4). Without it they are collinear.
-#
-    # The change of units is EXACTLY NEUTRAL if the whole cascade moves together. With
-    # HC -> M*HC and the technology HC' = R * tau^s1 * e^s2 * HC^s3 * i^s4:
-#
-    #     R          -> R * M^(1 - sigma_3)      so HC' scales by M as well
-    #     hc grid    -> spans the W-score range instead of [0.001, 10]
-    #     m_theta    -> m_theta + log(M)         the child's wage takes log(theta)
-    #     kappa_0    -> kappa_0 - kappa_theta*log(M)   psychic cost takes log(theta)
-    #     child k_max -> matches hc_max          same object across the age-18 handoff
-#
-    # phi_3*log(HC) and lambda_2*log(HC) pick up an additive constant phi_3*log(M), which
-    # has no effect on any choice -- that is why utility needs no adjustment.
-#
-    # M = 753.4, the ratio of the new mean HC at age 0 (376.7, from the data) to the old
-    # Uniform(0,1) mean of 0.5.
-    R_0 = 48.335683631852916,  R_1     = 0.0,     # fitted TFP; the rescaling above describes its units
-    sigma_1_0 = -0.8885904752581663, sigma_1_1 = -0.0926896519868781,
-    # sigma_2_1 is INTERIOR at 57.7% of [-0.30, 0.05], well clear of the old -0.15 wall.
-    sigma_2_0 = -3.6917922068267726, sigma_2_1 = -0.09795756849517166,
-    # sigma_3 = exp(-0.90) = 0.407, flat in t. sigma_3 >= 1 is explosive and the
-    # +-0.4 counterfactual arm must stay clear of it -- docs/ERRORS.md, P12.
-    sigma_3_0 = -0.90, sigma_3_1 =  0.0,
-    # sigma_4_1 is ESTIMATED (own-study respecification, 3636d43), not fixed at 0.02. It
-    # landed at 90.1% of the old [-0.05, 0.15] box after 91.4% in the ten-parameter fit,
-    # which is why the box is now [-0.05, 0.30]. sigma_4_0 is INTERIOR at 43.3% of [-10, -1].
-    sigma_4_0 = -6.098536575992962, sigma_4_1 =  0.13013171836583348,
+    # 2026-10-02. Replaces R_0/R_1, sigma_*_0/1 and the HC shock of the exp16b baseline.
+    #
+    #     ln k_{t+1} = ln R_t + s1_t ln tau_p + s2_t ln e_p + s3_t ln k_t + 1{t>=6} s4_t ln tau_c
+    #     s_jt = exp(a_j0 + a_j1 * t),     t = CHILD AGE (not t-1, not t-5)
+    #     R_t  = d_0 + (d_1 - d_0) / (1 + exp(-d_2 (t - d_3)))
+    #
+    # DFVW app. C.1.2 / eq. (4), with their two parental-time inputs pooled into tau_p, no
+    # parental-schooling shifter (memo 18, decision 2026-10-01), and no shock (their app.
+    # footnote 5: the technology is deterministic in estimation). k is DFVW latent skill:
+    # raw LW ~ Binomial(57, logistic(-4.595 + ln k)). Inputs are in MODEL units -- tau a share
+    # of the 112-hour week, e_p in 10k USD/yr -- by decision (2026-10-01).
+    #
+    # VALUES ARE SMM STARTING POINTS FROM DFVW TABLE 7, not a fit (decision 2026-10-01).
+    # Elasticities carry over unit-free:
+    #     money        a_2 = (-7.154, 0.072)     DFVW d4
+    #     persistence  a_3 = (-0.254, 0.005)     DFVW d5: 0.79 at 3 -> 0.84 at 16
+    #     own study    a_4 = (-6.598, 0.271)     DFVW d3
+    #     parent time  a_1 = log-linear fit to DFVW d1 + d2 (mother + father) at 13 years of
+    #                  schooling, t = 1..17; max relative error 0.1%. The sample's mean
+    #                  schooling is NOT PROVIDED in DFVW; 12 -> 16 years moves a_1_0 by 0.10.
+    # TFP does NOT carry over: R_t absorbs the input units, and with age-varying elasticities
+    # the conversion is age-varying. DFVW's R (0.96 -> 2.51, midpoint at 5.3) becomes, in
+    # model units, 6.7 at age 1, 4.8 at 4, 6.5 at 7, 5.1 at 13, 6.6 at 17 -- not monotone, so
+    # the generalised logistic cannot follow it (best fit inside the memo-18 box is flat at
+    # 5.58 and sits on two box edges). Started FLAT at 5.6 instead: d_0 = d_1.
+    a_1_0 = -0.63085254, a_1_1 = -0.11532855,
+    a_2_0 = -7.154,      a_2_1 =  0.072,
+    a_3_0 = -0.254,      a_3_1 =  0.005,
+    a_4_0 = -6.598,      a_4_1 =  0.271,
+    d_0 = 5.6, d_1 = 5.6, d_2 = 1.0, d_3 = 5.3,
     lambda_1 = 1.0,           # NORMALISATION, not estimated
     # Interior at 74.0% of [0.05, 100] (in logs) -- an order of magnitude below what the
     # old school-plus-study specification needed. See the header of PARENT_DEFAULTS.
     lambda_2 = 13.86200306163239,  # estimated: the child's own study time
-    mu_0 = 1.0,        mu_1 = -0.04,
     tau = 0.18,        y = 0.6,
-    # IDIOSYNCRATIC HC SHOCK (2026-09-11, docs/ERRORS.md P13):
-    #     log HC_{t+1} = log F_t(inputs, HC_t) + sigma_eta * z_{t+1},   z ~ N(0,1) i.i.d.
-    # ESTIMATED since exp16b (2026-09-12): 0.0315, interior at 39% of [0, 0.08], identified
-    # by sd_ga17 (model 0.0365 vs data 0.0329). Pass sigma_eta = 0.0 explicitly for the
-    # deterministic technology every result before 2026-09-11 was built on; that case is
-    # EXACT -- the quadrature nodes collapse to the point and every array is bit-identical
-    # to the pre-shock solver (tools/test_hc_process_shock.jl).
-    sigma_eta = 0.031513225851586016,
+    # IDIOSYNCRATIC HC SHOCK: ZERO by memo 18 (DFVW's technology is deterministic). The
+    # machinery stays because sigma_eta = 0.0 is EXACT -- the quadrature collapses to the
+    # point and every array is bit-identical to the deterministic solver
+    # (tools/test_hc_process_shock.jl). It is no longer estimated.
+    sigma_eta = 0.0,
 )
+
+# THE CHILD'S BARGAINING WEIGHT mu_t, ages 6..17 (targets.toml `mu_by_age`; memo 19 decision
+# 10). A 4-parameter logistic in age fitted to the caregiver-reported autonomy index
+# (Overall); max gap to the data 0.009. The PARENT's weight in the family problem is
+# 1 - mu_t from T_CHILD_VOICE on and 1 before. Replaces the linear mu_0 + mu_1*(t-5).
+# Calibrated, not estimated: the SMM checks these against its target file.
+const MU_CHILD_BY_AGE = [0.3340757779536822, 0.3380619754463771, 0.3438720939503044,
+                         0.3522462147878049, 0.3641227232667437, 0.3805867938161593,
+                         0.4027034585959703, 0.4311901187579503, 0.4659583737775583,
+                         0.5057098422168177, 0.5479021964453065, 0.5892943516938516]
+
+# THE INITIAL SKILL DRAW at child age 1 (memo 18 section 7, K1, baseline spline set):
+#     ln k_1 = init_m0 + init_mBC * BothCollege + init_s0 * z,   z ~ N(0,1)
+# Calibrated outside the SMM in Stata step 26; targets.toml carries them and the SMM checks
+# them. Replaces HC0_MEAN_LOG / HC0_SD_LOG (W-score units). The alternative set
+# (1.312 / 0.434 / 0.395, linear fit on ages 3-5) is a robustness pair, not used here.
+const INIT_M0, INIT_MBC, INIT_S0 = 0.628871500492096, 0.4344903528690338, 0.5952978730201721
 
 
 # -----------------------------------------------------------------------------
@@ -268,18 +256,6 @@ than falling off the end of the schedule.
 default_school_time(T::Int) =
     T == length(SCHOOL_TIME_BY_AGE) ? copy(SCHOOL_TIME_BY_AGE) :
     [SCHOOL_TIME_BY_AGE[min(t, length(SCHOOL_TIME_BY_AGE))] for t in 1:T]
-
-# Initial child HC at CHILD AGE 1, in W-score units: log HC_1 ~ N(HC0_MEAN_LOG, HC0_SD_LOG).
-# Fitted log-linearly on ages 3-17 of the PCA composite and extrapolated back, because the
-# test is not administered before age 3. Derivation in the constructor.
-#
-# AGE 1, NOT AGE 0. These constants previously held the age-0 extrapolation while
-# `sim_hc_init` is written into `sim_hc[:, 1]`, and column 1 is child age 1 -- the family
-# stage runs t = 1..17 over child ages 1..17, with no age-0 period. The age-0 intercept was
-# therefore being used as the age-1 state, understating initial skill by 0.0239 log points
-# (2.4% in levels). Evaluated at age 1 on the same fit.
-const HC0_MEAN_LOG = 5.9529
-const HC0_SD_LOG   = 0.0667
 
 """
     TIME_FLOOR
@@ -436,14 +412,11 @@ function Parent_child_interaction_age_specific_AR1(;
         # moments barely move (mean terminal assets 22.07 -> 22.13).
         a_max::Float64=100.0, a_min::Float64=0.0, Na::Int=30,
         k_max::Float64=1.0, k_min::Float64=0.0, Nk::Int=2,
-        # hc_max = 10, MATCHED to the child's k_max (same object across the age-18
-        # handoff). Sized to the SOLVER's domain, not the simulation's: raising it
-        # further without raising Nhc collapses tail resolution. See docs/ERRORS.md, P12.
-        # W-score units now. The data spans ~300-600, so the focused grid keeps 80% of
-        # its nodes in [hc_min, hc_focus] = [50, 700] and the sparse tail covers to 1500.
-        # hc_focus is a KWARG because it used to be hardcoded as hc_min + 3.0, which is a
-        # meaningless window once HC is measured in hundreds.
-        hc_max::Float64=1500.0, hc_min::Float64=50.0, hc_focus::Float64=700.0, Nhc::Int=30 ,
+        # [hc_min, hc_max] is MATCHED to the child's [k_min, k_max] (same object across
+        # the age-18 handoff): both default to exp.(HC_LN_MIN, HC_LN_MAX) and both grids
+        # are built by hc_log_grid. DFVW latent skill, log-spaced -- see HC_LN_MIN in
+        # child_lifecycle.jl for the bounds.
+        hc_max::Float64=exp(HC_LN_MAX), hc_min::Float64=exp(HC_LN_MIN), Nhc::Int=30 ,
         # --- simulation details ----
         simN::Int=5000, simT::Int=T, seed::Int=1234,
         # Defaults to the real median-school schedule -- see SCHOOL_TIME_BY_AGE. An SMM
@@ -470,16 +443,20 @@ function Parent_child_interaction_age_specific_AR1(;
         phi_2 = PARENT_DEFAULTS.phi_2,
         # ---- HC block, recalibrated together (see the note below) ----
         phi_3 = PARENT_DEFAULTS.phi_3,
-        R_0 = PARENT_DEFAULTS.R_0, R_1 = PARENT_DEFAULTS.R_1,
+        # --- the memo-18 technology (see PARENT_DEFAULTS) ---
+        a_1_0 = PARENT_DEFAULTS.a_1_0, a_1_1 = PARENT_DEFAULTS.a_1_1,
+        a_2_0 = PARENT_DEFAULTS.a_2_0, a_2_1 = PARENT_DEFAULTS.a_2_1,
+        a_3_0 = PARENT_DEFAULTS.a_3_0, a_3_1 = PARENT_DEFAULTS.a_3_1,
+        a_4_0 = PARENT_DEFAULTS.a_4_0, a_4_1 = PARENT_DEFAULTS.a_4_1,
+        d_0 = PARENT_DEFAULTS.d_0, d_1 = PARENT_DEFAULTS.d_1,
+        d_2 = PARENT_DEFAULTS.d_2, d_3 = PARENT_DEFAULTS.d_3,
         sigma_eta = PARENT_DEFAULTS.sigma_eta, Neta::Int = 5,
-        sigma_1_0 = PARENT_DEFAULTS.sigma_1_0, sigma_1_1 = PARENT_DEFAULTS.sigma_1_1,
-        sigma_2_0 = PARENT_DEFAULTS.sigma_2_0, sigma_2_1 = PARENT_DEFAULTS.sigma_2_1,
-        sigma_3_0 = PARENT_DEFAULTS.sigma_3_0, sigma_3_1 = PARENT_DEFAULTS.sigma_3_1,
-        sigma_4_0 = PARENT_DEFAULTS.sigma_4_0, sigma_4_1 = PARENT_DEFAULTS.sigma_4_1,
+        # --- the age-1 skill draw (calibrated; see INIT_M0) ---
+        init_m0 = INIT_M0, init_mBC = INIT_MBC, init_s0 = INIT_S0,
         lambda_1 = PARENT_DEFAULTS.lambda_1,
         lambda_2 = PARENT_DEFAULTS.lambda_2,
-        # --- Bargaining parameter ---
-        mu_0 = PARENT_DEFAULTS.mu_0, mu_1 = PARENT_DEFAULTS.mu_1,
+        # --- Bargaining: the CHILD's weight at ages 6..17 (see MU_CHILD_BY_AGE) ---
+        mu_child_by_age::AbstractVector{<:Real} = MU_CHILD_BY_AGE,
         # Np = 5. MEASURED: 7 -> 5 -> 3 leaves every moment flat to the third digit, so
         # the Rouwenhorst grid is converged by 3 and 5 is margin. docs/ERRORS.md, grid caps.
         p_ar1::Float64=0.9, sigma_p::Float64=0.1, Np::Int=5,
@@ -495,7 +472,7 @@ function Parent_child_interaction_age_specific_AR1(;
     # Grids (custom grid functions)
     a_grid = create_focused_grid(a_min, a_min + 3.0, a_max, Na, 0.3, 1.2)
     k_grid = range(k_min, k_max, length=Nk)
-    hc_grid = create_focused_grid(hc_min, hc_focus, hc_max, Nhc, 0.8, 1.2)
+    hc_grid = hc_log_grid(hc_min, hc_max, Nhc)    # the child's k_grid, node for node
 
     #a_grid  = range(a_min, a_max, length=Na)
     #k_grid  = range(k_min, k_max, length=Nk)
@@ -517,30 +494,37 @@ function Parent_child_interaction_age_specific_AR1(;
 
     # --- Age-specific parameter vectors ---
     beta_vector    = [beta_0 + beta_1 * (t-1) for t in 1:T]
-    R_vector       = [R_0 + R_1 * (t-1) for t in 1:T]
-    #R_vector       = [t < T_CHILD_VOICE ? 2.0 : 2.5 + 0.1 * (t-1) for t in 1:T]
-    mu_vector      = [t < T_CHILD_VOICE ? 1.0 : mu_0 + mu_1 * (t - (T_CHILD_VOICE - 1))
+    # Period t IS child age t, and the memo-18 elasticities are indexed on age itself.
+    R_vector       = [d_0 + (d_1 - d_0) / (1 + exp(-d_2 * (t - d_3))) for t in 1:T]
+    length(mu_child_by_age) == T - T_CHILD_VOICE + 1 || throw(ArgumentError(
+        "mu_child_by_age must hold the child's weight for ages $T_CHILD_VOICE..$T " *
+        "($(T - T_CHILD_VOICE + 1) entries), got $(length(mu_child_by_age))"))
+    all(x -> 0.0 <= x <= 1.0, mu_child_by_age) ||
+        throw(ArgumentError("mu_child_by_age must lie in [0, 1]"))
+    # The PARENT's welfare weight: 1 before the child has a voice, 1 - mu_t after.
+    mu_vector      = [t < T_CHILD_VOICE ? 1.0 : 1.0 - mu_child_by_age[t - T_CHILD_VOICE + 1]
                       for t in 1:T]
 
-    sigma_1_vector = [exp(sigma_1_0 + sigma_1_1 * (t-1)) for t in 1:T]
-    sigma_2_vector = [exp(sigma_2_0 + sigma_2_1 * (t-1)) for t in 1:T]
-    sigma_3_vector = [exp(sigma_3_0 + sigma_3_1 * (t-1)) for t in 1:T]
-    sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 :
-                      exp(sigma_4_0 + sigma_4_1 * (t - (T_CHILD_VOICE - 1))) for t in 1:T]
+    sigma_1_vector = [exp(a_1_0 + a_1_1 * t) for t in 1:T]
+    sigma_2_vector = [exp(a_2_0 + a_2_1 * t) for t in 1:T]
+    sigma_3_vector = [exp(a_3_0 + a_3_1 * t) for t in 1:T]
+    sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 : exp(a_4_0 + a_4_1 * t) for t in 1:T]
 
+    # TFP enters as ln R_t, so it must be strictly positive. With d_0, d_1 > 0 the logistic is
+    # a convex combination of the two and cannot reach zero; the check catches a box error.
+    all(x -> isfinite(x) && x > 0, R_vector) ||
+        error("TFP R_t must be positive at every age; d = ($d_0, $d_1, $d_2, $d_3) gives $(R_vector)")
 
-    # Self-productivity must stay BELOW ONE. HC_{t+1} = R * inputs * HC_t^sigma_3, so
-    # sigma_3 >= 1 makes the recursion explosive and the model has no bounded solution --
-    # the parent solve then fails as a convergence shortfall, which reads like a solver bug
-    # and is not one. Caught here, where the number is visible.
+    # Self-productivity must stay BELOW ONE. ln k' = ... + sigma_3 ln k, so sigma_3 >= 1 makes
+    # the recursion explosive and the model has no bounded solution -- the parent solve then
+    # fails as a convergence shortfall, which reads like a solver bug and is not one. Caught
+    # here, where the number is visible. memo 18: a_3_0 + a_3_1*t < 0 at t = 1 and t = T.
     if maximum(sigma_3_vector) >= 1.0
         bad = findall(>=(1.0), sigma_3_vector)
-        error("sigma_3 >= 1 at t = $bad (max $(round(maximum(sigma_3_vector), digits=3))): " *
+        error("sigma_3 >= 1 at age $bad (max $(round(maximum(sigma_3_vector), digits=3))): " *
               "self-productivity at or above one makes HC explosive and the model unsolvable. " *
-              "sigma_3_0 = $sigma_3_0, sigma_3_1 = $sigma_3_1 give " *
-              "sigma_3 = exp($sigma_3_0 + $sigma_3_1*(t-1)), which reaches " *
-              "$(round(exp(sigma_3_0 + sigma_3_1*(T-1)), digits=3)) at t = $T. " *
-              "Reduce sigma_3_1 (or sigma_3_0) so that sigma_3_0 + sigma_3_1*(T-1) < 0.")
+              "a_3_0 = $a_3_0, a_3_1 = $a_3_1 give sigma_3 = exp(a_3_0 + a_3_1*t); keep " *
+              "a_3_0 + a_3_1*t < 0 at t = 1 and t = $T.")
     end
     
 
@@ -621,25 +605,13 @@ function Parent_child_interaction_age_specific_AR1(;
         end
     end
     sim_k_init = Float64.(rand(rng_k, Bernoulli(0.3), simN))  # 70% zeros, 30% ones
-    # Initial child HC, from the DATA rather than an arbitrary Uniform(0,1).
-    #
-    # The PCA composite is only measured from age 3, so both the mean and the SD of
-    # log HC are fitted log-linearly on ages 3-17 and extrapolated back to age 0:
-    #
-    #     mean log HC = 5.92898 + 0.02392*age   (R2 0.835)  -> 5.9529 at age 1
-    #     sd   log HC = 0.06976 - 0.00310*age   (R2 0.638)  -> 0.0667 at age 1
-    #
-    # Evaluated at AGE 1, the child age of column 1. See HC0_MEAN_LOG.
-    #
-    # Log-linear because that is the form the production function itself uses, so the
-    # extrapolation is internally consistent -- and because a quadratic fit, which
-    # tracks ages 3-17 slightly better, bends to 303 at age 0 against the linear 376.
-    # Extrapolating a quadratic three years beyond its support is where that goes wrong.
-    #
-    # LOGNORMAL, not uniform. The old Uniform(0,1) was arbitrary and it was the source of
-    # a 0.32 log-point Jensen gap at t=1 (Var(log hc) is large for a uniform near zero).
-    # This gives a median of 385 and a 10-90 range of 353-419, matching the data at age 1.
-    sim_hc_init = exp.(HC0_MEAN_LOG .+ HC0_SD_LOG .* randn(rng_hc, simN))
+    # Initial child skill at AGE 1 (column 1), DFVW latent units (memo 18 section 7):
+    #     ln k_1 = init_m0 + init_mBC * BothCollege + init_s0 * z,   z ~ N(0,1)
+    # BothCollege is the household's own draw above, so the family gradient in skill is
+    # present from age 1 rather than manufactured by investment in ages 1-2. The z stream
+    # is the same rng_hc draw the old W-score lognormal used.
+    init_s0 >= 0.0 || throw(ArgumentError("init_s0 must be non-negative, got $init_s0"))
+    sim_hc_init = exp.(init_m0 .+ init_mBC .* sim_k_init .+ init_s0 .* randn(rng_hc, simN))
     sim_p_init = fill(ceil(Int, Np/2), simN)
     # Pre-drawn uniforms for the AR(1) transition: reproducible, and identical across arms.
     # Previously `sample(...)` was called against the GLOBAL RNG.
@@ -1251,10 +1223,24 @@ carries one surface per `bc` because `kappa_ParEd` shifts the college branch bef
 enrolment max, so the two surfaces are not a constant apart. Passing a bare `Spline2D`
 still works and ignores `bc`; that is the pre-`bc` behaviour and is what the notebook's
 plotting path uses.
+
+A `ChildTerminalValue` is fitted in LN skill (see its docstring), so its method clamps
+`log(HC_next)` to the spline's ln-k range and returns dV/dHC = (dV/d ln k) / HC_next -- zero,
+with the value, wherever the clamp binds. A bare `Spline2D` is still read in levels.
 """
 @inline function eval_child_value(V::ChildTerminalValue, a_next::Float64, HC_next::Float64,
                                   bc::Float64, want_grad::Bool)
-    return eval_child_value(V.by_bc[bc_index(V, bc)], a_next, HC_next, bc, want_grad)
+    spl = V.by_bc[bc_index(V, bc)]
+    HC_next > 0.0 || error("eval_child_value: non-positive child skill $HC_next at the handoff")
+    lk = log(HC_next)
+    a_lo, a_hi, l_lo, l_hi = spline_domain(spl)
+    ac = clamp(a_next, a_lo, a_hi)
+    lc = clamp(lk, l_lo, l_hi)
+    Vv = spl(ac, lc)
+    want_grad || return (Vv, 0.0, 0.0)
+    dV_da  = (ac == a_next) ? Dierckx.derivative(spl, ac, lc, 1, 0) : 0.0
+    dV_dHC = (lc == lk)     ? Dierckx.derivative(spl, ac, lc, 0, 1) / HC_next : 0.0
+    return (Vv, dV_da, dV_dHC)
 end
 
 @inline function eval_child_value(V_child_interp::Dierckx.Spline2D, a_next::Float64,

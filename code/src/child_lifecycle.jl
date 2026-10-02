@@ -68,6 +68,47 @@ const WAGE_SCALING_FACTOR = 0.584
 const AGE_AT_T1 = 18
 @inline model_age(t::Int) = AGE_AT_T1 + t - 1
 
+# ---------------------------------------------------------------------------
+# Childhood skill k in DFVW units (memo 18, 2026-10-01)
+# ---------------------------------------------------------------------------
+# k is the latent skill of Del Boca, Flinn, Verriest & Wiswall (JPE 2026), normalised by
+# their measurement model: raw Letter-Word ~ Binomial(57, logistic(L0 + ln k)), L0 = -4.595,
+# L1 = 1 (their app. C.1.5). ln k runs from ~0.6 at age 1 (the calibrated initial draw) to
+# ~6.7 at 17 (m_psychic), so ONE grid serving every age spans about ten log points.
+#
+# The parent's hc_grid and this file's k_grid are the SAME OBJECT across the age-18 handoff,
+# so both are built from these two constants by `hc_log_grid` and cannot drift apart.
+# Log-spaced because every use of k is through log k (technology, utility, wage, psychic
+# cost). Bounds: the age-1 draw reaches ln k = 0.63 - 3.5*0.60 = -1.5 and the handoff
+# ln k_18 ~ 6.9 + 3.5*0.7 = 9.3, so [-2, 10] leaves margin at both ends.
+const HC_LN_MIN = -2.0
+const HC_LN_MAX = 10.0
+hc_log_grid(lo::Float64, hi::Float64, n::Int) = exp.(range(log(lo), log(hi), length = n))
+
+# The wage loading on childhood skill, anchored PER STANDARD DEVIATION to Daruich &
+# Fernandez Table B4 (decision 2026-10-01). Their 0.654 / 0.976 are per log point of the
+# AFQT raw score; what transports across units is the wage gain per SD of skill, so
+#     alpha_theta = 0.654 * sd(log AFQT) / sd(ln k at 17),   alpha_thetaE likewise (0.322).
+# sd(ln k at 17) = 0.6524 is the data's (targets.toml `sd_lnk17`), FROZEN -- not recomputed
+# from the simulation, which is what made the standardised form diverge before
+# (docs/WAGE_PROCESS.md section 4).
+#
+# NOT PROVIDED: sd(log AFQT raw score). Neither Daruich & Fernandez nor Colas et al. report
+# it; it has to come from the NLSY79. Until it is supplied `CHILD_DEFAULTS.sd_log_afqt` is
+# NaN and the constructor refuses to build a child unless alpha_theta is passed explicitly.
+const DF_ALPHA_THETA, DF_ALPHA_THETA_E = 0.654, 0.322
+const SD_LNK17 = 0.6524171731017028
+anchored_alpha(sd_log_afqt::Real; sd_lnk17::Real = SD_LNK17) =
+    (DF_ALPHA_THETA * sd_log_afqt / sd_lnk17, DF_ALPHA_THETA_E * sd_log_afqt / sd_lnk17)
+
+# lnw0 is a pure level normalisation (docs/WAGE_PROCESS.md section 3). Re-anchoring alpha_theta
+# and m_theta moves the mean wage, so lnw0 is re-set to keep it at the value the previous
+# specification produced: MEASURED 2026-10-02 on the exp16b baseline (commit 00a644d,
+# grids 30/2/30, child 30/30/5, simN 2000, seed 1234), mean of the resimulated children's
+# sim_wage over all t = 14.4640. `lnw0_for_mean_wage` applies the shift.
+const BASELINE_MEAN_CHILD_WAGE = 14.4640
+lnw0_for_mean_wage(lnw0::Real, mean_wage::Real) = lnw0 + log(BASELINE_MEAN_CHILD_WAGE / mean_wage)
+
 # ===========================================================================
 # Model: struct and constructor
 # ===========================================================================
@@ -178,19 +219,23 @@ end
 # child the estimation fitted (`ConSavLaborCollege_AR1(; Na = 30, ..., CHILD_DEFAULTS...)`)
 # instead of carrying their own copies of kappa_terminal = 5.0 and sigma_eps = 0.5.
 #
-# The five ESTIMATED entries and m_psychic are the sixteen-parameter fit
-# `2026-09-11_182836_exp16b` (Q 313.34 -> 61.80, accepted: polish FTOL_REACHED, all three
-# restarts converged, no parameter on a bound; kappa_ParEd within 5% of its wall at 0).
-# Full-precision values from the checkpoint's search vector, not the eight-decimal
-# estimates.toml. The specification it was fitted under (sigma_eta, sigma_eps, the gap
-# moments) is preliminary and has not been through the advisor -- docs/SMM.md. The five
-# fixed entries are unchanged since 2026-09-10.
+# The five ESTIMATED entries started as the sixteen-parameter fit
+# `2026-09-11_182836_exp16b` (Q 313.34 -> 61.80, accepted). Since 2026-10-02 they are the
+# STARTING POINT of the memo-19 estimation, not a fit of it: kappa_theta is converted to DFVW
+# units (below), and m_psychic, mu and the wage anchoring come from the memo-19 target file
+# and decisions. The five fixed entries are unchanged since 2026-09-10.
 #
 # kappa_0 IS ON THE CENTRED SCALE: the psychic cost is
 #     kappa_0 + kappa_theta*(log theta - m_psychic) + kappa_ParEd*BothCollege
-# and the fitted kappa_0 is the cost AT log theta = m_psychic = 6.2634 (the data's mean
-# log g_ACH at 17). A target file with a different m_psychic would make this a different
-# model; `check_psychic_centring` in moments.jl refuses it.
+# and kappa_0 is the cost AT log theta = m_psychic.
+#
+# MEMO-18 UNITS (2026-10-02). theta is now DFVW latent skill, and m_psychic = 6.6870 is the
+# latent mean ln k at 17 on the college frame (targets.toml, K2). The exp16b kappas were
+# fitted on log g_ACH, whose SD at 17 was 0.0329 against 0.6524 for ln k, so kappa_theta is
+# CONVERTED PER SD as a starting value: -3.6194 * 0.0329/0.6524 = -0.1826. kappa_0 keeps its
+# meaning (the cost at mean ability) and its value. All five are re-estimated; these are
+# starts, not a fit. `check_psychic_centring` in moments.jl refuses a target file whose
+# m_psychic differs from this one.
 const CHILD_DEFAULTS = (
     # --- fixed ---
     rho          = 1.5,
@@ -198,11 +243,18 @@ const CHILD_DEFAULTS = (
     omega        = 0.3,      # altruism
     a_max        = 100.0,    # must cover the parent's terminal assets + 51 periods
     w            = 20.0,
-    # --- estimated: the psychic cost of college (exp16b) ---
+    # The PARENT's weight at the age-18 half period, in the one family objective that sets
+    # both the transfer and enrolment: 1 - mu_half, where mu_half = 0.6540 is the autonomy
+    # index at 18 (targets.toml; decision 2026-10-01). Was a hard-coded 0.5.
+    mu           = 1 - 0.65404427051544189,
+    # sd(log AFQT raw score) for the alpha_theta anchoring -- NOT PROVIDED yet; see
+    # anchored_alpha. NaN makes the constructor refuse a child without an explicit alpha.
+    sd_log_afqt  = NaN,
+    # --- estimated: the psychic cost of college (exp16b, kappa_theta converted per SD) ---
     kappa_0      = -0.3565912994458334,
-    kappa_theta  = -3.6193790303472806,
-    kappa_ParEd  = -0.1081080950368823,    # 3.6% from the wall at 0 -- see the box in moments.jl
-    m_psychic    = 6.263396877461691,      # the centring the kappas were fitted at
+    kappa_theta  = -3.6193790303472806 * 0.03290822528077769 / 0.6524171731017028,
+    kappa_ParEd  = -0.1081080950368823,
+    m_psychic    = 6.686957400744432,      # targets.toml m_psychic (DFVW ln k at 17)
     # --- estimated: the parent's taste for retained assets (exp16b) ---
     kappa_terminal = 8.786782398737627,
     # --- estimated: the SCALE of the college taste shock (exp16b) ---
@@ -214,32 +266,31 @@ function ConSavLaborCollege_AR1(;
                 # child_lifecycle_ret.jl, which implied a terminal age of 69.
                 T::Int=51, t_college::Int=4, beta::Float64=0.97, rho::Float64=1.0,
                 r::Float64=0.03, a_max::Float64=100.0, Na::Int=30, y::Float64=0.6,
-                # k_max = 10 is MATCHED to the parent's hc_max -- the same object either
-                # side of the age-18 handoff. See the file header.
-                simN::Int=5000, a_min::Float64=0.0, k_max::Float64=1500.0, Nk::Int=30,
+                # [k_min, k_max] is MATCHED to the parent's [hc_min, hc_max] -- the same
+                # object either side of the age-18 handoff. See HC_LN_MIN and the header.
+                simN::Int=5000, a_min::Float64=0.0,
+                k_min::Float64=exp(HC_LN_MIN), k_max::Float64=exp(HC_LN_MAX), Nk::Int=30,
                 w::Float64=12.5, tau::Float64=0.18, eta::Float64=2.0,
                 phi::Float64=18.0, seed::Int=1234, college_cost::Float64=1.2,
                 # --- Wage process ---------------------------------------------
                 # Age profile and college intercept: Daruich & Fernandez (2023) Table B3
                 # (PSID 1968-2016, quadratic in BIOLOGICAL age, Heckman-corrected, by
-                # education). alpha_theta / alpha_thetaE are ELASTICITIES of the wage in
-                # childhood HC, from their Table B4: 0.654 high school, 0.976 college.
-                # NOT standardized per SD -- doing so made investment diverge. lnw0 and
-                # m_theta carry no behaviour (level normalisation and centring).
-                # All of it, with the divergence measurement: docs/WAGE_PROCESS.md
+                # education). alpha_theta / alpha_thetaE are anchored PER SD to their
+                # Table B4 (0.654 / 0.976 per log AFQT) -- see anchored_alpha; NaN until
+                # sd(log AFQT) is supplied, and then this constructor refuses to build.
+                # lnw0 and m_theta carry no behaviour (level normalisation and centring).
+                # docs/WAGE_PROCESS.md
                 lnw0::Float64=log(w) - 0.4144,
                 beta_E::Float64=-0.294,
-                alpha_theta::Float64=0.654,
-                alpha_thetaE::Float64=0.322,
+                alpha_theta::Float64=anchored_alpha(CHILD_DEFAULTS.sd_log_afqt)[1],
+                alpha_thetaE::Float64=anchored_alpha(CHILD_DEFAULTS.sd_log_afqt)[2],
                 gamma1::Float64=0.0234,
                 gamma1E::Float64=0.0318,
                 gamma2::Float64=-0.000199,
                 gamma2E::Float64=-0.000314,
-                # Centring only; offset exactly by lnw0. See the wage-process doc.
-                # +log(M) = +6.6246 with the parent's HC rescaling to W-score units:
-                # the wage takes alpha_theta*(log theta - m_theta), so a scale factor on
-                # theta is exactly offset here. Behaviourally neutral. See parent_family.jl.
-                m_theta::Float64=7.3486,
+                # Centring only; offset exactly by lnw0. In DFVW units it is the latent
+                # mean ln k at 17, the same constant as m_psychic (decision 2026-10-01).
+                m_theta::Float64=CHILD_DEFAULTS.m_psychic,
                 # --- Psychic cost of college ----------------------------------
                 # kappa_0 + kappa_theta*log(theta) + kappa_ParEd*BothCollege. Signs and
                 # the ratio kappa_ParEd/kappa_theta = 0.205 are Colas Table 2; the LEVELS
@@ -274,8 +325,8 @@ function ConSavLaborCollege_AR1(;
 # made the last period value skill far less than every earlier one and tau_p collapsed
 # (0.059 against 0.155 once psi rose). Zero is a stronger version of that. See ERRORS.md P11.
                 psi_terminal::Float64=0.0, kappa_terminal::Float64=CHILD_DEFAULTS.kappa_terminal, omega::Float64=0.5,
-                    # --- Bargaining parameter ---
-                mu = 0.5,
+                    # --- Bargaining parameter: the PARENT's weight at the half period ---
+                mu = CHILD_DEFAULTS.mu,
                 tax_lambda::Float64=0.82,
                 # Consumption floor used BOTH as the optimizer's lower bound on c and in
                 # the college feasibility recursion. These were 0.01 and 0.3 respectively,
@@ -293,8 +344,14 @@ function ConSavLaborCollege_AR1(;
                 )
 
     simT = T
+    isfinite(alpha_theta) && isfinite(alpha_thetaE) || error("""
+        alpha_theta is not set. It is anchored per SD to Daruich & Fernandez Table B4 and needs
+        sd(log AFQT raw score), which is NOT PROVIDED yet (CHILD_DEFAULTS.sd_log_afqt = NaN).
+        Supply it there, or pass alpha_theta and alpha_thetaE explicitly.""")
+    0.0 <= mu <= 1.0 || error("mu = $mu is the parent's weight at the half period; it must be in [0, 1]")
     a_grid = create_focused_grid(a_min, 2.0, a_max, Na, 0.2, 1.3)
-    k_grid = nonlinspace(50.0, k_max, Nk, 1.5)   # W-score units, matching the parent
+    # DFVW latent skill, log-spaced; the same grid as the parent's hc_grid (HC_LN_MIN).
+    k_grid = hc_log_grid(k_min, k_max, Nk)
 
     # N13/C14: parental asset grid. Starting at delta_P removes the singular row; putting
     # an exact node at the college transfer threshold removes the dead band between that
@@ -359,7 +416,11 @@ function ConSavLaborCollege_AR1(;
     # N13: sim_a_init holds PARENTAL assets, so it is drawn on the parental grid's domain.
     # Draws below ap_min previously landed on rows where the terminal value diverges.
     sim_a_init = ap_min .+ rand(rng, simN) .* (min(20.0, ap_max) - ap_min)
-    sim_k_init = rand(rng, simN) .* 5
+    # Standalone (demonstration) skill draw only -- every estimation overwrites it with the
+    # parent's handoff. ln k ~ N(m_psychic, sd_lnk17), the data's latent distribution at 17;
+    # the old Uniform(0, 5) was in pre-DFVW units. Same number of uniforms is consumed, so
+    # the later streams (initial shock, taste shocks) are unchanged.
+    sim_k_init = exp.(m_psychic .+ SD_LNK17 .* quantile.(Normal(), rand(rng, simN)))
     sim_bc_init = zeros(simN)
     # C6 (Phase 0.5c): draw the initial child shock from the STATIONARY distribution --
     # the same distribution the transfer problem integrates over. Starting everyone at the
@@ -1377,9 +1438,18 @@ Calling it with two arguments, or taking a `Dierckx.derivative` of it, forwards 
 `bc = 0` surface. That is the plotting path (the notebook's marginal-value figures), and it
 is the surface those figures already showed; the SOLVER never takes that path -- it goes
 through `eval_child_value`, which selects on the parent's own `k`.
+
+THE SPLINES ARE FITTED IN LN k (2026-10-02), not in k. Callers still pass `hc` in levels;
+the methods below take the log and apply the chain rule, dV/dhc = (dV/d ln k) / hc. WHY:
+in DFVW units one grid spans ln k in [-2, 10], and a cubic spline in LEVELS across five
+orders of magnitude oscillates between the log-spaced nodes. MEASURED on a solved child at
+the memo-18 start values (a = 10): dV/d ln k from the levels spline swung 1.26, 1.73, 1.36,
+1.95 across ln k = 4..8 while the surface's own slope rises smoothly 1.52 -> 1.73; the ln-k
+spline tracks it, with the same node residual (rms 0.105). That slope is what pays for
+parental time at t = 17, so the wiggle was a wiggle in tau_p.
 """
 struct ChildTerminalValue
-    by_bc::Vector{Spline2D}
+    by_bc::Vector{Spline2D}      # each over (parental assets, LN child skill)
     bc_grid::Vector{Float64}
 end
 
@@ -1399,11 +1469,16 @@ extrapolating a value that has no meaning between 0 and 1.
     return bi
 end
 
-@inline (V::ChildTerminalValue)(a::Float64, hc::Float64) = V.by_bc[1](a, hc)
+@inline (V::ChildTerminalValue)(a::Float64, hc::Float64) = V.by_bc[1](a, log(hc))
 @inline (V::ChildTerminalValue)(a::Float64, hc::Float64, bc::Float64) =
-    V.by_bc[bc_index(V, bc)](a, hc)
-@inline Dierckx.derivative(V::ChildTerminalValue, a::Float64, hc::Float64, nux::Int, nuy::Int) =
-    Dierckx.derivative(V.by_bc[1], a, hc, nux, nuy)
+    V.by_bc[bc_index(V, bc)](a, log(hc))
+# Derivatives in (a, hc) LEVELS, by the chain rule through ln hc. First order in hc only:
+# nothing in the project takes a second hc-derivative of the terminal value.
+@inline function Dierckx.derivative(V::ChildTerminalValue, a::Float64, hc::Float64, nux::Int, nuy::Int)
+    nuy == 0 && return Dierckx.derivative(V.by_bc[1], a, log(hc), nux, 0)
+    nuy == 1 && return Dierckx.derivative(V.by_bc[1], a, log(hc), nux, 1) / hc
+    error("ChildTerminalValue: only first derivatives in hc are implemented (nuy = $nuy)")
+end
 
 """
     terminal_value_spline(m; s = 10.0, ip = 1, bc_grid = PARENT_BC_GRID) -> ChildTerminalValue
@@ -1430,8 +1505,9 @@ function terminal_value_spline(m::ConSavLaborCollege_AR1; s::Float64 = 10.0, ip:
     ia0 = findfirst(ok)
     ia0 === nothing && error("Terminal value is non-finite at every parental asset grid point")
     all(ok[ia0:end]) || error("Terminal value has interior non-finite rows: $(findall(.!ok))")
+    # Fitted in LN k -- see ChildTerminalValue.
     return ChildTerminalValue(
-        [Spline2D(m.ap_grid[ia0:end], m.k_grid, V[ia0:end, :]; s = s) for V in Vs],
+        [Spline2D(m.ap_grid[ia0:end], log.(m.k_grid), V[ia0:end, :]; s = s) for V in Vs],
         copy(bc_grid))
 end
 
