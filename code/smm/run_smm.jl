@@ -698,9 +698,13 @@ function write_run_record(result = nothing, q_final = NaN, q_search = NaN,
             @printf(io, "%-18s = %.10g   # starting value, natural units (%s)\n",
                     "start_" * String(q.name), X0_NAT[q.name], X0_SRC[q.name])
         end
-        println(io, "fixed_note   = \"mu_1 and R_1 are NOT estimated; they hold at PARENT_DEFAULTS\"")
-        println(io, "mu_1         = ", PARENT_DEFAULTS.mu_1)
-        println(io, "R_1          = ", PARENT_DEFAULTS.R_1, "   # HC productivity is flat in child age")
+        # memo 19 (2026-10-02): mu_0/mu_1 and R_0/R_1 no longer exist -- the child's weight is the data's mu_t by age
+        # and the TFP is the estimated logistic d_0..d_3 (in [parameters]); Ali's wording, 2026-10-02
+        println(io, "fixed_note   = \"calibrated, not estimated: mu_t by age and mu_half from the target file; ",
+                "sigma_eta = 0 (DFVW); TFP is the estimated logistic d_0..d_3\"")
+        println(io, "mu_by_age    = [", join(target_mu_by_age(TARGETS), ", "), "]   # the child's weight at ages 6..17 (target file)")
+        println(io, "mu_half      = ", target_mu_half(TARGETS), "   # the child's weight at the half period (target file)")
+        println(io, "sigma_eta    = ", PARENT_DEFAULTS.sigma_eta, "   # the HC shock, fixed: DFVW's technology is deterministic")
         println(io, "spec_version = \"", SPEC_VERSION, "\"")
         println(io, "source_sha   = \"", SOURCE_SHA, "\"")
         println(io, "\n[numerical]")
@@ -1357,7 +1361,7 @@ say("initial point")
 for q in SMM_PARAMS
     sayf("  %-14s %12.6g   (%s)\n", q.name, X0_NAT[q.name], X0_SRC[q.name])
 end
-sayf("  %-14s %12.6g   (FIXED, not estimated)\n", "R_1", PARENT_DEFAULTS.R_1)
+sayf("  %-14s %12.6g   (FIXED, not estimated: DFVW's technology is deterministic)\n", "sigma_eta", PARENT_DEFAULTS.sigma_eta)
 print("timing one objective evaluation ... "); flush(stdout)
 t = time(); q0 = objective(x0); T_EVAL = time() - t
 sayf("%.1fs\n", T_EVAL)
@@ -1950,7 +1954,8 @@ open(joinpath(RUN_DIR, "estimates.toml"), "w") do io
     println(io, "child_grid   = \"", CHILD_G_.Na, "x", CHILD_G_.Nk, "x", CHILD_G_.Nt, "\"")
     println(io, "child_params = [", join(("\"$n\"" for n in SMM_CHILD_PARAMS), ", "), "]")
     println(io, "parent_params = [", join(("\"$n\"" for n in SMM_PARENT_PARAMS), ", "), "]")
-    println(io, "R_1_fixed    = ", PARENT_DEFAULTS.R_1, "   # NOT estimated: HC productivity is flat in child age")
+    println(io, "sigma_eta_fixed = ", PARENT_DEFAULTS.sigma_eta, "   # NOT estimated: DFVW's technology is deterministic")
+    println(io, "mu_half      = ", target_mu_half(TARGETS), "   # the child's weight at the half period (target file)")
     println(io, "grid_extra   = \"", GRID_EXTRA, "\"")
     println(io, "init_from    = \"", INIT_FROM, "\"")
     println(io, "skip_polish  = ", SKIP_POLISH)
