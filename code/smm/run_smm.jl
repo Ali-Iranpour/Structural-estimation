@@ -1291,7 +1291,7 @@ function tick!(q::Float64)
              T.done, T.total, 100frac, T.valid, bstr(T.best), el, eta)
     else
         sayf("  restart %3d/%-3d  eval %5d   this Q %s   best Q %s   %5.1f min\n",
-             T.restart, T.nrestart, T.done, qstr(q), qstr(T.best), (now_ - T.trun) / 60)
+             T.restart, T.nrestart, T.done, pstr(q), pstr(T.best), (now_ - T.trun) / 60)
     end
     return
 end
@@ -1301,6 +1301,8 @@ objective_tracked(z) = (q = objective(z); tick!(q); q)
 
 "Q with four decimals, so a small improvement shows (916.3000 -> 916.2731); huge (penalty) values in e-notation."
 qstr(q) = isfinite(q) && abs(q) < 1e7 ? @sprintf("%12.4f", q) : @sprintf("%12.4e", q)
+"A progress value: Q, or the word for a penalised evaluation (it printed the penalty, 1.0000e+12, as if it were a Q; 2026-10-02)."
+pstr(q) = isfinite(q) && q >= SMM_PENALTY ? "   penalised" : qstr(q)
 
 # ONE LINE PER FINISHED EVALUATION (2026-09-29). on_progress is polled every --every seconds with
 # each running job's latest state; a job is printed only when its evaluation count has moved
@@ -1316,7 +1318,7 @@ function print_local_progress(evs)
         SHOWN_EVALS[key] = ev.n_eval
         who = ev.stage === :polish ? "polish         " : @sprintf("restart %3d/%-3d", ev.j, TRACKER.nrestart)
         sayf("  %s  eval %5d   this Q %s   best in this search %s   incumbent %s   %5.1f min   [%d running]\n",
-             who, ev.n_eval, qstr(ev.f_last), qstr(ev.f_best), qstr(TRACKER.best),
+             who, ev.n_eval, pstr(ev.f_last), pstr(ev.f_best), pstr(TRACKER.best),
              (time() - TRACKER.trun) / 60, length(evs))
     end
 end
@@ -1382,9 +1384,16 @@ for q in SMM_PARAMS
     sayf("  %-14s %12.6g   (%s)\n", q.name, X0_NAT[q.name], X0_SRC[q.name])
 end
 sayf("  %-14s %12.6g   (FIXED, not estimated: DFVW's technology is deterministic)\n", "sigma_eta", PARENT_DEFAULTS.sigma_eta)
+# TWO evaluations at the start (2026-10-02): the first includes compilation (29-30 s against about 11.5 s
+# warmed up on the memo-19 model), which made the projection about 2.5x too long; the second is the one the
+# projection uses. The two values must be bit-identical (common random numbers); a difference is reported.
 print("timing one objective evaluation ... "); flush(stdout)
-t = time(); q0 = objective(x0); T_EVAL = time() - t
-sayf("%.1fs\n", T_EVAL)
+t = time(); q0 = objective(x0); T_FIRST = time() - t
+t = time(); q0_again = objective(x0); T_EVAL = time() - t
+sayf("%.1fs (a second evaluation at the same point: %.1fs; the projection uses the second, the first includes compilation)\n",
+     T_FIRST, T_EVAL)
+isequal(q0, q0_again) || say("WARNING: the objective returned two different values at the same point (", repr(q0), " and ",
+                             repr(q0_again), "): the objective is not deterministic, and the search relies on it being so")
 # THE START, AT FULL PRECISION (2026-09-29, finding 18): what a later gate or run compares against.
 say("start Q (full precision) = ", repr(q0), "   [", X0_PRECISION, " start, sha ", X0_SHA, "]")
 if EXPECT_START_Q !== nothing
@@ -1422,7 +1431,7 @@ let e = PROJ_EMP, emp(f) = e === nothing ? "--" : fmt_duration(f(e)),
               BOOTSTRAP === :first_alone ? "restart 1 alone, then $NL at a time" : "$NL at a time from the start",
     t_restart = (LOCAL_MAXEVAL + 1) * T_EVAL
     sayf("\nprojected runtime -- scenarios, not a deadline (a driver's timeout is the enforced limit)\n")
-    sayf("  one evaluation took %.1f s (the first, on the master: it includes compilation, so later ones are often faster)\n", T_EVAL)
+    sayf("  one evaluation took %.1f s (the second on the master, after compilation; workers under load can be slower)\n", T_EVAL)
     sayf("  %-13s %11s %11s\n", "stage", "cap", "empirical")
     row("pre-testing", p -> p.pretest, @sprintf("%d evals on %d worker(s)%s", N_SOBOL_EVAL, USE_PMAP ? NW : 1,
                                                  N_VALID_TARGET > 0 ? ", at least (valid-draw target)" : ""))
@@ -1563,11 +1572,11 @@ the module right after each authoritative checkpoint write; reads the state, nev
 """
 function write_derived(st)
     io = IOBuffer()
-    println(io, "restart,theta,f_start,f_local,improved,ret,attempt,n_eval,action,worker,elapsed_s,incumbent_version,commit_seq")
+    println(io, "restart,theta,f_start,f_local,improved,ret,attempt,n_eval,action,worker,elapsed_s,incumbent_version,commit_seq,start_fallback")
     for r in sort(st.records; by = x -> x.j)
         println(io, r.j, ",", r.theta, ",", r.f_start, ",", r.f_local, ",", r.action === :improved, ",", r.ret, ",",
                 r.attempt, ",", r.n_eval, ",", r.action, ",", r.worker, ",", round(r.elapsed, digits = 2), ",",
-                r.incumbent_version, ",", r.commit_seq)
+                r.incumbent_version, ",", r.commit_seq, ",", r.start_fallback)
     end
     atomic_write(RESTARTS_F, String(take!(io)))
     isfile(SEEDS_F) || save_seeds!(st.seeds, st.f_sobol_best)
@@ -1628,6 +1637,8 @@ result = tiktak(objective_tracked, lo, hi; TIKTAK_KW...,
                     end
                     sayf("  sobol    complete: %d values, %d valid (the supplied start included), best Q %s, %.1f min\n",
                          TRACKER.done, TRACKER.valid, strip(qstr(best)), elapsed())
+                    say("  local searches: 'best in this search' is a search's own progress; 'incumbent' is the best",
+                        " point of the FINISHED searches (it moves when a search ends)")
                     stage!(:local)
                 end,
                 on_local = function (j, ns, th, fl, best, best_x, row)
@@ -1638,8 +1649,9 @@ result = tiktak(objective_tracked, lo, hi; TIKTAK_KW...,
                     # The ETA is only meaningful serially: asynchronously restart 1 runs alone.
                     eta = LOCAL_MODE === :async ? "" :
                           @sprintf(", ~%.0f min left", elapsed() / max(j, 1) * (ns - j))
-                    sayf("  restart %3d/%-3d DONE  %-16s start Q %s   end Q %s   incumbent %s   %5.1f min%s\n",
-                         j, ns, row.ret, qstr(row.f_start), qstr(fl), qstr(best), elapsed(), eta)
+                    sayf("  restart %3d/%-3d DONE  %-16s start Q %s   end Q %s   incumbent %s   %5.1f min%s%s\n",
+                         j, ns, row.ret, pstr(row.f_start), pstr(fl), pstr(best), elapsed(), eta,
+                         row.start_fallback ? "   [mixed start penalised: started from its own seed]" : "")
                     TRACKER.restart = min(j + 1, ns)
                     TRACKER.done = 0                 # eval counter restarts with the search
                     TRACKER.best = min(TRACKER.best, best)

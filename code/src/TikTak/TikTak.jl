@@ -25,7 +25,7 @@ export tiktak, tiktak_selftest, ret_class, ret_tally, TikTakResult
 # `search_budget_complete(result)`, `work_known(result)`, `state_violations(state)`: reached as
 # TikTak.name, like the rest of the module (see code/src/tiktak.jl).
 
-const TIKTAK_VERSION = "2.2.0-dev"      # 2.2: bootstrap = :immediate_mixed (2026-09-29); 2.1: checkpoint schema 2
+const TIKTAK_VERSION = "2.3.0-dev"      # 2.3 (v1, 2026-10-02): penalised mixed start -> own seed; a known start value is reused; 2.2: bootstrap = :immediate_mixed (2026-09-29); 2.1: checkpoint schema 2
 const MODULE_DIR = @__DIR__
 
 include("config.jl")

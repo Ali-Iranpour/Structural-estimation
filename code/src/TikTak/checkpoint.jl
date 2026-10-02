@@ -47,12 +47,13 @@ record_dict(r::RestartRecord) = Dict{String,Any}("j" => r.j, "attempt" => r.atte
     "f_local" => r.f_local, "n_eval" => r.n_eval, "ret" => _str(r.ret), "action" => _str(r.action),
     "version_after" => r.version_after, "worker" => r.worker, "elapsed" => r.elapsed,
     "commit_seq" => r.commit_seq, "dispatch_seq" => r.dispatch_seq, "commits_at_dispatch" => r.commits_at_dispatch,
-    "error" => r.error, "legacy" => r.legacy, "epoch" => r.epoch)
+    "error" => r.error, "legacy" => r.legacy, "epoch" => r.epoch, "start_fallback" => r.start_fallback)
 record_from(d) = RestartRecord(Int(d["j"]), Int(d["attempt"]), Float64(d["theta"]), _fvec(d["x0"]),
     Int(d["incumbent_version"]), Float64(d["f_start"]), _fvec(d["x"]), Float64(d["f_local"]), Int(d["n_eval"]),
     Symbol(d["ret"]), Symbol(d["action"]), Int(d["version_after"]), Int(d["worker"]), Float64(d["elapsed"]),
     Int(d["commit_seq"]), Int(d["dispatch_seq"]), Int(d["commits_at_dispatch"]), String(d["error"]), Bool(d["legacy"]),
-    Int(get(d, "epoch", 1)))                        # schema 1: every record ran under the one epoch
+    Int(get(d, "epoch", 1)),                        # schema 1: every record ran under the one epoch
+    Bool(get(d, "start_fallback", false)))          # before 2026-10-02 (v1): no fallback existed
 
 "Solver settings as identity/checkpoint fields, and back."
 solver_fields(s::SolverSettings) = Dict{String,Any}("alg" => String(s.alg), "ftol_rel" => s.ftol_rel,
@@ -76,14 +77,30 @@ epoch_from_optimizer(fields, opt_id) = SettingsEpoch(1, solver_from_fields(field
 inflight_dict(fl::InFlight) = Dict{String,Any}("j" => fl.job.j, "attempt" => fl.job.attempt, "stage" => _str(fl.job.stage),
     "theta" => fl.job.theta, "x0" => fl.job.x0, "incumbent_version" => fl.job.incumbent_version,
     "worker" => fl.worker, "dispatched" => fl.dispatched, "dispatch_seq" => fl.dispatch_seq,
-    "commits_at_dispatch" => fl.commits_at_dispatch, "step_scale" => fl.job.step_scale, "epoch" => fl.job.epoch)
-function inflight_from(d, st_run_id::String, cfg::TikTakConfig, epochs::Vector{SettingsEpoch}, lo, hi)
+    "commits_at_dispatch" => fl.commits_at_dispatch, "step_scale" => fl.job.step_scale, "epoch" => fl.job.epoch,
+    # (v1, 2026-10-02) how the job treats its start, so a replay does exactly what the dispatch did; the
+    # fallback seed itself is the state's seeds[j], restored from [seeds]
+    "eval_start" => fl.job.eval_start, "f_start_known" => fl.job.f_start_known,
+    "fallback" => !isempty(fl.job.fallback_x))
+"""
+    inflight_from(d, run_id, cfg, epochs, lo, hi, seeds, seed_f) -> InFlight
+
+A saved in-flight job, rebuilt to replay EXACTLY as dispatched. A job saved before 2026-10-02 (v1)
+has none of the start fields: it evaluates its start and has no fallback, as it did then.
+"""
+function inflight_from(d, st_run_id::String, cfg::TikTakConfig, epochs::Vector{SettingsEpoch}, lo, hi,
+                       seeds::Vector{Vector{Float64}}, seed_f::Vector{Float64})
     ep = Int(get(d, "epoch", 1))
     1 <= ep <= length(epochs) || throw(ResumeRefused("an in-flight job names settings epoch $ep; the checkpoint has $(length(epochs))"))
     e = epochs[ep]
-    job = RestartJob(st_run_id, Symbol(d["stage"]), Int(d["j"]), Int(d["attempt"]), Float64(d["theta"]), _fvec(d["x0"]),
-                     Int(d["incumbent_version"]), true, NaN, e.local_, lo, hi, cfg.on_error, :default, 1, Inf,
-                     Float64(get(d, "step_scale", 1.0)), e.normalize, ep)
+    j = Int(d["j"])
+    fb = Bool(get(d, "fallback", false))
+    fb && !(1 <= j <= length(seeds)) && throw(ResumeRefused("in-flight job $j has a start fallback but the checkpoint has $(length(seeds)) seeds"))
+    job = RestartJob(st_run_id, Symbol(d["stage"]), j, Int(d["attempt"]), Float64(d["theta"]), _fvec(d["x0"]),
+                     Int(d["incumbent_version"]), Bool(get(d, "eval_start", true)), Float64(get(d, "f_start_known", NaN)),
+                     e.local_, lo, hi, cfg.on_error, :default, 1, Inf,
+                     Float64(get(d, "step_scale", 1.0)), e.normalize, ep,
+                     fb ? copy(seeds[j]) : Float64[], fb ? seed_f[j] : NaN, cfg.invalid_value)
     return InFlight(job, Int(d["worker"]), Float64(d["dispatched"]), Int(d["dispatch_seq"]), Int(d["commits_at_dispatch"]))
 end
 
@@ -181,7 +198,7 @@ function state_from_dict(d::AbstractDict, cfg::TikTakConfig)
                            [epoch_from_optimizer(d["optimizer"]["fields"], d["optimizer"]["id"])]
     inflight = Dict{Int,InFlight}()
     for x in get(d, "inflight", Any[])
-        fl = inflight_from(x, run_id, cfg, epochs, lo, hi); inflight[fl.job.j] = fl
+        fl = inflight_from(x, run_id, cfg, epochs, lo, hi, _fvecs(sd["x"]), _fvec(sd["f"])); inflight[fl.job.j] = fl
     end
     records = RestartRecord[record_from(r) for r in d["records"]]
     accounted = Dict{AttemptKey,Symbol}()

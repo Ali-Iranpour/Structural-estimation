@@ -170,6 +170,9 @@ document (model, parameters, moments, search, validation, plan, caveats); `docs/
   change of box, restart count or design; there is no `--legacy-import` (runs from before
   2026-10-02 warm-start a new run with `--init-from`). Any edit of `code/src/TikTak/*.jl` changes
   the optimizer identity: an in-progress run then resumes only with `--allow-optimizer-change`.
+  **v1's module is v2's plus two rules (2026-10-02, version 2.3.0-dev, `docs/SMM.md` §4.1)**: a
+  penalised mixed start falls back to the restart's own seed, and a known start value is not
+  recomputed. Ali: port them to v2 in a separate, approved step -- until then the two differ.
   **The runtime projection printed at the start times the FIRST evaluation, which includes
   compilation** (29-30 s against about 11.5 s warmed up, 2026-10-02): it overstates a run about 2.5x.
 - **`SMM_TEST_FIXTURES=1`** runs the objective on labelled stand-ins (composition, wage loading)

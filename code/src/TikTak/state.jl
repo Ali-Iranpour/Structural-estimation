@@ -105,9 +105,18 @@ function restart_job(st::RunState, j::Int, attempt::Int, x0buf::Vector{Float64};
     make_start!(x0buf, st.seeds[j], st.inc.x, theta, st.lo, st.hi)
     s = st.cfg.local_
     scale = s.step_schedule === :theta_shrink ? max(s.step_min, 1 - theta) : 1.0
-    return RestartJob(st.run_id, :local, j, attempt, theta, copy(x0buf), st.inc.version, true, NaN,
+    # (v1, 2026-10-02, Ali) A start that IS the seed (restart 1, theta = 0) has a known value: it is
+    # not evaluated again. A MIXED start can be penalised although both its ends are valid (the valid
+    # set need not be convex: 3.8% valid on the memo-19 box); it then falls back to the seed.
+    # Both need the seed's pre-tested value to be a valid one (seeds are selected valid; an imported
+    # seed without a value is evaluated as before and gets no fallback).
+    seed_ok = valid_value(st.seed_f[j], st.cfg.invalid_value)
+    unmixed = seed_ok && x0buf == st.seeds[j]
+    fb_x, fb_f = (seed_ok && !unmixed) ? (copy(st.seeds[j]), st.seed_f[j]) : (Float64[], NaN)
+    return RestartJob(st.run_id, :local, j, attempt, theta, copy(x0buf), st.inc.version, !unmixed,
+                      unmixed ? st.seed_f[j] : NaN,
                       s, st.lo, st.hi, st.cfg.on_error, objective_key, master, progress_every,
-                      scale, st.cfg.normalize, current_epoch(st))
+                      scale, st.cfg.normalize, current_epoch(st), fb_x, fb_f, st.cfg.invalid_value)
 end
 
 """
@@ -124,7 +133,7 @@ next_attempt(st::RunState, stage::Symbol, j::Int) =
 polish_job(st::RunState; objective_key::Symbol = :default, master::Int = 1, progress_every::Float64 = Inf) =
     RestartJob(st.run_id, :polish, 0, next_attempt(st, :polish, 0), 1.0, copy(st.inc.x), st.inc.version, false,
                st.inc.f, st.cfg.polish, st.lo, st.hi, st.cfg.on_error, objective_key, master, progress_every,
-               1.0, st.cfg.normalize, current_epoch(st))
+               1.0, st.cfg.normalize, current_epoch(st), Float64[], NaN, st.cfg.invalid_value)
 
 """
     redispatch(job, master, objective_key, progress_every) -> RestartJob
@@ -136,7 +145,8 @@ incumbent or under newer settings.
 redispatch(job::RestartJob, master::Int, objective_key::Symbol, progress_every::Float64) =
     RestartJob(job.run_id, job.stage, job.j, job.attempt + 1, job.theta, copy(job.x0), job.incumbent_version,
                job.eval_start, job.f_start_known, job.settings, job.lo, job.hi, job.on_error,
-               objective_key, master, progress_every, job.step_scale, job.normalize, job.epoch)
+               objective_key, master, progress_every, job.step_scale, job.normalize, job.epoch,
+               copy(job.fallback_x), job.fallback_f, job.invalid_value)
 
 "The accounting key of a job's attempt."
 attempt_key(job::RestartJob) = AttemptKey(job.run_id, job.stage, job.j, job.attempt)
@@ -179,7 +189,8 @@ function commit_restart!(st::RunState, job::RestartJob, r::RestartResult; dispat
     st.commit_seq += 1
     rec = RestartRecord(job.j, job.attempt, job.theta, job.x0, job.incumbent_version, r.f_start,
                         copy(r.x), r.f, r.n_eval, r.ret, action, st.inc.version, r.worker, r.elapsed,
-                        st.commit_seq, dispatch_seq, commits_at_dispatch, r.error, false, job.epoch)
+                        st.commit_seq, dispatch_seq, commits_at_dispatch, r.error, false, job.epoch,
+                        r.start_fallback)
     push!(st.records, rec)
     return rec
 end
@@ -241,6 +252,9 @@ end
 "The per-restart trace row the result has always carried, from a committed record."
 trace_row(rec::RestartRecord) = (j = rec.j, theta = rec.theta, f_start = rec.f_start, f_local = rec.f_local,
                                  improved = rec.action === :improved, ret = rec.ret)
+"The row handed to the `on_local` callback: the trace row plus whether the start fell back to its seed
+(v1, 2026-10-02). The result's `trace` keeps the trace row's fixed type."
+callback_row(rec::RestartRecord) = merge(trace_row(rec), (start_fallback = rec.start_fallback,))
 
 "Planned restarts that are committed (a committed restart is never re-run)."
 n_committed(st::RunState) = length(st.records)

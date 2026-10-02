@@ -237,7 +237,7 @@ function local_stage_async!(st::RunState, cfg::TikTakConfig, ex::AsyncExec, save
                                   commits_at_dispatch = fl.commits_at_dispatch)
             free!(c.worker, c.j, c.attempt)
             save!(st)
-            master_error[] === nothing && on_local(rec.j, st.K, rec.theta, rec.f_local, st.inc.f, st.inc.x, trace_row(rec))
+            master_error[] === nothing && on_local(rec.j, st.K, rec.theta, rec.f_local, st.inc.f, st.inc.x, callback_row(rec))
         elseif c.kind === :worker_lost || c.kind === :busy
             # the worker cannot take jobs: gone, or (:busy) still running a call this scheduler did
             # not submit. Either way it leaves the pool; the job is re-dispatched from its start.

@@ -53,6 +53,17 @@ shifted(x) = sum(abs2, x .- 0.3)
 path_of(r) = (x = r.x, f = r.f, n_eval = r.n_eval, trace = [Tuple(t) for t in r.trace],
               polish = (r.polish_ret, r.polish_improved, r.n_eval_polish), f_sobol_best = r.f_sobol_best,
               f_prepolish = r.f_prepolish)
+"The search path without the evaluation counts (compared bit for bit; the counts are checked exactly apart)."
+path_core(r) = (x = r.x, f = r.f, trace = [Tuple(t) for t in r.trace], polish = (r.polish_ret, r.polish_improved),
+                f_sobol_best = r.f_sobol_best, f_prepolish = r.f_prepolish)
+"""
+Evaluations the v1 2026-10-02 rule "a known start value is not recomputed" saves against the legacy
+code: one per restart (the solver's first call is at its start, evaluated just before), one more for
+restart 1 (its start is its seed, whose pre-tested value is known) and one for the polish (its start is
+the incumbent). Measured on every baseline case before this check was written: exactly this, with the
+path otherwise bit-identical.
+"""
+known_start_saving(r) = length(r.trace) + 1 + (r.polish_ret === :SKIPPED || r.n_eval_polish == 0 ? 0 : 1)
 
 "Is the returned point's convergence established (by its own search or by a later verification)?"
 converged_evidence(r) = isdefined(TikTak, :local_converged) ? TikTak.local_converged(r) :
@@ -80,7 +91,10 @@ group("baseline") do
         a = tiktak(f, fill(-5.12, d), fill(5.12, d); kw...)
         b = LegacyTikTak.tiktak(f, fill(-5.12, d), fill(5.12, d); kw...)
         @testset "legacy equivalence: $name" begin
-            @test path_of(a) == path_of(b)
+            # (2026-10-02) the path bit for bit; the counts lower by exactly the known-start saving
+            @test path_core(a) == path_core(b)
+            @test a.n_eval == b.n_eval - known_start_saving(a)
+            @test a.n_eval_polish == b.n_eval_polish - (a.n_eval_polish == 0 ? 0 : 1)
         end
     end
 
@@ -400,6 +414,8 @@ function resume_fingerprint(r)
             origin = r.incumbent.origin, verification = (r.incumbent.verification.status, r.incumbent.verification.stage),
             polish = (r.polish_ret, r.polish_improved, r.n_eval_polish), status = r.status, K = r.nstar_effective)
 end
+"resume_fingerprint without the total count (for a checkpoint whose restarts ran under older software)."
+resume_fingerprint_core(r) = Base.structdiff(resume_fingerprint(r), NamedTuple{(:n_eval,)})
 
 group("checkpoint") do
     lo3, hi3 = fill(-5.12, 3), fill(5.12, 3)
@@ -1150,7 +1166,12 @@ group("transitions") do
         @test err isa TikTak.ResumeRefused && occursin("tiktak_source_sha", err.msg)   # other software: explicit only
         r = tiktak(tt_rast, lo3, hi3; kwp..., state_path = p, resume = true, allow_optimizer_change = true)
         full = tiktak(tt_rast, lo3, hi3; kwp...)
-        @test resume_fingerprint(r) == resume_fingerprint(full)
+        # (2026-10-02) the same path; the restarts the fixture committed under the 2026-09-27 code keep
+        # their counts, each higher by its known-start saving (restart 1: 2, any other: 1)
+        fx = TOML.parsefile(joinpath(REPO, "tools", "testdata", "tiktak_state_schema1_paused.toml"))
+        old_js = [Int(x["j"]) for x in fx["records"]]
+        @test resume_fingerprint_core(r) == resume_fingerprint_core(full)
+        @test r.n_eval == full.n_eval + sum(j == 1 ? 2 : 1 for j in old_js)
         d = TOML.parsefile(p)
         @test d["schema_version"] == 2 && any(e -> e["kind"] == "schema_migration", d["events"])
     end
@@ -1493,6 +1514,70 @@ end
 
 GC.gc()
 println("\ntest_tiktak.jl: finished (scratch ", SCRATCH, ")")
+# =============================================================================
+# v1, 2026-10-02 (Ali, after the memo-19 pilot): a known start value is not recomputed, and a
+# penalised MIXED start falls back to the restart's own seed (localsearch.jl, run_local).
+# =============================================================================
+group("start_rules") do
+    lo, hi = fill(-5.0, 2), fill(5.0, 2)
+    s = TikTak.SolverSettings(:LN_NELDERMEAD, 1e-6, 1e-12, 1e-10, 60)
+    # two wells separated by a penalised band |x1| < 4: mixing across the band is penalised, and a
+    # Nelder-Mead simplex started inside it sees only the penalty
+    pen = x -> abs(x[1]) < 4 ? 1e12 : min(sum(abs2, x .- [4.5, 0.0]), sum(abs2, x .+ [4.5, 0.0]) + 0.5)
+    # a job that evaluates its start: the start is evaluated ONCE (the solver's first call reuses it)
+    let x0 = [1.3, -0.7], at = Ref(0), calls = Ref(0)
+        f = x -> (calls[] += 1; x == x0 && (at[] += 1); sum(abs2, x .- 0.5))
+        job = TikTak.RestartJob("t", :local, 2, 1, 0.5, copy(x0), 1, true, NaN, s, lo, hi, :rethrow, :default, 1, Inf, 1.0, false, 1)
+        r = TikTak.run_local(f, job)
+        @test at[] == 1 && r.n_eval == calls[] && r.f_start == sum(abs2, x0 .- 0.5) && !r.start_fallback
+    end
+    # a job whose start value is known (restart 1's seed, the polish's incumbent): not evaluated there at all
+    let x0 = [1.3, -0.7], at = Ref(0)
+        f = x -> (x == x0 && (at[] += 1); sum(abs2, x .- 0.5))
+        job = TikTak.RestartJob("t", :local, 1, 1, 0.0, copy(x0), 1, false, sum(abs2, x0 .- 0.5), s, lo, hi,
+                                :rethrow, :default, 1, Inf, 1.0, false, 1)
+        r = TikTak.run_local(f, job)
+        @test at[] == 0 && r.f_start == sum(abs2, x0 .- 0.5)
+    end
+    # a penalised mixed start falls back to its seed (value known); without the fallback -- the
+    # behaviour before -- the restart stalls on the flat penalty and is lost
+    let seed = [-4.5, 1.0], x0 = [0.0, 0.5]
+        job_fb = TikTak.RestartJob("t", :local, 3, 1, 0.5, copy(x0), 1, true, NaN, s, lo, hi, :rethrow, :default, 1, Inf,
+                                   1.0, false, 1, copy(seed), pen(seed), 1e12)
+        r = TikTak.run_local(pen, job_fb)
+        @test r.start_fallback && r.f_start == pen(seed) && r.f < pen(seed)
+        job_old = TikTak.RestartJob("t", :local, 3, 1, 0.5, copy(x0), 1, true, NaN, s, lo, hi, :rethrow, :default, 1, Inf, 1.0, false, 1)
+        r0 = TikTak.run_local(pen, job_old)
+        @test !r0.start_fallback && r0.f >= 1e12
+    end
+    # end to end, serially: a restart falls back EXACTLY when its mixed start (the dispatched x0) is
+    # penalised, and then starts at a valid value; no restart ends penalised. (In two dimensions the
+    # old behaviour sometimes escapes the band by its first simplex, so the stall itself is shown by
+    # the job above, not here.)
+    let kw = (N = 200, Nstar = 8, invalid_value = 1e12, skip_polish = true, local_maxeval = 80)
+        r = tiktak(pen, lo, hi; kw...)
+        @test any(x -> x.start_fallback, r.records)
+        @test all(x -> x.start_fallback == (pen(x.x0) >= 1e12), r.records)
+        @test all(x -> x.f_local < 1e12 && x.f_start < 1e12, r.records)
+    end
+    # checkpoints: a job saved with the rule replays with it; a job saved before it replays as it ran
+    let cfgr = tiktak(x -> sum(abs2, x), lo, hi; N = 4, Nstar = 1, skip_polish = true, local_maxeval = 2).config
+        ep = [TikTak.SettingsEpoch(1, cfgr.local_, cfgr.polish, false, true, "id", 1, "t")]
+        seeds = [[1.0, 1.0], [-3.0, 2.0]]; seed_f = [2.0, 13.0]
+        new = Dict{String,Any}("j" => 2, "attempt" => 1, "stage" => "local", "theta" => 0.4, "x0" => [0.5, 0.5],
+                               "incumbent_version" => 1, "worker" => 2, "dispatched" => 0.0, "dispatch_seq" => 2,
+                               "commits_at_dispatch" => 0, "step_scale" => 1.0, "epoch" => 1,
+                               "eval_start" => true, "f_start_known" => NaN, "fallback" => true)
+        fl = TikTak.inflight_from(new, "t", cfgr, ep, lo, hi, seeds, seed_f)
+        @test fl.job.fallback_x == seeds[2] && fl.job.fallback_f == 13.0 && fl.job.eval_start
+        @test TikTak.inflight_dict(fl)["fallback"] == true
+        old = Dict{String,Any}(k => v for (k, v) in new if !(k in ("eval_start", "f_start_known", "fallback")))
+        fo = TikTak.inflight_from(old, "t", cfgr, ep, lo, hi, seeds, seed_f)
+        @test isempty(fo.job.fallback_x) && fo.job.eval_start && isnan(fo.job.f_start_known)
+        @test TikTak.inflight_dict(fo)["fallback"] == false
+    end
+end
+
 if isempty(FAILED_GROUPS)
     println("ALL GROUPS PASSED")
 else

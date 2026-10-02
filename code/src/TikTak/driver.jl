@@ -503,7 +503,7 @@ function local_stage_serial!(st::RunState, f::F, cfg::TikTakConfig, stop_after::
         delete!(st.inflight, job.j)
         rec = commit_restart!(st, job, r; dispatch_seq = fl2.dispatch_seq, commits_at_dispatch = fl2.commits_at_dispatch)
         save!(st)
-        on_local(rec.j, st.K, rec.theta, rec.f_local, st.inc.f, st.inc.x, trace_row(rec))
+        on_local(rec.j, st.K, rec.theta, rec.f_local, st.inc.f, st.inc.x, callback_row(rec))
     end
     x0buf = Vector{Float64}(undef, length(st.lo))
     while st.next_j <= st.K && !st.stopped_early
@@ -525,7 +525,7 @@ function local_stage_serial!(st::RunState, f::F, cfg::TikTakConfig, stop_after::
         rec = commit_restart!(st, job, r; dispatch_seq = st.dispatch_seq)
         st.next_j = j + 1
         save!(st)
-        on_local(j, st.K, rec.theta, rec.f_local, st.inc.f, st.inc.x, trace_row(rec))
+        on_local(j, st.K, rec.theta, rec.f_local, st.inc.f, st.inc.x, callback_row(rec))
     end
     return st
 end

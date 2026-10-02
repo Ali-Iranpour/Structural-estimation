@@ -313,8 +313,8 @@ $S_j = (1-\theta_j)s_j + \theta_j p^*$ with $\theta_j = \min(\max(0.1, \sqrt{j/N
 the search moves from exploration to exploitation on its own; a final BOBYQA polish follows.
 $Q$ need not be differentiable, and the expensive part parallelises.
 
-The implementation is the TikTak **module** `code/src/TikTak/` (identical to v2's; ported
-2026-10-02; `code/src/tiktak.jl` is the adapter), driven by `code/smm/run_smm.jl`:
+The implementation is the TikTak **module** `code/src/TikTak/` (v2's, ported 2026-10-02, plus the two
+v1 rules below, version 2.3.0-dev; `code/src/tiktak.jl` is the adapter), driven by `code/smm/run_smm.jl`:
 
 - **Pre-testing and restarts run on worker processes** (one Julia thread each: NLopt is not
   thread-safe). Restarts are asynchronous: by default (`--bootstrap immediate_mixed`) every
@@ -337,6 +337,28 @@ refinement on the full grid when the search ran on a coarser one; and the asynch
 parallel restarts above (the reference repository's way to scale; with one local worker it is
 the sequential algorithm).
 
+**Two v1 rules (2026-10-02, Ali; not yet in v2, to be ported in a separate step).** Both came from
+the memo-19 pilot (`output/diagnostics/2026-10-02_pilot/`) and were checked against the authors'
+Fortran (`apps/Structural-estimation-v2/archive/TikTak_serdarozkan_reference`):
+
+- *A penalised mixed start falls back to the restart's own seed.* $S_j$ mixes two valid points,
+  but the valid set is not convex (3.8% of the box is valid), so $S_j$ can be penalised. Nelder–Mead
+  then sees a flat $10^{12}$ around its start and stops after $n+1$ evaluations with `FTOL_REACHED`:
+  a lost restart (4 of 20 in the pilot's arm B). The seed $s_j$ is valid by construction and its
+  value is known, so the restart starts there; `restarts.csv` marks it (`start_fallback`). The
+  authors' code has no such case (its test objectives are defined everywhere).
+- *A known start value is not recomputed.* The module evaluated each restart's start to record
+  "start Q" and then Nelder–Mead evaluated the same point again as its first step (every restart
+  showed evaluations 1 and 2 with the same Q); restart 1 re-evaluated its seed, the polish its
+  incumbent. The solver's first call now returns the known value (the objective is deterministic,
+  so it is the same number), and restart 1 uses its seed's pre-tested value. The authors' code
+  likewise evaluates a start only inside its solver (`completeSearch`, `runAmoeba`). On the
+  synthetic baseline the search path is bit-identical to the 2026-09-27 code and the count lower by
+  exactly one per restart, one more for restart 1 and one for the polish.
+
+Both change the optimizer identity: a run checkpointed before them resumes only with
+`--allow-optimizer-change` (recorded); a job saved in flight before them replays exactly as it ran.
+
 ### 4.2 One evaluation
 
 `run_pipeline` (`moments.jl`): solve the child's lifecycle and the age-18 problems (the stages
@@ -352,9 +374,11 @@ technology) is rejected before solving; a simulation that leaves the model's dom
 non-finite moment, or an expected solver failure returns the finite penalty $10^{12}$, counted
 by reason. A `DomainError` or `InexactError` counts as a model failure only when it comes from
 the model's own solver files; anything else is re-thrown, so a coding error cannot become a
-converged run. **The penalty rate is high on memo 19**: at the `--quick` grids 61 of 64 and 39
-of 40 random draws were penalised. The share at the production grids, and whether the boxes
-need tightening, is open ([§7](#7-before-an-estimate-the-plan)).
+converged run. **The penalty rate is high on memo 19**: at the production grids on the real inputs
+15 of 400 Sobol' points (3.8%) are valid (`output/diagnostics/2026-10-02_valid_share/`): 53% break
+the elasticity rule (rejected before a solve), 39% send no child to college (skill collapses), 3%
+send every child. Ali decided on 2026-10-02 to keep the boxes and draw until enough points are
+valid (`--sobol-valid N`); a solved draw costs about 11 s.
 
 ### 4.3 Test-only stand-ins
 
@@ -370,11 +394,13 @@ one), and `run_record.toml` records it. Results on stand-ins are tests, never es
 
 | check | result |
 |---|---|
-| optimizer, synthetic (`tools/test_tiktak.jl`) | 455/455 |
+| optimizer, synthetic (`tools/test_tiktak.jl`), module 2.3.0-dev (the two v1 rules, §4.1) | 479/479, incl. the new `start_rules` group 11/11 (evening) |
 | runtime projection; reopt identity | 78/78; 38/38 |
 | merged objective = memo-19 branch (memo 19's own values passed back in) | equal to the last digit at two points |
 | runner on memo-19 code (stand-ins): resume, start, geometry, penalties, reopt | 39/39, 48/48, 14/14, 19/19, 20/20 |
-| runner integration (stand-ins) | rerunning after its fixture was enlarged (2026-10-02) |
+| runner integration (stand-ins, module 2.2.0) | 30/30 (17:47) |
+| runner tests on the REAL inputs (module 2.2.0; `temp/2026-10-02_merge_checks/real_inputs_suite/`) | resume, reopt integration, synthetic, projection, reopt identity pass; penalties 18/19, start 13/30, geometry 3/13, integration 25/27 fail from ONE cause: they start from the default point with 5-9 plain draws, all invalid on the real inputs -- to be given a valid start (§7) |
+| module 2.3.0-dev on the real objective | resume 39/39; a serial smoke shows the fallback and no repeated start evaluation; the integration test waits until the pilot ends |
 | parent calibration on the built model | 25.5% at zero assets; Rouwenhorst SD 0.36835, autocorrelation 0.97880 |
 | `selftest.jl`, `test_smm_tas.jl`, `test_smm_own_study.jl`, `test_smm_baseline.jl`, `test_hc_process_shock.jl` (check 7), `jacobian.jl`, `profile_param.jl`, `sensitivity.jl`, `grid_sensitivity.jl`, `check_jacobian_rank.jl` | **not yet rewritten for memo 19** (they pin the old specification or miss the wage loading) |
 

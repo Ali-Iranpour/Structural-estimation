@@ -151,8 +151,13 @@ and IDs only -- never the objective, targets or a solved model (plan J2).
   stage              :local (a restart) or :polish
   j, attempt         restart index and dispatch number (a replayed or retried job keeps j)
   incumbent_version  the version of the incumbent mixed into x0
-  eval_start         evaluate f(x0) before the solver (restarts: yes, as always; polish: no)
+  eval_start         evaluate f(x0) before the solver (a mixed restart: yes; restart 1, whose start is
+                     its seed with a known value, and the polish: no -- `f_start_known` is used)
   epoch              the settings epoch `settings` belong to (a replay keeps its epoch)
+  fallback_x/_f      (v1, 2026-10-02) the restart's own seed and its pre-tested value: if the MIXED start
+                     x0 turns out penalised (>= `invalid_value`), the search starts from the seed instead
+                     (valid by construction). Empty: no fallback (the polish, restart 1, a replay of a
+                     job dispatched before the rule existed).
 """
 struct RestartJob
     run_id::String
@@ -174,7 +179,15 @@ struct RestartJob
     step_scale::Float64          # multiplies settings.initial_step (the :theta_shrink schedule); 1 otherwise
     normalize::Bool              # solve in box-normalized coordinates
     epoch::Int                   # the settings epoch of `settings` and `normalize`
+    fallback_x::Vector{Float64}  # the restart's own seed (empty: no fallback)
+    fallback_f::Float64          # its pre-tested value
+    invalid_value::Float64       # a start value at or above this is penalised (Inf: no penalty convention)
 end
+"A job without the start fallback (the pre-2026-10-02 field list): the polish, tests, tools."
+RestartJob(run_id, stage, j, attempt, theta, x0, incumbent_version, eval_start, f_start_known, settings, lo, hi,
+           on_error, objective_key, master, progress_every, step_scale, normalize, epoch) =
+    RestartJob(run_id, stage, j, attempt, theta, x0, incumbent_version, eval_start, f_start_known, settings, lo, hi,
+               on_error, objective_key, master, progress_every, step_scale, normalize, epoch, Float64[], NaN, Inf)
 
 """
     RestartResult
@@ -192,12 +205,17 @@ struct RestartResult
     f_start::Float64
     x::Vector{Float64}
     f::Float64
-    n_eval::Int                  # evaluations, including the separate start evaluation
+    n_eval::Int                  # objective evaluations, including the separate start evaluation (a value
+                                 # already known -- a seed's, or the start's at the solver's first call -- is
+                                 # reused, not counted)
     ret::Symbol
     error::String
     worker::Int
     elapsed::Float64             # seconds
+    start_fallback::Bool         # the mixed start was penalised and the search started from its own seed
 end
+RestartResult(run_id, stage, j, attempt, f_start, x, f, n_eval, ret, error, worker, elapsed) =
+    RestartResult(run_id, stage, j, attempt, f_start, x, f, n_eval, ret, error, worker, elapsed, false)
 
 """
     RestartRecord
@@ -210,6 +228,8 @@ restarts.csv has empty `x0`/`x` (they were never saved) and `legacy = true`.
   action   :improved (replaced the incumbent), :verified (verified it), :none
   incumbent_version   the version mixed into x0 (asynchronous jobs may see different ones)
   epoch    the settings epoch the restart ran under (its solver settings)
+  start_fallback      x0 (the mixed start, as dispatched) was penalised, so the search started from
+                      the restart's own seed (`seeds[j]`); `f_start` is then the seed's value
 """
 struct RestartRecord
     j::Int
@@ -233,7 +253,12 @@ struct RestartRecord
     error::String
     legacy::Bool
     epoch::Int
+    start_fallback::Bool
 end
+RestartRecord(j, attempt, theta, x0, incumbent_version, f_start, x, f_local, n_eval, ret, action, version_after,
+              worker, elapsed, commit_seq, dispatch_seq, commits_at_dispatch, error, legacy, epoch) =
+    RestartRecord(j, attempt, theta, x0, incumbent_version, f_start, x, f_local, n_eval, ret, action, version_after,
+                  worker, elapsed, commit_seq, dispatch_seq, commits_at_dispatch, error, legacy, epoch, false)
 
 """
     InFlight

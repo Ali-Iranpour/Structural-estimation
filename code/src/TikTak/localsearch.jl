@@ -81,8 +81,22 @@ from_unit(u::Vector{Float64}, lo::Vector{Float64}, hi::Vector{Float64}) = clamp.
     run_local(f, job, progress = NoProgress()) -> RestartResult
 
 One bounded local solve, with an `Opt` THAT BELONGS TO IT (built here, on whichever process
-runs the job; never shared). For a restart the start is evaluated first, as the local stage
-always did, and then the solver runs from it; the evaluation count includes that start.
+runs the job; never shared). For a mixed restart the start is evaluated first, as the local
+stage always did, and then the solver runs from it; the evaluation count includes that start.
+
+Two rules added in v1 on 2026-10-02 (Ali), after the memo-19 pilot:
+  * A KNOWN START VALUE IS NOT RECOMPUTED. Nelder-Mead and BOBYQA evaluate the start point
+    first; that call returns the value already in hand (the start evaluation above, a seed's
+    pre-tested value, the polish's incumbent) instead of solving the model again. The objective
+    is deterministic (common random numbers), so the value is the same; the authors' Fortran
+    likewise evaluates a start only inside its solver (`completeSearch`, `runAmoeba`). Every
+    restart used to show evaluations 1 and 2 with the same Q. Only a bitwise-equal point is
+    reused, so a normalized round trip that moves the last bit is simply evaluated.
+  * A PENALISED MIXED START FALLS BACK TO THE RESTART'S OWN SEED. Mixing two valid points can
+    give a penalised one where the valid set is not convex; Nelder-Mead then sees a flat
+    penalty around its start and stops after n+1 evaluations with FTOL_REACHED, a lost restart
+    (the pilot: 4 of 20 in one arm). The authors' code has no such case (their test objectives
+    are defined everywhere). The seed is valid by construction and its value known.
 
 `f` is a type parameter, so the kernel is compiled for the actual objective (plan J1). An
 exception is re-thrown under `on_error = :rethrow`; under `:discard` it is returned as
@@ -102,6 +116,7 @@ function run_local(f::F, job::RestartJob, progress::P = NoProgress()) where {F,P
         return v
     end
     fstart = job.f_start_known
+    fell_back = false
     if job.eval_start
         # The start evaluation is guarded too. It was not before 2026-08, so one throw here
         # killed the whole run at whichever restart hit it.
@@ -112,6 +127,22 @@ function run_local(f::F, job::RestartJob, progress::P = NoProgress()) where {F,P
             return RestartResult(job.run_id, job.stage, job.j, job.attempt, Inf, x0, Inf, nev[],
                                  :SEED_EXCEPTION, sprint(showerror, e), Distributed.myid(), time() - t0)
         end
+        if !isempty(job.fallback_x) && !valid_value(fstart, job.invalid_value)
+            x0 = copy(job.fallback_x)        # the restart's own seed: valid, value known
+            fstart = job.fallback_f
+            fell_back = true
+        end
+    end
+    valid_value(fstart, job.invalid_value) && fstart < best[] && (best[] = fstart)   # a known start counts as seen
+    # The solver's FIRST call is at the start point: answer it with the known value (see above).
+    xs, fs = x0, fstart                      # assigned once, so the closure captures them unboxed
+    first_call = Ref(isfinite(fs))
+    solver_f = function (x)
+        if first_call[]
+            first_call[] = false
+            x == xs && return fs
+        end
+        return call(x)
     end
     n = length(x0)
     opt = NLopt.Opt(s.alg, n)
@@ -133,21 +164,21 @@ function run_local(f::F, job::RestartJob, progress::P = NoProgress()) where {F,P
     end
     xbuf = similar(x0)                              # job-local scratch for the normalized map
     if job.normalize
-        NLopt.min_objective!(opt, (u, g) -> (@. xbuf = clamp(job.lo + u * w, job.lo, job.hi); call(xbuf)))
+        NLopt.min_objective!(opt, (u, g) -> (@. xbuf = clamp(job.lo + u * w, job.lo, job.hi); solver_f(xbuf)))
     else
-        NLopt.min_objective!(opt, (x, g) -> call(x))
+        NLopt.min_objective!(opt, (x, g) -> solver_f(x))
     end
     try
         start = job.normalize ? to_unit(x0, job.lo, job.hi) : x0
         (floc, zloc, ret) = NLopt.optimize(opt, start)
         xloc = job.normalize ? from_unit(zloc, job.lo, job.hi) : zloc
         return RestartResult(job.run_id, job.stage, job.j, job.attempt, fstart, xloc, Float64(floc),
-                             nev[], ret, "", Distributed.myid(), time() - t0)
+                             nev[], ret, "", Distributed.myid(), time() - t0, fell_back)
     catch e
         job.on_error === :rethrow && rethrow()
         # Information, not a fatal error -- but not invisible either.
         return RestartResult(job.run_id, job.stage, job.j, job.attempt, fstart, x0, fstart, nev[],
-                             :EXCEPTION, sprint(showerror, e), Distributed.myid(), time() - t0)
+                             :EXCEPTION, sprint(showerror, e), Distributed.myid(), time() - t0, fell_back)
     end
 end
 
