@@ -1,0 +1,139 @@
+
+  ___  ____  ____  ____  ____ ®
+ /__    /   ____/   /   ____/      Stata 19.0
+___/   /   /___/   /   /___/       MP—Parallel Edition
+
+ Statistics and Data Science       Copyright 1985-2025 StataCorp LLC
+                                   StataCorp
+                                   4905 Lakeway Drive
+                                   College Station, Texas 77845 USA
+                                   800-782-8272        https://www.stata.com
+                                   979-696-4600        service@stata.com
+
+Stata license: 6-user 8-core network perpetual
+Serial number: 501906324822
+  Licensed to: Miklos Koren
+               Central European University
+
+Notes:
+      1. Stata is running in batch mode.
+      2. Unicode is supported; see help unicode_advice.
+      3. More than 2 billion observations are allowed; see help obs_advice.
+      4. Maximum number of variables is set to 5,000 but can be increased;
+          see help set_maxvar.
+
+. do prec.do 
+
+. use "/tmp/claude-1105/-srv-project-speech/7f6dc90a-1729-4526-8754-9e9c68d446d
+> b/scratchpad/tmp.fxR2Z5jrVa/cds17_wages.dta", clear
+
+. keep if has_wage & agew >= 22 & !missing(ba)
+(1,189 observations deleted)
+
+. * trim implausible hourly wages (below $2 or above $400, as Daruich's NLSY ru
+> le) for this scoping only
+. gen double w = exp(lnwage)
+
+. keep if inrange(w, 2, 400)
+(87 observations deleted)
+
+. regress lnwage i.agew i.Year
+
+      Source |       SS           df       MS      Number of obs   =       135
+-------------+----------------------------------   F(13, 121)      =      2.86
+       Model |  14.2576606        13  1.09674312   Prob > F        =    0.0013
+    Residual |  46.3647165       121  .383179475   R-squared       =    0.2352
+-------------+----------------------------------   Adj R-squared   =    0.1530
+       Total |  60.6223771       134  .452405799   Root MSE        =    .61901
+
+------------------------------------------------------------------------------
+      lnwage | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+        agew |
+         23  |   .2529006   .5650807     0.45   0.655    -.8658257    1.371627
+         24  |    .518483   .7665128     0.68   0.500    -.9990313    2.035997
+         25  |   .5648728   .8096954     0.70   0.487    -1.038133    2.167878
+         26  |     .62566   .8617724     0.73   0.469    -1.080446    2.331766
+         27  |   .4937149   .8740757     0.56   0.573    -1.236749    2.224178
+             |
+        Year |
+       2009  |   .2971818   .6563434     0.45   0.652    -1.002223    1.596587
+       2011  |   .0804739   .8740572     0.09   0.927    -1.649953    1.810901
+       2013  |  -.2729034   .4758406    -0.57   0.567    -1.214955    .6691485
+       2015  |   .0380253   .8187025     0.05   0.963    -1.582812    1.658863
+       2017  |   .3139761   .8854972     0.35   0.724    -1.439099    2.067051
+       2019  |   .5088535    .314162     1.62   0.108     -.113113     1.13082
+       2021  |   .0118979   .7387425     0.02   0.987    -1.450638    1.474434
+       2023  |   .5595584   .8783001     0.64   0.525    -1.179268    2.298385
+             |
+       _cons |    1.97892     .18664    10.60   0.000     1.609416    2.348423
+------------------------------------------------------------------------------
+
+. predict double r, resid
+
+. collapse (mean) r (first) lw_raw ba (count) nw = r, by(Fam_id Per_id)
+
+. quietly summarize lw_raw
+
+. gen double z = (lw_raw - r(mean)) / r(sd)
+
+. di "=== per child: mean age/year-purged ln wage at 22+, on the LW score at 17
+>  (standardised), by BA"
+=== per child: mean age/year-purged ln wage at 22+, on the LW score at 17 (stan
+> dardised), by BA
+
+. tab ba
+
+ (first) ba |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |         48       47.52       47.52
+          1 |         53       52.48      100.00
+------------+-----------------------------------
+      Total |        101      100.00
+
+. regress r z if ba == 0, robust
+
+Linear regression                               Number of obs     =         48
+                                                F(1, 46)          =       0.05
+                                                Prob > F          =     0.8284
+                                                R-squared         =     0.0008
+                                                Root MSE          =     .56058
+
+------------------------------------------------------------------------------
+             |               Robust
+           r | Coefficient  std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+           z |   .0145725   .0668546     0.22   0.828    -.1199989    .1491438
+       _cons |  -.1885205   .0836628    -2.25   0.029    -.3569249   -.0201161
+------------------------------------------------------------------------------
+
+. regress r z if ba == 1, robust
+
+Linear regression                               Number of obs     =         53
+                                                F(1, 51)          =       6.20
+                                                Prob > F          =     0.0161
+                                                R-squared         =     0.0883
+                                                Root MSE          =     .49458
+
+------------------------------------------------------------------------------
+             |               Robust
+           r | Coefficient  std. err.      t    P>|t|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+           z |   .1948696   .0782544     2.49   0.016     .0377672    .3519719
+       _cons |   .0355215   .0675589     0.53   0.601    -.1001086    .1711516
+------------------------------------------------------------------------------
+
+. summarize r if ba == 0
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+           r |         48   -.1934448    .5548237  -2.225868   .6462712
+
+. summarize r if ba == 1
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+           r |         53    .0951593    .5129791  -1.179182   1.057635
+
+. 
+end of do-file
