@@ -62,7 +62,7 @@ end
 ev(v; kw...) = evaluate_at(v, T; Na = G.Na, Nk = G.Nk, Nhc = G.Nhc, simN = N,
                            seed = 1234, child_grid = CG, kw...)
 
-@testset "SMM 16-parameter TAS specification" begin
+@testset "SMM TAS specification (15 parameters / 16 moments since 2026-09-27)" begin
 
 # ---- 1. target reproduction ------------------------------------------------
 # The published moment file is the reference. The generator rebuilds these from the
@@ -79,8 +79,10 @@ ev(v; kw...) = evaluate_at(v, T; Na = G.Na, Nk = G.Nk, Nhc = G.Nhc, simN = N,
               "kth_ga17_t1_c", "kth_ga17_t2_c", "kth_ga17_t3_c")
         @test isapprox(T[k].mean, pub[k]; atol = 1e-9)
     end
-    @test collect(SMM_TAS_MOMENTS) == ["k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c",
-                                       "kterm_x_strict_w99", "kse_w_gap", "sd_ga17"]
+    # kse_w_gap left the targeted set 2026-09-27 (wrong moment: ~11-year timing gap); its
+    # data row is still checked above, untargeted.
+    # kterm_x_strict_w99 left it the same day (level target now the parent-block mean_a_p_late).
+    @test collect(SMM_TAS_MOMENTS) == ["k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c", "sd_ga17"]
     # Wealth is winsorised and converted, so it is NOT the published raw number. Check the
     # conversion instead: it must be below the raw mean and in model units.
     raw = pub["kterm_x_strict"] / 10_000
@@ -370,9 +372,12 @@ end
 
 # ---- 14. the two 2026-09-11 parameters -------------------------------------
 @testset "14 sigma_eps and sigma_eta reach the model; R_1 is fixed" begin
-    @test length(SMM_PARAMS) == 16
-    @test length(SMM_PARENT_PARAMS) == 11 && length(SMM_CHILD_PARAMS) == 5
-    @test :sigma_eta in SMM_PARENT_PARAMS && :sigma_eps in SMM_CHILD_PARAMS
+    # 2026-09-27: sigma_eps FIXED at 2.0 (kse_w_gap dropped); it still reaches the model
+    # through CHILD_ESTIMATED (the evaluations below pass it by name).
+    @test length(SMM_PARAMS) == 15
+    @test length(SMM_PARENT_PARAMS) == 11 && length(SMM_CHILD_PARAMS) == 4
+    @test :sigma_eta in SMM_PARENT_PARAMS && !(:sigma_eps in SMM_CHILD_PARAMS) &&
+          :sigma_eps in CHILD_ESTIMATED && CHILD_DEFAULTS.sigma_eps == 2.0
     @test !any(q -> q.name === :R_1, SMM_PARAMS) && PARENT_DEFAULTS.R_1 == 0.0
     # The block default IS the search start since 2026-09-12 (the fitted 0.0315).
     @test smm_start(:sigma_eta) == param_default(:sigma_eta) == PARENT_DEFAULTS.sigma_eta > 0.0

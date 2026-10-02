@@ -155,7 +155,7 @@ check_psychic_centring(target_m_psychic(BASE_TARGETS))
 # The objective at a PERTURBED target vector, with everything else frozen.
 @everywhere function sens_objective(z, shifted::Dict{String,Float64}; Na, Nhc, simN, seed)
     kw = unpack(z)
-    smm_feasible(kw) || return (_penalize!(:infeasible_sigma_2); SMM_PENALTY)
+    smm_feasible(kw) || return (_penalize!(Symbol("infeasible_", smm_infeasible_which(kw))); SMM_PENALTY)
     try
         # The SHARED pipeline -- the same one smm_objective uses. The child block is
         # rebuilt per draw, so a perturbed target that moves a kappa moves the child
@@ -177,8 +177,9 @@ check_psychic_centring(target_m_psychic(BASE_TARGETS))
         return q
     catch err
         cause = _root_cause(err)
-        if is_model_failure(cause)
-            return (_penalize!(nameof(typeof(cause))); SMM_PENALTY)
+        site  = failure_site(err, catch_backtrace())      # 2026-09-27: origin-based rule, as smm_objective
+        if is_model_failure(cause, site)
+            return (_penalize!(Symbol(nameof(typeof(cause)), "@", site)); SMM_PENALTY)
         end
         rethrow()
     end

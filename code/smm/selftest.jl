@@ -105,9 +105,19 @@ check("solver convergence refusal is a model failure",
       is_model_failure(ErrorException(
           "Period 5: only 80.0% of 100 grid points converged (floor 95.0%). " *
           "maxeval=3, other=0 Dict(). Refusing to return a solution built on failed optimizations.")))
-check("DomainError is a model failure",    is_model_failure(DomainError(-1.0, "log")))
-check("AssertionError is a model failure", is_model_failure(AssertionError("t_p > 0")))
-check("InexactError is a model failure",   is_model_failure(InexactError(:Int, Int, NaN)))
+check("DomainError from the solver's own code is a model failure (v2 2026-09-20 follow-up B; ported 2026-09-27)",
+      is_model_failure(DomainError(-1.0, "log"), "parent_family.jl:util_parent:805") &&
+      is_model_failure(DomainError(-1.0, "log"), "child_lifecycle.jl:util_work:738"))
+check("DomainError from anywhere else, or of unknown origin, is NOT a model failure",
+      !is_model_failure(DomainError(-1.0, "log")) && !is_model_failure(DomainError(-1.0, "log"), "moments.jl:tas_moments:800") &&
+      !is_model_failure(DomainError(-1.0, "log"), "unknown"))
+check("the SLSQP-callback assertion (box bounds violated) is a model failure",
+      is_model_failure(AssertionError("HC_technology_full: box bounds violated (t_p=NaN, e_p=NaN)")))
+check("any OTHER AssertionError is a programming error (2026-09-20 audit)",
+      !is_model_failure(AssertionError("t_p > 0")) && !is_model_failure(AssertionError("simT exceeds T")))
+check("InexactError follows the same origin rule",
+      is_model_failure(InexactError(:Int, Int, NaN), "parent_family.jl:solve_model!:1500") &&
+      !is_model_failure(InexactError(:Int, Int, NaN)))
 
 check("MethodError is NOT a model failure",    !is_model_failure(MethodError(+, (1, "a"))))
 check("UndefVarError is NOT a model failure",  !is_model_failure(UndefVarError(:typo)))
@@ -117,7 +127,11 @@ check("a bare error(\"typo\") is NOT a model failure",
 check("a DIFFERENT error() message is NOT a model failure",
       !is_model_failure(ErrorException("something else went wrong")))
 check("wrapped causes are unwrapped",
-      is_model_failure(_root_cause(CapturedException(AssertionError("x"), backtrace()))))
+      is_model_failure(_root_cause(CapturedException(AssertionError("util_total: box bounds violated (c=NaN, i_c=NaN)"), backtrace()))))
+check("the sigma restriction is named by the share that fails",
+      smm_infeasible_which((sigma_1_0 = 0.5, sigma_1_1 = 0.0)) === :sigma_1 &&
+      smm_infeasible_which((sigma_2_0 = 0.5, sigma_2_1 = 0.0)) === :sigma_2 &&
+      smm_infeasible_which((sigma_1_0 = -0.6, sigma_1_1 = -0.1, sigma_2_0 = -3.5, sigma_2_1 = -0.1)) === :none)
 
 # tiktak must STOP on a coding error rather than discarding the restart
 let thrown = Ref(false)
@@ -235,24 +249,34 @@ banner("Specification is frozen as instructed")
 # closing banner is "do not run the estimation", which would have been the standing advice.
 # 2026-09-11: sixteen parameters (the two shock scales added), seventeen moments (the
 # three ability tertiles replaced by the mean gap; the wealth gap and the age-17 SD added).
-check("sixteen estimated parameters", length(SMM_PARAMS) == 16, "$(length(SMM_PARAMS))")
-check("seventeen targeted moments", length(SMM_MOMENTS) == 17, "$(length(SMM_MOMENTS))")
-check("eleven parent + five child parameters",
-      length(SMM_PARENT_PARAMS) == 11 && length(SMM_CHILD_PARAMS) == 5,
+# 2026-09-27: fifteen parameters and sixteen moments -- kse_w_gap dropped as a wrong moment
+# (~11-year timing gap) and sigma_eps, which it identified, fixed at 2.0.
+check("fifteen estimated parameters", length(SMM_PARAMS) == 15, "$(length(SMM_PARAMS))")
+check("sixteen targeted moments", length(SMM_MOMENTS) == 16, "$(length(SMM_MOMENTS))")
+check("eleven parent + four child parameters",
+      length(SMM_PARENT_PARAMS) == 11 && length(SMM_CHILD_PARAMS) == 4,
       "$(length(SMM_PARENT_PARAMS)) + $(length(SMM_CHILD_PARAMS))")
-check("ten parent + seven TAS moments",
-      length(SMM_PARENT_MOMENTS) == 10 && length(SMM_TAS_MOMENTS) == 7,
+check("eleven parent + five TAS moments (mean_a_p_late in, kterm_x_strict_w99 out)",
+      length(SMM_PARENT_MOMENTS) == 11 && length(SMM_TAS_MOMENTS) == 5 &&
+      SMM_PARENT_MOMENTS[end] == "mean_a_p_late",
       "$(length(SMM_PARENT_MOMENTS)) + $(length(SMM_TAS_MOMENTS))")
-check("the five child parameters are the kappas and sigma_eps",
-      Set(SMM_CHILD_PARAMS) == Set((:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal, :sigma_eps)))
+check("the four child parameters are the kappas",
+      Set(SMM_CHILD_PARAMS) == Set((:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal)))
 check("sigma_eta is a parent parameter, box [0, 0.08] level, starts at the fitted baseline",
       (q = SMM_PARAMS[findfirst(x -> x.name === :sigma_eta, SMM_PARAMS)];
        q.owner === :parent && q.lo == 0.0 && q.hi == 0.08 && q.link === :level &&
        smm_start(:sigma_eta) == PARENT_DEFAULTS.sigma_eta && 0 < PARENT_DEFAULTS.sigma_eta < 0.08))
-check("sigma_eps is a child parameter, box [0.1, 2.0] log, starts at the fitted baseline",
-      (q = SMM_PARAMS[findfirst(x -> x.name === :sigma_eps, SMM_PARAMS)];
-       q.owner === :child && q.lo == 0.1 && q.hi == 2.0 && q.link === :log &&
-       smm_start(:sigma_eps) == CHILD_DEFAULTS.sigma_eps))
+check("sigma_eps is NOT estimated and holds at 2.0 (fixed 2026-09-27; completed via CHILD_ESTIMATED)",
+      !any(q -> q.name === :sigma_eps, SMM_PARAMS) && CHILD_DEFAULTS.sigma_eps == 2.0 &&
+      :sigma_eps in CHILD_ESTIMATED)
+check("2026-09-27 child settings: mu 0.8, omega 0.2, y 0.144, passed by child_config",
+      CHILD_DEFAULTS.mu == 0.8 && CHILD_DEFAULTS.omega == 0.2 && CHILD_DEFAULTS.y == 0.144 &&
+      CHILD_DEFAULTS.college_cost == 0.6 &&
+      (cfg = child_config(TARGETS; Na = 30, Nk = 30, Nt = 5, simN = 10, seed = 1);
+       cfg.mu == 0.8 && cfg.omega == 0.2 && cfg.y == 0.144 && cfg.college_cost == 0.6))
+check("2026-09-27 parent y 0.1632 reaches the constructor default",
+      PARENT_DEFAULTS.y == 0.1632 &&
+      Parent_child_interaction_age_specific_AR1(; Na = 5, Nk = 2, Nhc = 5, simN = 10).y == 0.1632)
 check("the 2026-09-12 boxes: kappa_0 [-3, 1], kappa_ParEd [-1, 0.5], sigma_4_1 [-0.05, 0.30]",
       (box(n) = (q = SMM_PARAMS[findfirst(x -> x.name === n, SMM_PARAMS)]; (q.lo, q.hi));
        box(:kappa_0) == (-3.0, 1.0) && box(:kappa_ParEd) == (-1.0, 0.5) && box(:sigma_4_1) == (-0.05, 0.30)))
@@ -262,9 +286,8 @@ check("the baseline kappas and the target centring agree (CHILD_DEFAULTS.m_psych
       isfinite(CHILD_DEFAULTS.m_psychic) && CHILD_DEFAULTS.m_psychic > 6.0)
 check("R_1 is NOT estimated and holds at 0",
       !any(q -> q.name === :R_1, SMM_PARAMS) && PARENT_DEFAULTS.R_1 == 0.0)
-check("the seven TAS targets, in order",
-      collect(SMM_TAS_MOMENTS) == ["k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c",
-                                   "kterm_x_strict_w99", "kse_w_gap", "sd_ga17"])
+check("the five TAS targets, in order (kse_w_gap and kterm_x_strict_w99 out since 2026-09-27)",
+      collect(SMM_TAS_MOMENTS) == ["k0_complete", "kth_ga17_gap", "kpe_g0_c", "kpe_g1_c", "sd_ga17"])
 check("moment order is parent block then TAS block",
       collect(SMM_MOMENTS) == vcat(collect(SMM_PARENT_MOMENTS), collect(SMM_TAS_MOMENTS)))
 check("every estimated parameter routes to exactly one block",

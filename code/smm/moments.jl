@@ -53,14 +53,16 @@
 # invisible to it. Targeting h_p and t_p is strictly more information, and l_p
 # comes along for free as the residual.
 #
-# CAVEAT ON t_p, by instruction 2026-08-28: it is matched on `par_time_tot`, the
-# child-side union of active AND nearby parental presence. Nearby time overlaps
-# leisure and work, so the h_p and t_p targets jointly imply about 33 hrs/wk of
-# leisure against the 59.2 the same data measures. The identity forces the model
-# to that number, and the ~26-hour difference is absorbed by phi_2_0. Read the
-# estimated phi_2_0 as "whatever makes this time budget work", NOT as a taste for
-# leisure. tools/make_smm_targets.py carries the full accounting and the one-line
-# revert to per-parent active time.
+# t_p IS MATCHED ON ACTIVE PARENTAL TIME, `par_time_act` (= `parent_Act`), since 2026-09-27
+# (Ali). Before, it was `par_time_tot` (instruction 2026-08-28), the child-side union of
+# active AND nearby/supervisory presence: nearby time overlaps leisure and work (per parent,
+# leisure + work + par_time_tot = 133 hrs against the 112-hr week), so h_p and t_p implied
+# ~33 hrs/wk of leisure against the 59.2 the data measure, and phi_2_0 absorbed the ~26-hour
+# difference. par_time_act removes the nearby time (38.5 / 18.4 hrs/wk at ages 1-9 / 10-17,
+# against 52.3 / 36.2). CAVEAT that remains: it is still a CHILD-side union (time the child
+# spent with at least one parent), not one parent's own time, so leisure + work + t_p is
+# about 117 hrs per parent, not 112; the per-parent measure (Mom_Total_Act + Dad_Total_Act)/2
+# closes the identity exactly. tools/make_smm_targets.py carries the accounting.
 #
 # They are not independent -- the budget ties them together (see BUDGET below) --
 # but each has a clear first-order channel, which is what identification needs.
@@ -140,11 +142,19 @@ const SMM_CHILD_TIME_SPEC = "own_study_fixed_school_v1"
 # is the sum of the two age groups and would add no information while making the
 # system over-identified. To go back to the 3-moment design, put `mean_e_p` here
 # in place of the two `_early`/`_late` entries and drop sigma_2_1 from SMM_PARAMS.
+# 2026-09-27 (Ali): `mean_a_p_late` -- PRE-transfer parental net worth (excl. home) at child
+# ages 16-17 (PSID panel, winsorised at its own p99), the wealth LEVEL at the transfer date --
+# REPLACES the TAS `kterm_x_strict_w99` as the level target for kappa_terminal. That row is
+# net worth at a median child age of ~29, ~11 years after the model's object, the same timing
+# flaw for which kse_w_gap was dropped; it is still computed and printed, untargeted. Ported
+# from apps/Structural-estimation-v2 (its level target since 2026-09-11).
+const SMM_AGE_ASSETS_LO, SMM_AGE_ASSETS_HI = 16, 17
 const SMM_PARENT_MOMENTS = ("mean_c_p", "mean_h_p",
                             "mean_t_p_early", "mean_t_p_late",
                             "mean_e_p_early", "mean_e_p_late",
                             "mean_i_c_early", "mean_i_c_late",
-                            "mean_hc_early",  "mean_hc_late")
+                            "mean_hc_early",  "mean_hc_late",
+                            "mean_a_p_late")
 
 # =============================================================================
 # THE TAS BLOCK -- seven child-level moments, for the four kappa parameters
@@ -162,7 +172,7 @@ const SMM_PARENT_MOMENTS = ("mean_c_p", "mean_h_p",
 #   k0_complete          overall four-year completion   ->  kappa_0    (the level)
 #   kth_ga17_t{1,2,3}_c  completion by ability tertile  ->  kappa_theta (the gradient)
 #   kpe_g{0,1}_c         completion by parental ed      ->  kappa_ParEd
-#   kterm_x_strict_w99   parental net worth retained    ->  kappa_terminal
+#   kterm_x_strict_w99   parental net worth retained    ->  kappa_terminal  (UNTARGETED since 2026-09-27; mean_a_p_late)
 #
 # COMPLETION, NOT ENTRY. The model's college path is binary and has no dropout: enrol,
 # study t_college = 4 years, then earn the graduate wage E = 1. Nobody enrols without
@@ -173,17 +183,28 @@ const SMM_PARENT_MOMENTS = ("mean_c_p", "mean_h_p",
 # SEVEN TAS TARGETS since 2026-09-11 (docs/SMM.md, "The seven TAS moments"). The three
 # rank tertiles are REPLACED by `kth_ga17_gap`, the mean log-ability gap between
 # completers and non-completers in ABSOLUTE units -- rank moments could not see the
-# model's fourfold dispersion miss (docs/ERRORS.md P13). `kse_w_gap` (mean retained
-# parental wealth, completers minus non-completers) identifies sigma_eps; `sd_ga17`
-# (sample SD of log HC at 17) identifies sigma_eta. Order = the generator's TAS_MOMENTS.
+# model's fourfold dispersion miss (docs/ERRORS.md P13). `sd_ga17` (sample SD of log HC at
+# 17) identifies sigma_eta. Order = the generator's TAS_MOMENTS.
+#
+# `kse_w_gap` IS DROPPED FROM THE SMM (2026-09-27, Ali) BECAUSE THE MOMENT IS WRONG. It is the
+# completer-minus-non-completer gap in RETAINED parental wealth, but the data measure that
+# wealth at a median child age of ~29, about 11 years after the transfer the model's object
+# sits at (child age 18). Parents keep accumulating over that decade, differently by the
+# child's path, so the data gap is not the model gap and no parameter can close the
+# difference; it was meant to identify sigma_eps, which it could only do by fitting the
+# timing error. apps/Structural-estimation-v2 dropped it for the same reason on 2026-09-18
+# (it took 43% of Q there). It is still computed and written to the target file, and
+# printed as UNTARGETED; sigma_eps, which it identified, is FIXED at 2.0 (CHILD_DEFAULTS,
+# the v2 value).
+# `kterm_x_strict_w99` LEFT the targeted set on the same date and for the same reason (wealth
+# measured ~11 years after the transfer); kappa_terminal's level target is now the parent-block
+# `mean_a_p_late` above.
 const SMM_TAS_MOMENTS = ("k0_complete",
                          "kth_ga17_gap",
                          "kpe_g0_c", "kpe_g1_c",
-                         "kterm_x_strict_w99",
-                         "kse_w_gap",
                          "sd_ga17")
 
-# SEVENTEEN moments, FOURTEEN parameters. The order here must match TARGETED in
+# SIXTEEN moments (11 parent + 5 TAS), FIFTEEN parameters since 2026-09-27. The order here must match TARGETED in
 # tools/make_smm_targets.py -- it is the row/column order of the covariance matrix, and
 # load_targets refuses to run if the two have drifted.
 const SMM_MOMENTS = (SMM_PARENT_MOMENTS..., SMM_TAS_MOMENTS...)
@@ -248,7 +269,16 @@ moment_scale(k, mhat) = k in SMM_LOG_MOMENTS ? 1.0 : max(abs(mhat), 0.05)
 # A failed solve must return a large FINITE value, never Inf or an exception:
 # a derivative-free local search needs to be able to form a descent direction
 # away from a bad region, and Inf carries no direction.
-const SMM_PENALTY = 1.0e6
+#
+# 1e12, NOT 1e6 (2026-09-27, ported from apps/Structural-estimation-v2, where the 2026-09-20
+# audit found it). Under inverse-variance weights a VALID evaluation at a poor Sobol draw is
+# routinely worth 1e6-1e8 (v2: 48 of the 57 valid draws among the first 400 of one Sobol
+# sequence exceeded 1e6; median 6.7e6, max 2.9e8), so at 1e6 an invalid draw ranked BETTER
+# than most valid ones and the pre-testing stage kept penalised points among its seeds. The
+# penalty must dominate every valid value; 1e12 leaves four orders of magnitude over the
+# worst valid draw seen. tiktak's `invalid_value` (run_smm.jl) also keeps any draw at this
+# value out of the restart seeds.
+const SMM_PENALTY = 1.0e12
 
 # Penalised evaluations, by reason, on THIS process. A penalty is a real answer
 # ("the model cannot live here"), but a search that penalises half its draws is
@@ -306,10 +336,57 @@ SLSQP, a non-finite value narrowed to an Int, and the solver's own convergence r
 Everything else -- MethodError, UndefVarError, BoundsError, and any other `error()` -- is a
 bug and must stay visible.
 """
-function is_model_failure(e)
-    e isa DomainError    && return true
-    e isa AssertionError && return true
-    e isa InexactError   && return true
+const MODEL_FAILURE_ASSERTIONS = ("box bound",)   # the three SLSQP-callback assertions in parent_family.jl
+# WHERE a DomainError / InexactError may come from and still be a model failure (2026-09-20
+# follow-up B in apps/Structural-estimation-v2; ported 2026-09-27). Both are broad classes: `log` of a negative iterate inside the solver's
+# callbacks is a numerical failure at an extreme draw, but the same exception raised in
+# moments.jl, a tool, or a new piece of code is a bug. The ORIGIN decides: the first
+# project frame of the backtrace must be in one of these files (the model's own solver and
+# simulator code). An unknown origin (no backtrace available) is NOT certified: it re-throws.
+const MODEL_NUMERIC_FILES = ("child_lifecycle.jl", "parent_family.jl")
+# Representative failure sites, "file:function:line" of the first project frame, counted
+# per process; run_smm.jl gathers and prints them with the penalty tally so the classes
+# scored as model failures can be inspected rather than trusted.
+const SMM_FAILURE_SITES = Dict{String,Int}()
+const _PROJECT_FILES = ("child_lifecycle.jl", "parent_family.jl", "moments.jl", "tiktak.jl", "run_smm.jl")
+
+"""
+    failure_site(err, bt) -> String
+
+"file:function:line" of the first frame in this project's source, from a CapturedException's
+stored backtrace (NLopt wraps callback exceptions) or from `bt` (a `catch_backtrace()`);
+"unknown" when neither holds a project frame.
+"""
+function failure_site(err, bt = nothing)
+    frames = Any[]
+    e = err
+    while true
+        if e isa CapturedException
+            append!(frames, [x isa Tuple ? x[1] : x for x in e.processed_bt]); e = e.ex
+        elseif e isa TaskFailedException
+            e = e.task.exception
+        else
+            break
+        end
+    end
+    bt === nothing || append!(frames, stacktrace(bt))
+    for fr in frames
+        fr isa StackTraces.StackFrame || continue
+        f = basename(String(fr.file))
+        f in _PROJECT_FILES && return string(f, ":", fr.func, ":", fr.line)
+    end
+    return "unknown"
+end
+_site_file(site::AbstractString) = first(split(site, ':'))
+
+function is_model_failure(e, site::AbstractString = "unknown")
+    # a domain / inexact error is a model failure ONLY when it originates in the model's
+    # numerical code; from anywhere else, or from nowhere we can see, it is a bug
+    (e isa DomainError || e isa InexactError) && return _site_file(site) in MODEL_NUMERIC_FILES
+    # 2026-09-20 audit: only the KNOWN callback assertions (a NaN iterate handed to
+    # util_total / util_parent / HC_technology_*) are model failures; any other assertion
+    # is a programming error and stays visible.
+    e isa AssertionError && return any(p -> occursin(p, e.msg), MODEL_FAILURE_ASSERTIONS)
     if e isa ErrorException
         return any(p -> occursin(p, e.msg), MODEL_FAILURE_PATTERNS)
     end
@@ -330,14 +407,19 @@ The maximum is at one end or the other since the exponent is monotone in `t`, so
 checking both endpoints is exact, not a sample.
 """
 function smm_feasible(kw)
+    return smm_infeasible_which(kw) === :none
+end
+
+"Which HC-technology share restriction fails first: :sigma_1 (parental time), :sigma_2 (money), or :none."
+function smm_infeasible_which(kw)
     lo, hi = SMM_AGE_LO - 1, SMM_AGE_HI - 1          # the (t-1) actually used
     _max_share(a, b) = max(exp(a + b * lo), exp(a + b * hi))
-    for (n0, n1) in ((:sigma_1_0, :sigma_1_1), (:sigma_2_0, :sigma_2_1))
+    for (tag, n0, n1) in ((:sigma_1, :sigma_1_0, :sigma_1_1), (:sigma_2, :sigma_2_0, :sigma_2_1))
         a = hasproperty(kw, n0) ? getproperty(kw, n0) : getfield(PARENT_DEFAULTS, n0)
         b = hasproperty(kw, n1) ? getproperty(kw, n1) : getfield(PARENT_DEFAULTS, n1)
-        _max_share(a, b) < 1.0 || return false
+        _max_share(a, b) < 1.0 || return tag
     end
-    return true
+    return :none
 end
 
 # -----------------------------------------------------------------------------
@@ -418,10 +500,17 @@ function load_targets(path::AbstractString)
         "target file has no tas_wealth_winsor_cut; regenerate the targets: " * path)
     wcut = Float64(raw["tas_wealth_winsor_cut"])
     isfinite(wcut) && wcut > 0 || error("tas_wealth_winsor_cut is not positive: " * path)
+    # mean_a_p_late (2026-09-27): the model applies the data's own p99 cut, E[min(a, cut)].
+    haskey(raw, "assets_winsor_cut") || error("target file has no assets_winsor_cut; regenerate: " * path)
+    acut = Float64(raw["assets_winsor_cut"])
+    isfinite(acut) && acut > 0 || error("assets_winsor_cut is not positive: " * path)
+    get(raw, "age_assets", []) == [SMM_AGE_ASSETS_LO, SMM_AGE_ASSETS_HI] ||
+        error("age_assets window mismatch: expected ages $(SMM_AGE_ASSETS_LO)-$(SMM_AGE_ASSETS_HI); " * path)
 
     out = Dict{String,NamedTuple}("_spec" => (school_time = school,
                                               m_psychic  = m_psychic,
                                               wealth_cut = wcut,
+                                              assets_cut = acut,
                                               se         = se,
                                               Sigma      = Sigma,
                                               cov_names  = cov_names,
@@ -455,6 +544,7 @@ end
 target_school_time(targets) = targets["_spec"].school_time
 target_m_psychic(targets)   = targets["_spec"].m_psychic
 target_wealth_cut(targets)  = targets["_spec"].wealth_cut
+target_assets_cut(targets)  = targets["_spec"].assets_cut          # mean_a_p_late, 2026-09-27
 target_se(targets)          = targets["_spec"].se
 target_Sigma(targets)       = targets["_spec"].Sigma
 
@@ -505,7 +595,7 @@ is NOT a flow, so it is excluded. Means skip non-finite entries rather than
 propagating them -- a single NaN would otherwise turn a moment into NaN and the
 objective into a penalty, hiding a merely-partial simulation as a total failure.
 """
-function model_moments(p::Parent_child_interaction_age_specific_AR1)
+function model_moments(p::Parent_child_interaction_age_specific_AR1; assets_cut::Float64 = Inf)
     cols  = SMM_AGE_LO:SMM_AGE_HI
     # Column t IS child age t, so the model's age groups are literally these
     # columns -- the same ages the generator selects on Child_Age in the data.
@@ -554,6 +644,9 @@ function model_moments(p::Parent_child_interaction_age_specific_AR1)
             mean_i_c_late  = nanmean(vec(p.sim_i[:, late])),
             mean_hc_early  = loghc(early_hc),
             mean_hc_late   = loghc(SMM_AGE_HC_LATE_LO:SMM_AGE_HI),
+            # 2026-09-27: PRE-transfer assets at child ages 16-17, winsorised at the data's
+            # cut (model units). Column t of sim_a is the asset state at the start of age t.
+            mean_a_p_late  = nanmean(min.(vec(p.sim_a[:, SMM_AGE_ASSETS_LO:SMM_AGE_ASSETS_HI]), assets_cut)),
             n_nonfinite    = n_bad[])
 end
 
@@ -658,7 +751,8 @@ function tas_moments(r, targets)
     n_wins = count(>(cut), fin_ret)
     kterm = isempty(fin_ret) ? NaN : mean(min.(fin_ret, cut))
 
-    # THE WEALTH-GRADIENT MOMENT for sigma_eps: retained parental wealth, winsorised at the
+    # THE WEALTH-GRADIENT MOMENT (UNTARGETED since 2026-09-27 -- the data are ~11 years after
+    # the transfer; see SMM_TAS_MOMENTS): retained parental wealth, winsorised at the
     # SAME cut as kterm, among completers minus non-completers. Empty group -> invalid.
     retw = min.(ret, cut)
     kse_gap = cond_mean(retw, isc) - cond_mean(retw, isw)
@@ -690,7 +784,7 @@ end
 All seventeen targeted moments plus the diagnostics, from one pipeline result.
 """
 function model_moments(r::NamedTuple, targets)
-    pm = model_moments(r.parent)
+    pm = model_moments(r.parent; assets_cut = target_assets_cut(targets))
     tm = tas_moments(r, targets)
     return merge(pm, tm, (n_nonfinite = pm.n_nonfinite + tm.tas_nonfinite,))
 end
@@ -1170,19 +1264,19 @@ const SMM_PARAMS = [
     # Fitted at 0.0315 in exp16b, now the block default (PARENT_DEFAULTS).
     SMMParam(:sigma_eta, 0.0, 0.08, :level, :parent),
 
-    # sigma_eps -- SD of the college taste shock, a CHILD parameter. Log link: a scale,
-    # strictly positive. Box [0.1, 2.0] around the long-standing 0.5: below 0.1 the
-    # enrolment margin is a cliff on 5 Hermite nodes and the objective is a step
-    # function; 2.0 is where the earlier sweep (P13) still left g0 at 0.009, so the box
-    # covers everything the current moments can distinguish. Identified by kse_w_gap.
-    SMMParam(:sigma_eps, 0.1, 2.0, :log, :child),
+    # sigma_eps -- SD of the college taste shock. NOT ESTIMATED since 2026-09-27 (Ali): it was
+    # identified by kse_w_gap, which is dropped as a wrong moment (see SMM_TAS_MOMENTS), so it
+    # is FIXED at CHILD_DEFAULTS.sigma_eps = 2.0 (the value apps/Structural-estimation-v2
+    # fixes). It stays in CHILD_ESTIMATED below, which is what puts the fixed value into the
+    # child's cache key. The old entry, to restore it with the moment:
+    #     SMMParam(:sigma_eps, 0.1, 2.0, :log, :child),
 ]
 
-# The experiment is SIXTEEN parameters: eleven parent, five child. Asserted, because a
-# stray entry in either default set would be routed silently.
+# FIFTEEN parameters since 2026-09-27: eleven parent, four child (sigma_eps fixed). Asserted,
+# because a stray entry in either default set would be routed silently.
 let np = count(q -> q.owner === :parent, SMM_PARAMS), nc = count(q -> q.owner === :child, SMM_PARAMS)
-    (np, nc) == (11, 5) || error("SMM_PARAMS has $np parent + $nc child parameters; the " *
-                                 "2026-09-11 experiment is 11 + 5 = 16")
+    (np, nc) == (11, 4) || error("SMM_PARAMS has $np parent + $nc child parameters; the " *
+                                 "2026-09-27 specification is 11 + 4 = 15 (sigma_eps fixed)")
 end
 # R_1, the age slope of the HC productivity term, is FIXED AT ZERO and never estimated.
 any(q -> q.name === :R_1, SMM_PARAMS) && error("R_1 must not be estimated; it is fixed at 0")
@@ -1381,6 +1475,11 @@ child_config(targets; Na::Int, Nk::Int, Nt::Int, simN::Int, seed::Int) =
      rho          = CHILD_DEFAULTS.rho,
      psi_terminal = CHILD_DEFAULTS.psi_terminal,
      omega        = CHILD_DEFAULTS.omega,
+     # 2026-09-27: mu and y in CHILD_DEFAULTS (0.8, 0.144); before, the constructor's own
+     # defaults (0.5, 0.6) were used because child_config did not pass them.
+     mu           = CHILD_DEFAULTS.mu,
+     y            = CHILD_DEFAULTS.y,
+     college_cost = CHILD_DEFAULTS.college_cost,   # 2026-09-27: 0.6 net tuition (was the 1.2 default)
      a_max        = CHILD_DEFAULTS.a_max,
      w            = CHILD_DEFAULTS.w,
      m_psychic    = target_m_psychic(targets))
@@ -1471,6 +1570,8 @@ reads `sol_tr_v_college` and `sol_tr_v_work` -- not from any simulation.
 # which only the study years (stage 2) and the transfer stage read -- the cached work and
 # graduate blocks are eps-free (their arrays carry no Nt dimension), verified by
 # tools/test_smm_tas.jl "cache parity" at a non-default sigma_eps.
+# 2026-09-27: sigma_eps is no longer SEARCHED (it left SMM_PARAMS) but stays in this tuple, so
+# every evaluation completes it from CHILD_DEFAULTS (2.0) and it remains part of the cache key.
 const CHILD_ESTIMATED = (:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal, :sigma_eps)
 const CHILD_ESTIMATED_DEFAULTS =
     NamedTuple{CHILD_ESTIMATED}(map(n -> getfield(CHILD_DEFAULTS, n), CHILD_ESTIMATED))
@@ -1683,8 +1784,11 @@ function smm_objective(z::AbstractVector{Float64}, targets;
     w  = weights === nothing ? moment_weights(targets) : weights
 
     # ---- reject the infeasible region BEFORE paying for a solve --------------
+    # (named by the restriction that fails: the parental-TIME share sigma_1 or the MONEY
+    # share sigma_2 in the HC technology reaching 1 at some age -- ported 2026-09-27 from v2;
+    # v1 labelled both :infeasible_sigma_2)
     if !smm_feasible(kw)
-        _penalize!(:infeasible_sigma_2)
+        _penalize!(Symbol("infeasible_", smm_infeasible_which(kw)))
         return SMM_PENALTY
     end
 
@@ -1719,9 +1823,14 @@ function smm_objective(z::AbstractVector{Float64}, targets;
         end
         return q
     catch err
+        # the penalty is named by exception type AND the project frame it came from
+        # (file:function:line), and DomainError/InexactError are scored only when that frame
+        # is in the model's own solver files -- ported 2026-09-27 from v2 (2026-09-20 follow-up B)
         cause = _root_cause(err)
-        if is_model_failure(cause)
-            _penalize!(nameof(typeof(cause)))
+        site  = failure_site(err, catch_backtrace())
+        if is_model_failure(cause, site)
+            _penalize!(Symbol(nameof(typeof(cause)), "@", site))
+            SMM_FAILURE_SITES[site] = get(SMM_FAILURE_SITES, site, 0) + 1
             return SMM_PENALTY
         end
         rethrow()
@@ -1841,7 +1950,7 @@ function report_fit(z::AbstractVector{Float64}, targets;
             m.kth_ga17_t1_c, m.kth_ga17_t2_c, m.kth_ga17_t3_c)
     @printf(out, "                        T1 %.3f  T2 %.3f  T3 %.3f   (data)\n",
             targets["kth_ga17_t1_c"].mean, targets["kth_ga17_t2_c"].mean, targets["kth_ga17_t3_c"].mean)
-    @printf(out, "  wealth gap (retained) %+.3f  vs data %+.3f   (10k USD, completers minus non; the sigma_eps moment)\n",
+    @printf(out, "  wealth gap (retained) %+.3f  vs data %+.3f   (10k USD, completers minus non; UNTARGETED since 2026-09-27: measured ~11 years after the transfer)\n",
             m.kse_w_gap, targets["kse_w_gap"].mean)
     @printf(out, "  wealth tertiles       T1 %.3f  T2 %.3f  T3 %.3f   (model, diagnostic)\n",
             m.kse_w_t1_c, m.kse_w_t2_c, m.kse_w_t3_c)
@@ -1900,16 +2009,17 @@ function report_fit(z::AbstractVector{Float64}, targets;
             targets["mean_e_p_late"].mean/targets["mean_e_p_early"].mean)
     # l_p is not targeted, but l = 1 - h - t identically, so the h_p and t_p
     # targets IMPLY a leisure level. Compare against THAT, not against measured
-    # leisure: t_p is matched on par_time_tot, which overlaps leisure and work, so
-    # the implied figure sits ~26 hrs/wk below the 59.2 the data measures. That gap
-    # is a property of the target choice, not a failure of the fit -- see the
-    # header of tools/make_smm_targets.py.
+    # leisure: t_p is matched on par_time_act (since 2026-09-27; par_time_tot before),
+    # a child-side union that still overlaps a single parent's leisure and work by
+    # ~5 hrs/wk (it was ~21 with par_time_tot), so the implied figure sits below the 59.2
+    # the data measures. That gap is a property of the target choice, not a failure of
+    # the fit -- see the header of tools/make_smm_targets.py.
     n_e, n_l = SMM_AGE_SPLIT - SMM_AGE_LO + 1, SMM_AGE_HI - SMM_AGE_SPLIT
     t_implied = (n_e*targets["mean_t_p_early"].mean + n_l*targets["mean_t_p_late"].mean) / (n_e + n_l)
     l_implied = 1 - targets["mean_h_p"].mean - t_implied
     @printf(out, "  l_p (residual)  model %.1f hrs/wk  vs %.1f implied by the h_p/t_p targets\n",
             m.mean_l_p*HOURS_PER_WEEK, l_implied*HOURS_PER_WEEK)
-    @printf(out, "                  (measured leisure is %.1f hrs/wk -- par_time_tot overlaps it)\n",
+    @printf(out, "                  (measured leisure is %.1f hrs/wk -- par_time_act overlaps it)\n",
             0.5286*HOURS_PER_WEEK)
 
     println(out, "\nUntargeted -- does the fit stay believable?")

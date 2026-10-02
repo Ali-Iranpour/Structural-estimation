@@ -326,7 +326,14 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
                 # local value, whether it improved, and ITS OWN return code -- so a caller
                 # can write a per-restart record as the run goes rather than only at the
                 # end, which is the half that a killed run loses.
-                on_local = (j, Nstar, theta, f_local, best, best_x, row) -> nothing)
+                on_local = (j, Nstar, theta, f_local, best, best_x, row) -> nothing,
+                # INVALID CANDIDATES NEVER SEED A RESTART (2026-09-20 follow-up B). The
+                # objective signals an invalid point with a large FINITE value (SMM_PENALTY),
+                # which the plain sort would rank -- and, when fewer than N* points are valid,
+                # SELECT -- as a seed. Values >= invalid_value are excluded from seeding; with
+                # fewer valid points than N* the number of restarts is reduced (warned), and
+                # with none the run stops. Inf keeps the old behaviour (nothing excluded).
+                invalid_value::Float64 = Inf)
 
     length(lo) == length(hi) || error("lo and hi must have the same length")
     all(lo .< hi) || error("every lo must be strictly below its hi")
@@ -397,13 +404,17 @@ function tiktak(f, lo::Vector{Float64}, hi::Vector{Float64};
     local seeds::Vector{Vector{Float64}}, f_sobol_best::Float64
     if resume === nothing
         order = sortperm(fs)                  # ascending: f(s_1) <= ... <= f(s_N*)
-        n_finite = count(isfinite, fs)
-        n_finite >= 1 || error(
-            "every one of the $(length(cands)) pre-testing points failed to evaluate" *
+        valid = [isfinite(fs[k]) && fs[k] < invalid_value for k in order]
+        n_valid = count(valid)
+        n_valid >= 1 || error(
+            "every one of the $(length(cands)) pre-testing points failed to evaluate or was invalid" *
             (n_pre_discarded[] > 0 ? " ($(n_pre_discarded[]) threw and were discarded)" : "") *
             ". There is nothing to seed the local stage with.")
-        n_finite >= Nstar || @warn "fewer finite pre-testing values than restarts" n_finite Nstar
-        seeds = [cands[k] for k in order[1:Nstar]]
+        if n_valid < Nstar
+            @warn "fewer VALID pre-testing values than restarts: reducing the restarts" n_valid Nstar
+            Nstar = n_valid
+        end
+        seeds = [cands[k] for k in order[valid][1:Nstar]]
         f_sobol_best = fs[order[1]]
         on_seeds(seeds, f_sobol_best)
     else

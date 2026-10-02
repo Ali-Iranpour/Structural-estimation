@@ -248,7 +248,7 @@ end
 banner(s) = (say(); say("="^76); say(s); say("="^76))
 
 # Printed before moments.jl is loaded, so a literal; asserted against the module below.
-banner("SMM: 16 parameters (11 parent + 5 child) against 17 moments (10 parent + 7 TAS)" *
+banner("SMM: 15 parameters (11 parent + 4 child) against 16 moments (11 parent + 5 TAS)" *
        (QUICK ? "   [QUICK -- smoke test, not an estimate]" : ""))
 sayf("started    %s\n", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))
 sayf("host       %s\n", gethostname())
@@ -330,9 +330,15 @@ const SOURCE_SHA = bytes2hex(SHA.sha256(
 # name/box checks below catch most of it; this catches the rest -- the 2026-09-10 psychic
 # centring changed what kappa_0 MEANS without changing any name or bound.
 (length(SMM_PARAMS), length(SMM_PARENT_PARAMS), length(SMM_CHILD_PARAMS),
- length(SMM_MOMENTS), length(SMM_PARENT_MOMENTS), length(SMM_TAS_MOMENTS)) == (16, 11, 5, 17, 10, 7) ||
-    error("the banner says 16 = 11 + 5 parameters against 17 = 10 + 7 moments; moments.jl disagrees")
-const SPEC_VERSION = "smm16_tas7_gap_v1"   # 2026-09-11: +sigma_eta, +sigma_eps; tertiles -> gap, +kse_w_gap, +sd_ga17
+ length(SMM_MOMENTS), length(SMM_PARENT_MOMENTS), length(SMM_TAS_MOMENTS)) == (15, 11, 4, 16, 11, 5) ||
+    error("the banner says 15 = 11 + 4 parameters against 16 = 11 + 5 moments; moments.jl disagrees")
+# 2026-09-11 "smm16_tas7_gap_v1": +sigma_eta, +sigma_eps; tertiles -> gap, +kse_w_gap, +sd_ga17.
+# 2026-09-27: kse_w_gap dropped (wrong moment: ~11-year timing gap), sigma_eps fixed at 2.0,
+# t_p on ACTIVE parental time (par_time_act), mu 0.8 / omega 0.2 / y 0.1632 (parent) and
+# 0.144 (child) -- aligned with apps/Structural-estimation-v2. Same day, v2: kterm_x_strict_w99
+# replaced by the parent-block mean_a_p_late (pre-transfer wealth at 16-17) as kappa_terminal's
+# level target.
+const SPEC_VERSION = "smm15_p11_tas5_apl_nokse_sefix20_tact_mu08_om02_v2"
 
 # -----------------------------------------------------------------------------
 # The initial point: the block starts, or a previous run's estimates by name
@@ -1000,6 +1006,7 @@ watcher = (USE_PMAP && !RESUMING) ? watch_progress(N_SOBOL_EVAL) : nothing
 result = tiktak(objective_tracked, lo, hi;
                 N = N_SOBOL, Nstar = N_RESTART,
                 extra_seeds = [x0],             # the incumbent competes like any Sobol point
+                invalid_value = SMM_PENALTY,    # a penalised draw never seeds a restart (ported from v2, 2026-09-27)
                 map_fn = USE_PMAP ? pmap : map,
                 local_maxeval = LOCAL_MAXEVAL, polish_maxeval = POLISH_MAXEVAL,
                 skip_polish = SKIP_POLISH,
@@ -1198,8 +1205,19 @@ if N_PENALIZED > 0
         sayf("  %-24s %6d\n", k, v)
     end
     say("(a penalised draw is a parameter vector the model cannot be solved at --")
-    say(" scored 1e6 rather than crashed on. A high rate means the SEARCH BOX is")
+    say(" scored SMM_PENALTY = $(SMM_PENALTY) rather than crashed on. A high rate means the SEARCH BOX is")
     say(" too wide, not that the model is wrong.)")
+    # the exception sites behind the scored model failures (ported from v2, 2026-09-27): the
+    # broad classes (DomainError, InexactError) are scored only from the solver's own files,
+    # and every site is listed here so the classification can be checked, not trusted
+    let sites = Dict{String,Int}()
+        for w in procs()
+            d = w == myid() ? SMM_FAILURE_SITES : remotecall_fetch(() -> copy(Main.SMM_FAILURE_SITES), w)
+            for (k, v) in d; sites[k] = get(sites, k, 0) + v; end
+        end
+        isempty(sites) || say("exception sites scored as model failures (file:function:line):")
+        for (k, v) in sort(collect(sites); by = last, rev = true); sayf("  %-60s %6d\n", k, v); end
+    end
 else
     say("\nno penalised evaluations -- every draw in the box solved")
 end

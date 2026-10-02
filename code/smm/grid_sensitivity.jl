@@ -182,7 +182,7 @@ end
         return (q = q, m = m, d = d, viol = v.total, a_max_used = p.a_max,
                 node_spacing = (a_max - p.a_grid[1]) / (GS_GRID - 1))
     catch err
-        is_model_failure(_root_cause(err)) && return nothing
+        is_model_failure(_root_cause(err), failure_site(err, catch_backtrace())) && return nothing   # 2026-09-27: origin-based rule
         rethrow()
     end
 end

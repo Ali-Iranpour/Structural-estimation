@@ -36,29 +36,30 @@ const TARGETS_SHA_T = bytes2hex(SHA.sha256(read(TFILE)))[1:16]
 function good_checkpoint()
     Dict{String,Any}(
         "stage" => "local", "restarts_done" => 1, "restarts_total" => 2,
-        # The SIXTEEN-parameter, seven-TAS-moment specification of 2026-09-11.
+        # The FIFTEEN-parameter, six-TAS-moment specification of 2026-09-27 (sigma_eps fixed,
+        # kse_w_gap untargeted; sixteen/seven from 2026-09-11).
         "param_names" => ["phi_2","phi_3","lambda_2","R_0","sigma_1_0","sigma_1_1",
                           "sigma_2_0","sigma_2_1","sigma_4_0","sigma_4_1",
                           "kappa_0","kappa_theta","kappa_ParEd","kappa_terminal",
-                          "sigma_eta","sigma_eps"],
+                          "sigma_eta"],
         # The CURRENT boxes (2026-09-12: kappa_0 [-3, 1], kappa_ParEd [-1, 0.5], sigma_4_1 top 0.30);
         # the control case must be accepted, so the fixture has to carry them verbatim.
-        "param_lo" => [0.01,0.05,0.05,0.5,-4.0,-0.2,-5.0,-0.3,-10.0,-0.05,-3.0,-10.0,-1.0,0.5,0.0,0.1],
-        "param_hi" => [20.0,20.0,100.0,100.0,-0.1,0.05,-0.5,0.05,-1.0,0.30,1.0,0.0,0.5,40.0,0.08,2.0],
+        "param_lo" => [0.01,0.05,0.05,0.5,-4.0,-0.2,-5.0,-0.3,-10.0,-0.05,-3.0,-10.0,-1.0,0.5,0.0],
+        "param_hi" => [20.0,20.0,100.0,100.0,-0.1,0.05,-0.5,0.05,-1.0,0.30,1.0,0.0,0.5,40.0,0.08],
         "param_link" => ["log","log","log","log","level","level","level","level","level",
-                         "level","level","level","level","log","level","log"],
+                         "level","level","level","level","log","level"],
         "targets_sha" => TARGETS_SHA_T,
         "source_sha" => SOURCE_SHA_T,
-        "spec_version" => "smm16_tas7_gap_v1",
+        "spec_version" => "smm15_p11_tas5_apl_nokse_sefix20_tact_mu08_om02_v2",
         "m_psychic" => 6.263396877461691,
         "moment_names" => ["mean_c_p","mean_h_p","mean_t_p_early","mean_t_p_late",
                            "mean_e_p_early","mean_e_p_late","mean_i_c_early","mean_i_c_late",
-                           "mean_hc_early","mean_hc_late","k0_complete","kth_ga17_gap",
-                           "kpe_g0_c","kpe_g1_c","kterm_x_strict_w99","kse_w_gap","sd_ga17"],
+                           "mean_hc_early","mean_hc_late","mean_a_p_late","k0_complete","kth_ga17_gap",
+                           "kpe_g0_c","kpe_g1_c","sd_ga17"],
         "child_grid" => "12x12x3", "sim_n" => 300, "seed" => 1234,
         "Q_best" => 1.0, "objective_grid" => 12, "Q_incumbent" => 2.0,
         "grid_search" => 12, "grid_report" => 12, "minutes" => 1.0,
-        "search_vector" => Dict("z" => zeros(16)),
+        "search_vector" => Dict("z" => zeros(15)),
     )
 end
 

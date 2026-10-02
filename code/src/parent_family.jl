@@ -187,7 +187,27 @@ const PARENT_DEFAULTS = (
     # old school-plus-study specification needed. See the header of PARENT_DEFAULTS.
     lambda_2 = 13.86200306163239,  # estimated: the child's own study time
     mu_0 = 1.0,        mu_1 = -0.04,
-    tau = 0.18,        y = 0.6,
+    tau = 0.18,
+    # y: the GOVERNMENT lump-sum transfer to the parent household, flat, every period
+    # t = 1..17. CALIBRATED 2026-09-27 (Ali) to 0.1632 = 1,632 USD/yr, the lump-sum
+    # transfer V of Daruich & Fernandez, "Universal Basic Income: A Dynamic Assessment"
+    # (rev. Sept 2023; AER 2024), section 3 "Taxes", PDF p. 14 and Figure 2: V is added
+    # to the HSV tax function and estimated to match the ratio of the variance of pre-tax
+    # to after-tax total income in the PSID (Heathcote et al. 2010 data). Their
+    # alternative: 1,843 USD for the bottom 2% of one-child households. Same value and
+    # source as apps/Structural-estimation-v2 (its VERSION.md step 19).
+    # WHY IT CHANGED: 0.6 (6k USD/yr) was the size of ALL means-tested transfers
+    # INCLUDING Medicaid, which is in kind and does not belong in a cash budget; the
+    # cash-transfer values in the literature are 1.4-2.5k USD (Colas, Findeisen & Sachs
+    # 2021: T(0) = -1,800; Lee & Seshadri 2019: 3% of mean earnings; Guner, Rauh &
+    # Ventura 2024: 1,440).
+    # Caveats, recorded and accepted: (i) the figure is in YEAR-2000 dollars and is used
+    # as is (in the model's 2015 dollars it would be about 2,246 = 0.2246, CPI-U x 1.376);
+    # (ii) it is PER ADULT (their fn. 28 divides household income by the number of
+    # adults), while this block's household earns 2 x the mean parental wage; (iii) the
+    # HSV (tax_lambda, tau) is estimated on post-tax-and-transfer income, so part of y is
+    # counted twice. The CHILD block's y is separate: 0.144 (CHILD_DEFAULTS).
+    y = 0.1632,
     # IDIOSYNCRATIC HC SHOCK (2026-09-11, docs/ERRORS.md P13):
     #     log HC_{t+1} = log F_t(inputs, HC_t) + sigma_eta * z_{t+1},   z ~ N(0,1) i.i.d.
     # ESTIMATED since exp16b (2026-09-12): 0.0315, interior at 39% of [0, 0.08], identified
@@ -429,7 +449,10 @@ function Parent_child_interaction_age_specific_AR1(;
         # --- Scalar Defaults for Non-varying Parameters ---
         T::Int=17, rho::Float64=1.5, eta::Float64=2.0,
         tau::Float64=0.18, r::Float64=0.03,
-        y::Float64=0.6, tax_lambda::Float64=0.82,
+        # y from PARENT_DEFAULTS (0.1632 since 2026-09-27): the SMM and run_all.jl build the
+        # parent WITHOUT splatting PARENT_DEFAULTS, so a literal default here is what every
+        # run used (0.6 through 2026-09-27). Pass y = 0.6 to reproduce a run from before.
+        y::Float64=PARENT_DEFAULTS.y, tax_lambda::Float64=0.82,
         # --- grid info ---
         # a_max = 100, not 50. Simulated parental assets reached 281.5 against a grid
         # ending at 50, with 0.43% of states off-grid; at 100 that falls to 0.10% and the

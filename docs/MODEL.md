@@ -55,7 +55,7 @@ explicitly for the deterministic model.
 |---|---|
 | `E_{ε₀}[ max_{d,tr} E_{z₀}[ W_d(tr; ε₀, z₀) ] ]` | `optimal_transfer_work!` / `optimal_transfer_college!` — C, *Transfer stage* |
 | Parent keeps at least `δ_P` | `compute_min_assets`, `delta_P` — C, *College feasibility* |
-| Taste shock `ε₀ ~ N(0, σ_ε²)`, Gauss–Hermite `Nt = 5` | `sigma_eps`, `Nt` — C |
+| Taste shock `ε₀ ~ N(0, σ_ε²)`, Gauss–Hermite `Nt = 5` — the random part of the psychic cost, in the first college year's utility (§3) | `sigma_eps`, `Nt` — C |
 | Handoff | `parent.sim_a[:, T+1] → child.sim_a_init`, `parent.sim_hc[:, T+1] → child.sim_k_init`, `parent.sim_k[:, 1] → child.sim_bc_init` |
 
 The parent's `hc_grid` and the child's `k_grid` are **the same object** on either side of
@@ -65,11 +65,32 @@ the handoff; keep `hc_max` and the child's `k_max` equal (both 1500) or the hand
 
 | Model | Code |
 |---|---|
-| Wage | `ln w = lnw₀ + β_E·E + (α_θ + α_θE·E)(ln θ − m_θ) + (γ₁ + γ₁E·E)age + (γ₂ + γ₂E·E)age²` | `wage_func` — C, *Primitives* |
+| Wage | `ln w = lnw₀ + β_E·E + (α_θ + α_θE·E)(ln θ − m_θ) + (γ₁ + γ₁E·E)age + (γ₂ + γ₂E·E)age² + ln z`, then `× WAGE_SCALING_FACTOR` (0.584) | `wage_func` — C, *Primitives* |
+| Wage shock | `ln z' = ρ_p ln z + ν`, `ν ~ N(0, σ_p²)`, `ρ_p = 0.95`, `σ_p = 0.2`, Rouwenhorst `Np = 5`. `z₀` drawn from the stationary distribution at 18 (decision 0.5c) and **not** observed at the enrolment/transfer choice; `z` keeps evolving through the college years, where hours are zero, so it matters there only through the continuation | `rouwenhorst` in the constructor, `sim_p_init_idx` — C |
 | Progressive tax | `λ(wh)^(1−τ)` (HSV/Benabou) | `after_tax_income` — C, *Primitives* |
-| Psychic cost of college | `κ₀ + κ_θ(ln θ − m_psychic) + κ_ParEd·BothCollege` | `pared_value_offset` — C, *Primitives* |
+| Psychic cost of college | per college year `κ₀ + κ_θ(ln θ − m_psychic) + κ_ParEd·BothCollege`, **minus the taste shock `ε₀` in the first college year** (below) | `util_college` (`κ₀`, `κ_θ`); `pared_value_offset` (`κ_ParEd`); `obj_college_period_general` (`ε₀`) — C, *Primitives* |
+| Taste shock | `ε₀ ~ N(0, σ_ε²)`, i.i.d. across children, drawn once at 18, added to the college flow utility of the first college year only; **no shock on the work branch** | `t_grid` / `t_weight` (Gauss–Hermite, `Nt = 5`), `obj_college_period_general` — C |
 | College vs work | four college years (18–21), work from 22 | `solve_model_college!` / `solve_model_work!` — C, *Solver* |
 | Terminal period | works and consumes everything, no bequest; **no retirement** | — |
+
+**The college flow utility, in full.** With `u(c) = c^(1−ρ)/(1−ρ)` and
+`P(θ) = κ₀ + κ_θ(ln θ − m_psychic)`:
+
+```
+first college year (age 18):  u(c) − P(θ) + ε₀ + β E_z[V_{t+1}]
+college years 2–4 (19–21):    u(c) − P(θ)      + β E_z[V_{t+1}]
+κ_ParEd·BothCollege:          one value offset  −κ_ParEd·BC·Σ_{s=0}^{3} β^s  at the college-vs-work comparison
+```
+
+So the psychic cost has a deterministic part (`κ₀`, `κ_θ`, `κ_ParEd`, charged every college
+year) and a random part (`−ε₀`, charged once). `ε₀` enters with a **plus** sign: it is a
+taste *for* college, i.e. a high draw lowers the cost. The `κ_ParEd` annuity is exact
+because the term is additive and constant over the four years (`pared_value_offset`).
+The family's choice maximises `(1 − μ + μω)·V_child + μ·V_parent`, so the shock that moves
+enrolment has SD `(1 − μ + μω)·σ_ε` in family-value units — the same factor scales the
+kappas, so their ratio to `σ_ε` is unaffected. In simulation each child draws one of the
+`Nt` Gauss–Hermite nodes with its quadrature weight (`draws_uniform_t`), not a continuous
+normal.
 
 A graduate's working life is solved with `E = 1` into the **college** arrays, so
 post-graduation policies are read from `sol_*_grad`, not `sol_*_work`. The child's HC

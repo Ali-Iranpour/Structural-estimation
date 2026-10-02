@@ -170,9 +170,13 @@ TAS_WEALTH_WINSOR_P = 99.0
 # The model has no post-separation parent to age forward, so this cannot be closed without
 # a new mechanism. It is carried as a limitation on kappa_terminal.
 
-# SEVEN TAS TARGETS (2026-09-11, sixteen-parameter experiment). The three rank tertiles
-# are REPLACED by the mean log-ability gap; `kse_w_gap` identifies `sigma_eps` and
-# `sd_ga17` identifies `sigma_eta`. Order is load-bearing: it is the order of
+# SIX TAS TARGETS since 2026-09-27 (seven from 2026-09-11). The three rank tertiles
+# are REPLACED by the mean log-ability gap; `sd_ga17` identifies `sigma_eta`.
+# `kse_w_gap` is NO LONGER TARGETED (2026-09-27, Ali) BECAUSE THE MOMENT IS WRONG: the
+# retained wealth it compares is measured at a median child age of ~29, about 11 years
+# after the transfer at 18 that the model's counterpart describes (the TIMING GAP above),
+# so it cannot identify sigma_eps -- only the timing error. sigma_eps is now fixed at 2.0
+# (the apps/Structural-estimation-v2 value). The row is still written, untargeted. Order is load-bearing: it is the order of
 # SMM_TAS_MOMENTS in code/smm/moments.jl and of the covariance rows below.
 #
 #   kth_ga17_gap   mean ln(g_ACH) among completers minus non-completers, age-17 frame.
@@ -186,9 +190,9 @@ TAS_WEALTH_WINSOR_P = 99.0
 TAS_MOMENTS = ["k0_complete",
                "kth_ga17_gap",
                "kpe_g0_c", "kpe_g1_c",
-               "kterm_x_strict_w99",
-               "kse_w_gap",
-               "sd_ga17"]
+               "sd_ga17"]          # kse_w_gap and kterm_x_strict_w99 removed 2026-09-27
+                                   # (untargeted: both measure wealth ~11 years after the
+                                   # transfer; the level target is mean_a_p_late)
 
 
 
@@ -233,9 +237,27 @@ PARENT_TARGETED = ["mean_c_p", "mean_h_p",
                    "mean_t_p_early", "mean_t_p_late",
                    "mean_e_p_early", "mean_e_p_late",
                    "mean_i_c_early", "mean_i_c_late",
-                   "mean_hc_early", "mean_hc_late"]
+                   "mean_hc_early", "mean_hc_late",
+                   "mean_a_p_late"]
 
-# SEVENTEEN moments against SIXTEEN parameters -- over-identified, so the weighting
+# `mean_a_p_late` (2026-09-27, Ali; ported from apps/Structural-estimation-v2, where it has
+# been the level target since 2026-09-11): parental net worth EXCLUDING home equity at child
+# ages 16-17, from the PSID one-child panel (Input/SMM_Moments_Micro.dta, `assets_real`),
+# winsorised at its own p99, model units. This is the wealth level the model can be compared
+# to AT THE TRANSFER DATE: the family-stage asset state one and two periods before the
+# age-18 handoff, BEFORE the transfer. It REPLACES the TAS `kterm_x_strict_w99` as the level
+# target for `kappa_terminal`, WHY: that row is parental net worth at a median child age of
+# ~29, about 11 years after the model's object -- the same timing flaw for which kse_w_gap
+# was dropped; it stays in the file untargeted. Same estimator as every other parent-block
+# moment (equal-age mean, clustered on Fam_id), so it enters the joint covariance with the
+# rest. Wealth concept: excluding the home, as in v2 (total net worth, `assets_home_real`, is
+# the pending alternative there).
+AGE_ASSETS_LO, AGE_ASSETS_HI = 16, 17
+ASSETS_WINSOR_P = 99.0
+ASSETS_VAR = "assets_real"
+
+# SIXTEEN moments (11 parent + 5 TAS) against FIFTEEN parameters since 2026-09-27
+# (seventeen against sixteen from 2026-09-11) -- over-identified, so the weighting
 # matrix now changes the answer in a way it could not when the system was square. The
 # order here IS the order of `SMM_MOMENTS` in code/smm/moments.jl and of every row and
 # column of the covariance below; moments.jl checks it and refuses to run if they differ.
@@ -503,8 +525,10 @@ def build_tas_moments(t):
                f"(cut = {cut:,.0f} USD) | ever_{TAS_WEALTH_DEF}",
         units="model units (10k USD, real 2015)",
         model="mean of (parent sim_a at T+1) - transfer, i.e. assets retained AFTER the transfer",
-        block="kappa_terminal",
-        note=f"{100*(raw < 0).mean():.1f}% of the qualifying sample is negative and is RETAINED; "
+        block="kappa_terminal", targeted=False,
+        note="UNTARGETED since 2026-09-27: measured at a median child age of ~29, ~11 years after "
+             "the model's object; the level target for kappa_terminal is now mean_a_p_late. "
+             f"{100*(raw < 0).mean():.1f}% of the qualifying sample is negative and is RETAINED; "
              "the model floors retained assets at delta_P and cannot reproduce it")
     add("kterm_x_strict_raw", wmask, raw / DOLLARS_PER_MODEL_UNIT,
         source=f"{TAS_WEALTH_VAR} | ever_{TAS_WEALTH_DEF} (NOT winsorised)",
@@ -523,9 +547,9 @@ def build_tas_moments(t):
                f"& {TAS_FOLLOWUP}: completers minus non-completers",
         units="model units (10k USD, real 2015)",
         model="mean(retained[college]) - mean(retained[work]), retained winsorised at the same cut",
-        block="sigma_eps",
-        note="a pecuniary shifter in known units -- what separates the taste-shock scale "
-             "from the psychic-cost levels; wealth is measured ~11 years after the model's object")
+        block="sigma_eps", targeted=False,
+        note="UNTARGETED since 2026-09-27: the moment is wrong -- wealth is measured ~11 years "
+             "after the model's object (the transfer at 18); sigma_eps fixed at 2.0")
     add("k0_w_c", wf, y,
         source=f"{TAS_OUTCOME} | ever_{TAS_WEALTH_DEF} & {TAS_FOLLOWUP}",
         units="completion share on the wealth frame",
@@ -691,14 +715,25 @@ def main():
     m = pd.read_stata(MICRO)
     t = pd.read_stata(TAS_MICRO)          # the TAS block's own frame -- see TAS_MICRO
     r = m[(m.Child_Age >= AGE_LO) & (m.Child_Age <= AGE_HI)].copy()
+    # mean_a_p_late (2026-09-27): pre-transfer parental wealth at child ages 16-17, winsorised
+    # at its own p99 on those ages -- the same construction as apps/Structural-estimation-v2.
+    a_rows = ((r.Child_Age >= AGE_ASSETS_LO) & (r.Child_Age <= AGE_ASSETS_HI) & r[ASSETS_VAR].notna()).values
+    assets_cut = float(np.percentile(r.loc[a_rows, ASSETS_VAR], ASSETS_WINSOR_P))
+    assets_series = pd.Series(winsorise(r.loc[a_rows, ASSETS_VAR].values, ASSETS_WINSOR_P) / DOLLARS_PER_MODEL_UNIT,
+                              index=r.index[a_rows])
 
     # ------------------------------------------------------------------
-    # t_p USES par_time_tot, BY INSTRUCTION (2026-08-28). READ THIS BEFORE
-    # INTERPRETING phi_2_0 OR ANY LEISURE NUMBER.
+    # t_p USES par_time_act (ACTIVE parental time) SINCE 2026-09-27 (Ali).
+    # READ THIS BEFORE INTERPRETING phi_2_0 OR ANY LEISURE NUMBER.
     # ------------------------------------------------------------------
-    # par_time_tot is the broader time concept -- active PLUS nearby/supervisory
-    # presence -- chosen deliberately over per-parent active time. Two properties
-    # of it are worth having in front of you:
+    # WHY IT CHANGED: from 2026-08-28 to 2026-09-27 t_p used par_time_tot, active
+    # PLUS nearby/supervisory presence. Nearby time overlaps leisure and work (+21
+    # hrs/wk over the 112-hr week, below), which forced model leisure ~26 hrs/wk
+    # under the measured 59.2 and loaded the gap onto phi_2_0. par_time_act (identical
+    # to parent_Act in the micro file) keeps active time only: 38.5 / 18.4 hrs/wk at
+    # ages 1-9 / 10-17, against 52.3 / 36.2 for par_time_tot. The discussion of
+    # par_time_tot below is kept for the record; property (1) STILL APPLIES to
+    # par_time_act, property (2) shrinks from +21 to +5 hrs:
     #
     # (1) It is a CHILD-side union, not a per-parent allocation. par_time_act
     #     (27.38) sits between max(mom, dad) = 22.07 and the sum = 36.69, which is
@@ -724,7 +759,7 @@ def main():
     # and the identity closes exactly (112.00 for both parents).
     r["leis_share"] = ((r.leis_mom + r.leis_dad) / 2.0) / HOURS_PER_WEEK
     r["h_share"] = ((r.wh_mom + r.wh_dad) / 2.0) / HOURS_PER_WEEK
-    r["t_share"] = r.par_time_tot / HOURS_PER_WEEK
+    r["t_share"] = r.par_time_act / HOURS_PER_WEEK      # was par_time_tot until 2026-09-27
 
     moments = [
         dict(name="mean_c_p",
@@ -753,18 +788,18 @@ def main():
              model="mean of sim_h over t = 1..17"),
         # t_p IS split, because sigma_1_1 (the age slope of the HC elasticity to
         # parent TIME) needs a second moment exactly as sigma_2_1 did. On
-        # par_time_tot the profile runs 52.3 -> 36.2 hrs/wk, late/early 0.692x --
+        # par_time_act the profile runs 38.5 -> 18.4 hrs/wk, late/early 0.479x --
         # monotone, so exp(sigma_1_0 + sigma_1_1*(t-1)) can reproduce its shape.
-        # (Per-parent active time falls faster, 25.1 -> 12.9, 0.512x.)
+        # (par_time_tot: 52.3 -> 36.2, 0.692x; per-parent active: 25.1 -> 12.9, 0.512x.)
         dict(name="mean_t_p_early",
              series=r[r.Child_Age <= AGE_SPLIT].t_share,
-             source=f"par_time_tot / 112, child ages {AGE_LO}-{AGE_SPLIT}",
-             units="share of the 112h non-sleep week (active+nearby, child-side union)",
+             source=f"par_time_act / 112, child ages {AGE_LO}-{AGE_SPLIT}",
+             units="share of the 112h non-sleep week (ACTIVE only, child-side union)",
              model=f"mean of sim_t over t = {AGE_LO}..{AGE_SPLIT}"),
         dict(name="mean_t_p_late",
              series=r[r.Child_Age > AGE_SPLIT].t_share,
-             source=f"par_time_tot / 112, child ages {AGE_SPLIT+1}-{AGE_HI}",
-             units="share of the 112h non-sleep week (active+nearby, child-side union)",
+             source=f"par_time_act / 112, child ages {AGE_SPLIT+1}-{AGE_HI}",
+             units="share of the 112h non-sleep week (ACTIVE only, child-side union)",
              model=f"mean of sim_t over t = {AGE_SPLIT+1}..{AGE_HI}"),
         # Kept for reference and for switching back to the 3-moment design; the
         # estimation targets the two age groups below instead. See SMM_MOMENTS in
@@ -826,6 +861,15 @@ def main():
              source=f"x_gach (log PCA composite), child ages {AGE_HC_LATE_LO}-{AGE_HI}",
              units="log W-score; the model's HC is in the SAME units after the rescaling",
              model=f"mean of log(sim_hc) over t = {AGE_HC_LATE_LO}..{AGE_HI}"),
+        # 2026-09-27: pre-transfer parental net worth at the end of the family stage, the
+        # level target for kappa_terminal (replaces kterm_x_strict_w99). Winsorised at its
+        # own p99 on the same ages; negatives retained (the model floors assets at a_min = 0
+        # and cannot reproduce them -- recorded, not censored).
+        dict(name="mean_a_p_late",
+             series=assets_series,
+             source=f"{ASSETS_VAR} (excl. home) winsorised at p{ASSETS_WINSOR_P:g} (cut = {assets_cut:,.0f} USD), child ages {AGE_ASSETS_LO}-{AGE_ASSETS_HI}",
+             units="model units (10k USD, real 2015)",
+             model=f"mean of min(sim_a, cut) over t = {AGE_ASSETS_LO}..{AGE_ASSETS_HI} -- PRE-transfer assets"),
     ]
 
     # The TAS block is computed HERE, before `lines` is assembled, because its scalar
@@ -892,6 +936,10 @@ def main():
         "# model never reaches the cut -- its asset grid tops out at a_max = 100 -- so the",
         "# minimum binds on no simulated household, which moments.jl checks and reports.",
         f'tas_wealth_winsor_cut = {cut / DOLLARS_PER_MODEL_UNIT:.17g}',
+        "# mean_a_p_late (2026-09-27): its own winsorisation cut, model units, and its ages.",
+        f'assets_winsor_cut = {assets_cut / DOLLARS_PER_MODEL_UNIT:.17g}   # p{ASSETS_WINSOR_P:g} of {ASSETS_VAR} at child ages {AGE_ASSETS_LO}-{AGE_ASSETS_HI}',
+        f'assets_var = "{ASSETS_VAR}"',
+        f'age_assets = [{AGE_ASSETS_LO}, {AGE_ASSETS_HI}]',
         "",
         "# Centring constant for the psychic cost of college:",
         "#     kappa_0 + kappa_theta*(log(theta) - m_psychic)",
@@ -1150,7 +1198,7 @@ def write_by_age():
         d = pd.read_stata(path)
         missing = [c for c in ("mu_cons_exhous_real_w99", "mu_m_method2_final_w99",
                                "mu_leis_mom_wk", "mu_leis_dad_wk",
-                               "mu_par_time_tot", "mu_c_time_hrs", "mu_study_hrs", "mu_school_hrs", "mu_x_gach", "mu_x_lw")
+                               "mu_par_time_act", "mu_c_time_hrs", "mu_study_hrs", "mu_school_hrs", "mu_x_gach", "mu_x_lw")
                    if c not in d.columns]
         if missing:
             print(f"  SKIP {dst}: {src} is missing {', '.join(missing)}. "
@@ -1175,14 +1223,15 @@ def write_by_age():
             # work is not stored directly by age; leis_*_wk IS 112 - own work, so invert it
             "h_p": (((HOURS_PER_WEEK - d.mu_leis_mom_wk) +
                      (HOURS_PER_WEEK - d.mu_leis_dad_wk)) / 2.0) / HOURS_PER_WEEK,
-            "t_p": d.mu_par_time_tot / HOURS_PER_WEEK,
+            "t_p": d.mu_par_time_act / HOURS_PER_WEEK,     # active only since 2026-09-27
             "i_c": d.mu_study_hrs / HOURS_PER_WEEK,
             "school_c": d.mu_school_hrs / HOURS_PER_WEEK,
             "i_total": d.mu_c_time_hrs / HOURS_PER_WEEK,
             # Same leisure identity: school, own study and parental time are
             # deducted. These are by-age means with variable-specific coverage.
-            # Active+nearby parental time retains its pre-existing overlap caveat.
-            "l_c": (HOURS_PER_WEEK - d.mu_study_hrs - d.mu_school_hrs - d.mu_par_time_tot) / HOURS_PER_WEEK,
+            # ACTIVE parental time since 2026-09-27 (par_time_tot before), the same measure
+            # as the t_p target: the model's l_c = 1 - t_p - i_c uses the same t_p.
+            "l_c": (HOURS_PER_WEEK - d.mu_study_hrs - d.mu_school_hrs - d.mu_par_time_act) / HOURS_PER_WEEK,
             "x_gach": d.mu_x_gach,
             "x_lw":   d.mu_x_lw,
         })

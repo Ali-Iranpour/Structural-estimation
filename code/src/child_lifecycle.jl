@@ -191,11 +191,52 @@ end
 # and the fitted kappa_0 is the cost AT log theta = m_psychic = 6.2634 (the data's mean
 # log g_ACH at 17). A target file with a different m_psychic would make this a different
 # model; `check_psychic_centring` in moments.jl refuses it.
+# 2026-09-27 (Ali), aligned with apps/Structural-estimation-v2: omega 0.3 -> 0.2 and mu
+# 0.5 -> 0.8 (c_bar = 1 - mu + mu*omega, the family's weight on the child's value at 18,
+# 0.65 -> 0.36), y 0.6 -> 0.144 (the child's government transfer), sigma_eps FIXED at 2.0
+# (no longer estimated: kse_w_gap, the moment that identified it, is dropped as wrong --
+# code/smm/moments.jl). The four estimated kappas below are still the exp16b values, fitted
+# at the OLD settings: this is not a fit at the new ones until the SMM is rerun.
 const CHILD_DEFAULTS = (
     # --- fixed ---
     rho          = 1.5,
     psi_terminal = 0.0,      # by instruction 2026-08-30
-    omega        = 0.3,      # altruism
+    # omega: the parent's altruism weight on the child's value, entering the family's
+    # weight on the child as c_bar = (1 - mu) + mu*omega (family_coef). 0.2 since
+    # 2026-09-27 (Ali; was 0.3), the value of the v2 run 2026-09-27_151651_mu08_om02_cp.
+    # WHY: with mu 0.8 this puts c_bar at 0.36, inside the 0.2-0.7 range of comparable
+    # models (Daruich & Fernandez 2024: 0.66; Lee & Seshadri 2019: 0.32; Del Boca, Flinn,
+    # Verriest & Wiswall 2026: 1/3 in (1-J)u_p + J u_c, i.e. 0.5 in u_p + J u_c) and
+    # below v2's 0.65, which forced the parent to save ~60% of income (v2 VERSION.md /
+    # the 2026-09-26 run). The moments do not identify it (v2 audit: Q flat in omega), so
+    # it is fixed by design, as Del Boca et al. do.
+    omega        = 0.2,
+    # mu: the parent's weight in the family objective at the half period
+    # (coef*V_child + mu*V_parent). 0.8 since 2026-09-27 (Ali; the constructor default
+    # 0.5 was used before -- mu was not in CHILD_DEFAULTS). Same value as v2.
+    mu           = 0.8,
+    # y: the GOVERNMENT cash/near-cash transfer per period, both paths, every year.
+    # CALIBRATED 2026-09-27 (Ali), same value and source as apps/Structural-estimation-v2:
+    # 0.144 = mean non-medical means-tested transfer per working-age household, Guner,
+    # Rauh & Ventura (2024, IZA DP 17551, Table 1; TANF+SNAP+WIC+SSI+housing, 1,440 USD in
+    # 2016 dollars; 1,422 in the model's 2015 dollars, ignored).
+    # WHY IT CHANGED: 0.6 (the constructor default, 6k USD/yr) was the size of ALL
+    # means-tested transfers incl. Medicaid, which is in kind. NOTE the overlap with the
+    # HSV tax function (tax_lambda, tau), estimated on income AFTER taxes and transfers:
+    # for a worker, transfers are counted once inside after_tax_income and once here.
+    # The parent block's y is separate: 0.1632 (PARENT_DEFAULTS).
+    y            = 0.144,
+    # college_cost: the tuition the FAMILY pays per study year, NET of grant aid (grants are
+    # modelled nowhere else). 0.6 since 2026-09-27 (Ali), same value and source as
+    # apps/Structural-estimation-v2: a ~3/4 public, 1/4 private blend of College Board 2015-16
+    # net tuition and fees (public four-year 3,980 USD; private nonprofit ~15,000), College
+    # Board, Trends in College Pricing 2015, p. 4.
+    # WHY IT CHANGED: 1.2 (the constructor default, 12k USD) was the STICKER price. With the
+    # child's y cut from 0.6 to 0.144 the same day, sticker tuition would have raised the assets
+    # a child needs at 18 to afford college (PV of college_cost + c_floor - y over the 4 years)
+    # from ~2.3 to ~4.1 (23k -> 41k USD); at 0.6 it is ~1.8 (18k USD). v2 made the two changes
+    # together (2026-09-17/18).
+    college_cost = 0.6,
     a_max        = 100.0,    # must cover the parent's terminal assets + 51 periods
     w            = 20.0,
     # --- estimated: the psychic cost of college (exp16b) ---
@@ -205,8 +246,15 @@ const CHILD_DEFAULTS = (
     m_psychic    = 6.263396877461691,      # the centring the kappas were fitted at
     # --- estimated: the parent's taste for retained assets (exp16b) ---
     kappa_terminal = 8.786782398737627,
-    # --- estimated: the SCALE of the college taste shock (exp16b) ---
-    sigma_eps    = 1.142235039998814,
+    # --- FIXED since 2026-09-27: the SCALE of the college taste shock ---
+    # 2.0 = the value apps/Structural-estimation-v2 fixes it at (SMM_SIGMA_EPS_FIXED, runs of
+    # 2026-09-26/27; Ali's choice). NOT estimated any more: it was identified by kse_w_gap,
+    # which is dropped from the SMM as a wrong moment (retained wealth measured ~11 years
+    # after the transfer; code/smm/moments.jl). exp16b had estimated 1.142235039998814 --
+    # identified by that same moment. Caveat: sigma_eps is in the child's utility units and
+    # this child (T = 51, lump-sum transfer) is not v2's, so 2.0 does not carry over exactly;
+    # it is also the top of the old search box [0.1, 2.0].
+    sigma_eps    = 2.0,
 )
 
 function ConSavLaborCollege_AR1(;

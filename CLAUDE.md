@@ -56,7 +56,15 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
 - **Model/specification changes go through the advisor** before results built on them
   circulate. Numerical fixes (grid bounds, interpolation, solver settings) do not.
 
-## The SMM is 16 parameters against 17 moments (since 2026-09-11; 14 / 17 from 2026-09-10)
+## The SMM is 15 parameters against 16 moments (since 2026-09-27; 16 / 17 from 2026-09-11)
+
+**2026-09-27 (Ali), aligned with apps/Structural-estimation-v2, values/targets only:**
+`kse_w_gap` untargeted (wrong moment: wealth measured ~11 years after the transfer),
+`kterm_x_strict_w99` replaced by the parent-block `mean_a_p_late` (same flaw; 11 parent + 5 TAS),
+`sigma_eps` fixed at 2.0, `t_p` on `par_time_act` (active only), `mu` 0.8, `omega` 0.2,
+parent `y` 0.1632 (Daruich & Fernández), child `y` 0.144 (Guner, Rauh & Ventura). Not yet
+re-estimated; the exp16b values below are starting values now. docs/SMM.md, "The
+2026-09-27 respecification". The text below describes the 16 / 17 design.
 
 **The baseline is the exp16b fit (promoted 2026-09-12).** `PARENT_DEFAULTS` and
 `CHILD_DEFAULTS` carry run `2026-09-11_182836_exp16b` at full precision; the notebook and

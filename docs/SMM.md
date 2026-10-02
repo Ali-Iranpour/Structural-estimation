@@ -42,7 +42,40 @@ Flags, runtimes and the parallelism story are in
 | 2026-09-07 → 09 | 9 / 10 | pilot with `i_c = c_time_hrs` (school **plus** study); **reverted** — see [the parent moments](#the-ten-parent-moments) |
 | 2026-09-09 | 10 / 10 | own study only; fixed school schedule deducted from the child's leisure; `sigma_4_1` estimated; HC late window 12–17 |
 | 2026-09-10 | 14 / 17 | four child parameters (`kappa_*`) and seven TAS moments; inverse-variance weights from the joint clustered covariance |
-| 2026-09-11 | **16 / 17** | `sigma_eta` (HC shock) and `sigma_eps` (taste-shock scale); ability tertiles replaced by `kth_ga17_gap`; `kse_w_gap` and `sd_ga17` added |
+| 2026-09-11 | 16 / 17 | `sigma_eta` (HC shock) and `sigma_eps` (taste-shock scale); ability tertiles replaced by `kth_ga17_gap`; `kse_w_gap` and `sd_ga17` added |
+| 2026-09-27 | **15 / 16** | aligned with `apps/Structural-estimation-v2` (Ali): `kse_w_gap` dropped, `kterm_x_strict_w99` replaced by the parent-block `mean_a_p_late` (11 parent + 5 TAS), `sigma_eps` fixed at 2.0, `t_p` on active time, `mu`/`omega`/`y` recalibrated — see [the 2026-09-27 respecification](#the-2026-09-27-respecification). **Not yet estimated.** |
+
+### The 2026-09-27 respecification
+
+Values and targets only — no model mechanism changed. All of it is documented at the line
+that sets it.
+
+| what | was | now | why | where |
+|---|---|---|---|---|
+| `kterm_x_strict_w99` → `mean_a_p_late` | TAS retained parental net worth at a median child age of ~29 (33.198), the level target for `kappa_terminal` | **PSID pre-transfer net worth (excl. home) at child ages 16–17**, winsorised at its own p99: **26.9795** (N 1,333; the same number as v2's target). `kterm_x_strict_w99` stays in the file, untargeted | the same timing flaw as `kse_w_gap`: the TAS wealth is measured ~11 years after the transfer the model's object sits at; ported from v2, where it has been the level target since 2026-09-11 | `SMM_PARENT_MOMENTS` / `model_moments` (moments.jl, cut from `assets_winsor_cut` in the target file), `PARENT_TARGETED` (make_smm_targets.py) |
+| penalty for an unsolvable draw, and its reporting | `SMM_PENALTY = 1e6`, named by exception type only; any `DomainError`/`AssertionError`/`InexactError` scored as a model failure; a penalised draw could seed a restart | **`1e12`**, named `Type@file:function:line`; `DomainError`/`InexactError` scored only when they originate in `parent_family.jl`/`child_lifecycle.jl`, `AssertionError` only for the SLSQP-callback "box bound" assertions, everything else re-thrown as a bug; infeasible draws named `infeasible_sigma_1`/`infeasible_sigma_2`; `tiktak(...; invalid_value = SMM_PENALTY)` keeps penalised draws out of the restart seeds (fewer valid points than N* → fewer restarts, warned); `run_smm.jl` lists the exception sites | ported from `apps/Structural-estimation-v2` (its 2026-09-20 audit): at 1e6 a penalty ranked BETTER than most valid Sobol draws (valid Q is routinely 1e6–1e8), so penalised points could become seeds; the broad exception classes could hide coding errors as "model failures". The v2 "log-space" rules do not apply here — v1's TAS moments use realised 0/1 college draws, not choice-probability weights | `SMM_PENALTY`, `failure_site`, `is_model_failure`, `smm_infeasible_which`, `smm_objective` (moments.jl); `code/src/tiktak.jl` (now identical to v2's); `run_smm.jl`; `profile_param.jl`, `sensitivity.jl`, `grid_sensitivity.jl` pass the site too |
+| notebook counterfactuals | `y` hard-coded at multiples of the old 0.6 (child 1.08 / 0.27, parent 1.2 / 0.27, tax arms 1.0 / 0.2, belief cells 1.08 / 1.2) | the **same multipliers** applied to the current defaults (`1.8 * CHILD_DEFAULTS.y`, `2.0 * PARENT_DEFAULTS.y`, `0.45 * …`, `(5/3)`/`(1/3) * y_baseline`) | the baseline `y` changed; a fixed 1.08 would now be 7.5× the child's baseline, not 1.8× | `code/transfer_CRRA_wage.ipynb` cells 30, 56–57, 64–65, 80–82 |
+| `kse_w_gap` | targeted (identified `sigma_eps`) | **untargeted**, still written and printed | **the moment is wrong**: the retained parental wealth it compares is measured at a median child age of ~29, about 11 years after the transfer at 18 that the model's counterpart describes, so it can only fit the timing error (v2 dropped it on 2026-09-18 for the same reason; it took 43% of Q there, 34.7% at exp16b here) | `SMM_TAS_MOMENTS` (moments.jl), `TAS_MOMENTS` (make_smm_targets.py) |
+| `sigma_eps` | estimated, box [0.1, 2.0], exp16b 1.142 | **fixed at 2.0** | its identifying moment is gone; 2.0 is the value v2 fixes (`SMM_SIGMA_EPS_FIXED`). Caveat: a scale in the child's utility units, and this child (T = 51, lump-sum transfer) is not v2's | `CHILD_DEFAULTS` (child_lifecycle.jl); stays in `CHILD_ESTIMATED` so the fixed value is in the cache key |
+| `t_p` targets | `par_time_tot` (active + nearby) | **`par_time_act`** (= `parent_Act`, active only): 0.3275 / 0.1738 (36.7 / 19.5 hrs/wk, equal-age means) | nearby time overlaps leisure and work (+21 hrs over the 112-hr week); active time cuts that to +5. Still a child-side union, not one parent's own time | make_smm_targets.py; the by-age CSVs' `t_p` and `l_c` too |
+| `omega` | 0.3 | **0.2** | with `mu` 0.8, `c_bar = 1 − mu + mu*omega` = 0.36, the v2 run of 2026-09-27; inside the literature's 0.2–0.7 range; not identified by the moments, so fixed by design | `CHILD_DEFAULTS` |
+| `mu` | 0.5 (constructor default; not in `CHILD_DEFAULTS`) | **0.8** | same as v2 | `CHILD_DEFAULTS`, passed by `child_config` |
+| parent `y` | 0.6 | **0.1632** | 0.6 was ALL means-tested transfers incl. Medicaid (in kind). 1,632 USD/yr = the lump-sum transfer `V` of Daruich & Fernández (AER 2024, §3 "Taxes", PDF p. 14, Fig. 2); 2000 USD used as is (≈ 0.2246 in 2015 USD), per adult | `PARENT_DEFAULTS`; the constructor default now reads it |
+| `college_cost` | 1.2 (constructor default, the sticker price) | **0.6** (net tuition, College Board 2015-16, v2's value) | with the child `y` cut to 0.144, sticker tuition raised the assets needed at 18 to afford college from ~2.3 to ~4.1 (23k → 41k USD); at 0.6 it is ~1.8 | `CHILD_DEFAULTS`, passed by `child_config` |
+| child `y` | 0.6 (constructor default) | **0.144** | 1,440 USD = mean non-medical means-tested transfer per working-age household, Guner, Rauh & Ventura (2024), Table 1 — v2's value | `CHILD_DEFAULTS`, passed by `child_config` |
+
+**A plumbing fact found on the way:** neither `y` nor `mu` reached the estimation before —
+the SMM builds the parent without splatting `PARENT_DEFAULTS` and `child_config` did not pass
+`mu`/`y`, so every run used the constructors' literals (parent `y` 0.6, child `y` 0.6, `mu`
+0.5). To reproduce an older run, pass them explicitly.
+
+**What this does to the baseline.** `PARENT_DEFAULTS`/`CHILD_DEFAULTS` still carry the exp16b
+estimates, which were fitted under the old settings: they are starting values now, not a fit.
+Targets: `output/smm_runs/2026-09-27_164529_799510_targets` (16 targeted rows: 11 parent + 5
+TAS). Spec `smm15_p11_tas5_apl_nokse_sefix20_tact_mu08_om02_v2`. The generator test's ordering
+check compared the builder's emission order (it emits `sd_ga17` third, and had failed since
+that row was added); it now checks that the flagged set IS `TAS_MOMENTS`, each once — the
+written covariance order comes from `TARGETED`, which the other check pins.
 
 Estimates from different rows are **not comparable** — different targets, different
 weights, different objectives. Never compare a `Q` across rows.
@@ -255,14 +288,15 @@ target shows up as a diff. Values below are from the
 |---|---|---|---|
 | `mean_c_p` | `cons_exhous_real_w99` | 3.1155 | 6,742 |
 | `mean_h_p` | `(wh_mom + wh_dad)/2 / 112` | 0.3073 | 15,665 |
-| `mean_t_p_early` | `par_time_tot / 112`, ages 1–9 | 0.4544 | 475 |
-| `mean_t_p_late` | `par_time_tot / 112`, ages 10–17 | 0.3333 | 590 |
+| `mean_t_p_early` | `par_time_act / 112`, ages 1–9 (was `par_time_tot`, 0.4544, until 2026-09-27) | 0.3275 | 475 |
+| `mean_t_p_late` | `par_time_act / 112`, ages 10–17 (was `par_time_tot`, 0.3333) | 0.1738 | 590 |
 | `mean_e_p_early` | `m_method2_final_w99`, ages 1–9 | 0.3429 | 8,178 |
 | `mean_e_p_late` | `m_method2_final_w99`, ages 10–17 | 0.3911 | 7,182 |
 | `mean_i_c_early` | `study_hrs / 112` (own study only), ages 6–9 | 0.0393 | 171 |
 | `mean_i_c_late` | `study_hrs / 112` (own study only), ages 10–17 | 0.0496 | 584 |
 | `mean_hc_early` | `x_gach` (log PCA composite), ages 3–9 | 6.0737 | 252 |
 | `mean_hc_late` | `x_gach` (log PCA composite), ages **12–17** | 6.2589 | 459 |
+| `mean_a_p_late` *(since 2026-09-27)* | `assets_real` (net worth excl. home) winsorised at p99 (cut 4,079,296 USD), ages **16–17**; model: mean of `min(sim_a, cut)` at t = 16–17, **pre-transfer** | 26.9795 | 1,333 |
 
 **The child's time input is own study, with school time fixed** (since 2026-09-09).
 `study_hrs` is own study alone — homework, self-study, academic clubs — averaging 3.4
@@ -346,7 +380,7 @@ Three frames:
 | `kth_ga17_gap` | A17 | `mean(x \| y=1) − mean(x \| y=0)` | 0.0312 | 317 | `mean(log hc17[college]) − mean(log hc17[work])`, `hc17 = parent.sim_hc[:, 17]` | `kappa_theta` |
 | `kpe_g0_c` | CF | completion where `pared_col == 0` | 0.2108 | 1,319 | college share where `BothCollege == 0` | `kappa_ParEd` |
 | `kpe_g1_c` | CF | completion where `pared_col == 1` | 0.6013 | 913 | college share where `BothCollege == 1` | `kappa_ParEd` |
-| `kterm_x_strict_w99` | W | `E[min(W, cut)]`, model units | 33.198 | 665 | mean of `sim_a[:, T+1] − transfer`, same cut | `kappa_terminal` |
+| `kterm_x_strict_w99` *(UNTARGETED since 2026-09-27 — measured ~11 years after the transfer; replaced by `mean_a_p_late`)* | W | `E[min(W, cut)]`, model units | 33.198 | 665 | mean of `sim_a[:, T+1] − transfer`, same cut | `kappa_terminal` |
 | `kse_w_gap` | W | `mean(W99 \| y=1) − mean(W99 \| y=0)` | 36.843 | 665 | `mean(retained[college]) − mean(retained[work])` | `sigma_eps` |
 | `sd_ga17` | A17 | SD of `x` | 0.0329 | 317 | `std(log hc17)` | `sigma_eta` |
 
@@ -965,7 +999,10 @@ estimates are a preliminary experiment, and the results do not circulate.
 `BothCollege` in the model. Open by instruction; [`ERRORS.md`](ERRORS.md) P7c. The
 estimated `kappa_ParEd` is not the effect of parental education.
 
-**3. `par_time_tot` overlaps leisure, so `phi_2` absorbs the inconsistency.** The `t_p`
+**3. `par_time_tot` overlaps leisure, so `phi_2` absorbs the inconsistency.** *(Largely
+addressed 2026-09-27: `t_p` now uses `par_time_act`, active only, which overlaps by ~5 hrs
+instead of 21 — see [the 2026-09-27 respecification](#the-2026-09-27-respecification). The
+text below describes every estimate up to exp16b.)* The `t_p`
 target uses `par_time_tot` (active **plus** nearby/supervisory presence) by instruction.
 That measure does not fit an exhaustive time budget — per parent,
 `leisure + work + Mom_Total_Act = 112.00` exactly, but `leisure + work + par_time_tot = 133.25`,

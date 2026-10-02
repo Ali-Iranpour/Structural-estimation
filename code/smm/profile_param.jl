@@ -165,7 +165,7 @@ end
         return q
     catch err
         cause = _root_cause(err)
-        is_model_failure(cause) && return SMM_PENALTY
+        is_model_failure(cause, failure_site(err, catch_backtrace())) && return SMM_PENALTY   # 2026-09-27: origin-based rule
         rethrow()
     end
 end

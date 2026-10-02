@@ -6,9 +6,10 @@ Regression tests for tools/make_smm_targets.py (2026-09-11, sixteen-parameter ta
 
 What is checked, and why each check exists:
 
-  1. The seven targeted TAS moments are in the SAME ORDER as `SMM_TAS_MOMENTS` in
-     code/smm/moments.jl. `load_targets` refuses a permuted covariance, but only at run
-     time; this catches it at generation time.
+  1. The targeted TAS moments (five since 2026-09-27) are in the SAME ORDER as
+     `SMM_TAS_MOMENTS` in code/smm/moments.jl, and the rows the builder flags targeted are
+     exactly that set. `load_targets` refuses a permuted covariance, but only at run time;
+     this catches it at generation time.
   2. Every row that has a namesake in the supplied Input/SMM_TAS_Moments.csv reproduces
      its estimate AND clustered SE to 1e-6, and the targeted-TAS covariance block matches
      the supplied SMM_TAS_VCov.dta. This is the regression that lets the reconstructed
@@ -71,8 +72,14 @@ def main():
     jl = re.findall(r'"([A-Za-z0-9_]+)"', blk)
     check(jl == G.TAS_MOMENTS, f"SMM_TAS_MOMENTS == TAS_MOMENTS: {jl}")
     targeted = [mo["name"] for mo in tas if mo["targeted"]]
-    check(targeted == G.TAS_MOMENTS, "the rows flagged targeted are exactly TAS_MOMENTS, in order")
-    check(len(G.TARGETED) == 17, f"17 targeted moments in total (got {len(G.TARGETED)})")
+    # FIXED 2026-09-27: this compared the BUILDER's emission order with TAS_MOMENTS and had
+    # failed since sd_ga17 was added (build_tas_moments emits it third). The builder order is
+    # not load-bearing: the covariance and its `names` are written in TARGETED order
+    # (`names = [n for n in TARGETED]` in main), which the SMM_TAS_MOMENTS check above pins.
+    # What must hold here is that the flagged set IS TAS_MOMENTS, each row exactly once.
+    check(sorted(targeted) == sorted(G.TAS_MOMENTS) and len(set(targeted)) == len(targeted),
+          f"the rows flagged targeted are exactly TAS_MOMENTS, each once: {targeted}")
+    check(len(G.TARGETED) == 16, f"16 targeted moments in total since 2026-09-27 (got {len(G.TARGETED)})")
 
     # ---- 2. reproduction of the supplied exports ---------------------------
     print("\n2. reproduction of Input/SMM_TAS_Moments.csv and SMM_TAS_VCov.dta")
