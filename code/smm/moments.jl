@@ -1798,7 +1798,9 @@ function report_fit(z::AbstractVector{Float64}, targets;
                     out::IO = stdout,
                     # grid / numerical overrides of the run (run_smm.jl --parent-extra/--child-extra; ported from
                     # apps/Structural-estimation-v2 on 2026-10-02); the defaults leave the report exactly as before
-                    child_extra::NamedTuple = (;), parent_extra::NamedTuple = (;))
+                    child_extra::NamedTuple = (;), parent_extra::NamedTuple = (;),
+                    # the run's actual start (natural units, by name); nothing = the code's default start
+                    start::Union{Nothing,AbstractDict} = nothing)
     kw = unpack(z)
     w  = weights === nothing ? moment_weights(targets) : weights
     r  = run_pipeline(kw, targets; Na = Na, Nk = Nk, Nhc = Nhc, simN = simN,
@@ -1809,10 +1811,22 @@ function report_fit(z::AbstractVector{Float64}, targets;
     d  = moment_diagnostics(p)
     se = target_se(targets)
 
-    println(out, "\nParameters")
-    println(out, "-"^62)
-    for q in SMM_PARAMS
-        @printf(out, "  %-14s %10.4f   (start %.4f)\n", q.name, getfield(kw, q.name), smm_start(q.name))
+    # Every parameter with the run's start, its box and where it sits in the box (2026-10-02, Ali: show
+    # whether the estimate is close to a bound). The position is in SEARCH coordinates, the scale of the
+    # acceptance flag (within 2% of an edge: review) and of the "approaching" note (within 5%). The start
+    # used to be the code's default even when the run started elsewhere (--init-from).
+    println(out, "\nParameters -- value, ", start === nothing ? "the code's default start" : "the run's start",
+            ", the search box, and where the value sits in it (search coordinates)")
+    println(out, "-"^100)
+    @printf(out, "  %-14s %11s %11s   %-23s %7s\n", "parameter", "value", "start", "box [lo, hi]", "in box")
+    lo_s, hi_s = search_bounds()
+    for (i, q) in enumerate(SMM_PARAMS)
+        pos  = (z[i] - lo_s[i]) / (hi_s[i] - lo_s[i])
+        flag = (pos < 0.02 || pos > 0.98) ? "   << ON A BOUND (within 2%): review" :
+               (pos < 0.05 || pos > 0.95) ? "   <  near a bound (within 5%)" : ""
+        st   = start === nothing ? smm_start(q.name) : Float64(start[q.name])
+        @printf(out, "  %-14s %11.4f %11.4f   [%9.4g, %9.4g]   %6.1f%%%s\n",
+                q.name, getfield(kw, q.name), st, q.lo, q.hi, 100 * pos, flag)
     end
 
     @printf(out, "\nTargeted moments -- %d moments, %d parameters\n", length(SMM_MOMENTS), length(SMM_PARAMS))
@@ -1862,6 +1876,7 @@ function report_fit(z::AbstractVector{Float64}, targets;
             targets["kterm_med22"].mean * DOLLARS_PER_MODEL_UNIT)
     println(out, "  LIMITATION: the data are at first-child ages 21-22; the model's a_term is at 18.")
     m.retained_negative > 0 && @printf(out, "  NOTE %d households retain NEGATIVE assets\n", m.retained_negative)
+    report_transfers(out, r, targets)
     print(out, "  mean ln k by age   ")
     for a in 1:SMM_AGE_HI; @printf(out, "%d:%.2f ", a, m.mean_lnk_by_age[a]); end
     print(out, "\n  sd ln k by age     ")
@@ -1887,6 +1902,58 @@ function report_fit(z::AbstractVector{Float64}, targets;
             d.a_grid_max, round(Int, d.a_hh_ever_above * n_sim), d.hc_grid_min, d.hc_grid_max,
             round(Int, d.hc_hh_ever_above * n_sim), round(Int, d.hc_hh_ever_below * n_sim))
     return (moments = m, diagnostics = d, params = kw, violations = viol, pipeline = r)
+end
+
+"""
+    report_transfers(out, r, targets)
+
+Untargeted (2026-10-02, Ali: "show the amount of transfer for college and for the work"): the transfer
+at 18 by the child's path, by BothCollege and, for college children, by tertile of parental assets at 18
+(before the transfer), with the data's support figures beside it. In the model the transfer is ONE lump
+sum at 18; the data (TAS) report support per YEAR at ages 18-22 and the share of years with any support,
+so levels are not comparable -- the data lines are context, and the shares are the closest comparison.
+"""
+function report_transfers(out::IO, r, targets)
+    usd(x) = x * DOLLARS_PER_MODEL_UNIT
+    _t(k) = haskey(targets, k) ? targets[k].mean : NaN
+    tr  = r.transfers
+    ok  = isfinite.(tr)
+    col = r.child.sim_college .>= 0.5
+    bc  = r.parent.sim_k[:, 1] .>= 0.5
+    a18 = r.child.sim_a_init
+    println(out, "\nUntargeted -- the transfer at 18 (one lump sum in the model), 2015 USD")
+    println(out, "-"^76)
+    @printf(out, "  %-30s %6s %11s %11s %11s\n", "children", "n", "mean", "median", "share > 0")
+    function row(lab, mask)
+        v = tr[mask .& ok]
+        isempty(v) ? @printf(out, "  %-30s %6d   (none)\n", lab, 0) :
+            @printf(out, "  %-30s %6d %11.0f %11.0f %10.1f%%\n", lab, length(v), usd(mean(v)), usd(median(v)),
+                    100 * mean(v .> 1e-8))
+    end
+    row("all", trues(length(tr)))
+    row("college", col);                         row("work", .!col)
+    row("college, BothCollege = 1", col .& bc);  row("college, BothCollege = 0", col .& .!bc)
+    row("work, BothCollege = 1", .!col .& bc);   row("work, BothCollege = 0", .!col .& .!bc)
+    fa = filter(isfinite, a18)
+    if length(fa) >= 3
+        c1, c2 = quantile(fa, [1 / 3, 2 / 3])
+        row("college, parental assets T1", col .& (a18 .<= c1))
+        row("college, parental assets T2", col .& (a18 .> c1) .& (a18 .<= c2))
+        row("college, parental assets T3", col .& (a18 .> c2))
+    end
+    @printf(out, "  transfer / parental assets at 18 (ratio of means): %.2f\n", mean(tr[ok]) / mean(a18[ok]))
+    println(out, "  data (TAS, ages 18-22; support per YEAR, not a lump sum -- context, not comparable in level):")
+    @printf(out, "    support per enrolled year: mean %.0f, among recipients %.0f; by parental-wealth tertile near 18: %.0f / %.0f / %.0f\n",
+            usd(_t("ksup_mean")), usd(_t("ksup_mean_pos")), usd(_t("ksup_w18_t1")), usd(_t("ksup_w18_t2")), usd(_t("ksup_w18_t3")))
+    @printf(out, "    share of years with any support: enrolled %.1f%%, not enrolled %.1f%%  (closest model figure: share > 0 above)\n",
+            100 * _t("val_sup_enr"), 100 * _t("val_sup_nonenr"))
+    ret = filter(isfinite, r.retained)
+    @printf(out, "  parents' wealth after the transfer (model, at 18): median %.0f, mean %.0f\n",
+            usd(median(ret)), usd(mean(ret)))
+    @printf(out, "    data at first-child ages 21-22: median %.0f incl. home (targeted), %.0f excl. home; mean %.0f incl., %.0f excl.\n",
+            usd(targets["kterm_med22"].mean), usd(_t("wealth2122_med_excl")), usd(_t("wealth2122_mean_incl")),
+            usd(_t("wealth2122_mean_excl")))
+    return nothing
 end
 
 report_fit(::AbstractVector{Float64}, targets, V_child; kwargs...) = error(

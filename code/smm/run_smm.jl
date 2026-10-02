@@ -1367,7 +1367,7 @@ function say_report(z)
     buf = IOBuffer()
     r = report_fit(z, TARGETS; Na = G_FULL_.Na, Nk = G_FULL_.Nk, Nhc = G_FULL_.Nhc,
                    simN = G_FULL_.simN, seed = SEED_, child_grid = CHILD_G_, out = buf,
-                   child_extra = CE_RUN, parent_extra = PE_RUN)
+                   child_extra = CE_RUN, parent_extra = PE_RUN, start = X0_NAT)
     s = String(take!(buf))
     lock(OUTLOCK) do
         print(s); print(LOG, s); flush(LOG)

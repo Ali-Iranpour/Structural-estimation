@@ -53,6 +53,8 @@ both theoretical masks. **One caveat remains — see P5.**
 | P12 | `σ₂₁ × 1.5` counterfactual no longer solves under the new HC block | parent_family | 🟡 |
 | P10 | Leisure restored (`φ₂` 20.0 → 0.8); `τ_p` level now targeted — see P11 | parent_family | 🟡 |
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
+| F1 | Latent skill dispersion collapses with age (SD ln k at 17: 0.03-0.07 vs data 0.652), so the college-LW gap at 17 is near zero (0.06 vs 3.35) | parent_family / smm | 🟡 |
+| F2 | The transfer at 18 goes to EVERY child and averages 339k USD (86% of parental assets); data: support in 66% of enrolled years, about 6-12k USD a year | parent_family / smm | 🟡 |
 | T1 | **The TikTak search is not the authors' algorithm** (Arnoud, Guvenen & Kleineberg); the authors' version is decided as a selectable algorithm, **deferred** (2026-10-02) | src/TikTak, smm/run_smm | 🟡 |
 | P7b | ~~`BothCollege` share hardcoded at `Bernoulli(0.3)`~~ -- **resolved 2026-10-02**: `bc_share_children_skill` = 0.2588 from the target file, required | parent_family | ✅ |
 | P7c | `kappa_ParEd` targeted on *either*-parent college; model means *both* — **open by instruction** | smm/moments | 🟡 |
@@ -60,6 +62,34 @@ both theoretical masks. **One caveat remains — see P5.**
 | G3 | `create_focused_grid` builds a non-monotone grid when the range is under 3.0 | both | ⚪ |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
+
+---
+
+## 🟡 F1 — Latent skill dispersion collapses with age — **measured 2026-10-02 at pilot points; check at the K = 16 estimate**
+
+At the pilot's best point (arm A, Q 6,784.8) the SD of simulated ln k falls from 0.62 at age 1 to **0.03 at
+17**; at theta0 it is 0.07 at 17. The data's latent SD at 17 is **0.652** (`sd_lnk17` in `[constants]`, used
+for the wage loading, not targeted). With almost no skill spread at 17 the college decision cannot sort on
+skill in LW terms: the targeted `kth_lw17_gap` is 0.06 LW points against the data's 3.35 (t = -6.0), the
+regression's LW coefficient 0.0005 against 0.028, and the BothCollege-LW correlation fades with age (0.13 at
+3-5 to 0.03 at 13-17; data 0.26 to 0.28).
+
+**Not a computing error** (checked 2026-10-02 at theta0 and at arm A): the child's `sim_k_init` equals the
+parent's skill at 18 household by household, and college correlates with ln k at 18 (0.36 at theta0, 0.21 at
+arm A); the gap is small because the skill it sorts on hardly varies. The S3 LW dispersion moments are met
+partly by the binomial test noise, which does not need latent dispersion. Whether to target the latent SD at
+17 (a specification change, for the advisor) is open.
+
+## 🟡 F2 — The transfer at 18 goes to every child and is most of the parents' wealth — **measured 2026-10-02 at arm A; check at the K = 16 estimate**
+
+Untargeted (`report_fit`, "the transfer at 18"): at arm A every one of 2,000 simulated children receives a
+transfer, mean 338,531 USD (median 282,676), 86% of parental assets at 18 (ratio of means); parents keep a
+median 49,392 USD against the data's 156,230 at first-child ages 21-22 (the targeted `kterm_med22`, t = -8.3).
+By path: college 347,100, work 333,594; children of BothCollege parents who WORK receive the most (560,421).
+By parental-asset tertile (college children): 168,916 / 307,235 / 524,858. Data (TAS, ages 18-22, per YEAR):
+support per enrolled year 6,110 (recipients 9,919; by wealth tertile 4,189 / 5,540 / 11,524); any support in
+66.3% of enrolled and 38.1% of non-enrolled years. The model's lump sum and the data's yearly flows are not
+comparable in level, but "every child gets a transfer of most of the parents' wealth" is not the data.
 
 ---
 
