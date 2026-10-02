@@ -75,7 +75,9 @@ want("pmap")   && push!(jobs, "pmap" => vcat(SMOKE, ["--procs", "2", "--local-mo
 # first_alone explicitly: this run checks that restart 1 runs alone exactly as in the serial run (the runner's default
 # start-up has been immediate_mixed since 2026-10-01; tools/test_runner_start.jl covers that policy)
 want("async")  && push!(jobs, "async" => vcat(SMOKE, ["--procs", "2", "--bootstrap", "first_alone", "--outdir", dir("async")]))
-want("refine") && push!(jobs, "refine" => ["--quick", "--serial", "--grid", "10", "--sobol", "8", "--restarts", "2",
+# memo 19 on the real inputs (2026-10-02): 8 plain draws were all penalised ("nothing to seed the local stage"), so
+# this job also draws until it has 2 VALID points (at most 200 attempts), like SMOKE and SMALL; checks unchanged.
+want("refine") && push!(jobs, "refine" => ["--quick", "--serial", "--grid", "10", "--sobol", "200", "--sobol-valid", "2", "--restarts", "2",
                                            "--local-evals", "12", "--polish-evals", "12", "--refine", "30",
                                            "--targets", TFILE, "--outdir", dir("refine")])
 # the pause/resume pairs run their two halves in order
