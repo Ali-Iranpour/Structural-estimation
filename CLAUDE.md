@@ -48,10 +48,12 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
   equal; a mismatch clips the handoff and makes HC above the child's ceiling worth zero
   to the parent's terminal problem.
 - **The parent's `k` is the binary BothCollege indicator**, not capital: `[0.0, 1.0]`,
-  `Bernoulli(0.3)`, constant in `t`. `Nk = 2` is exact, not a discretization. The child
-  module's `k_grid` is a *different* object (the child's HC, `theta`). Since memo 19 the college
-  moments split by BothCollege as the data define it (both parents with 16+ years); the model's
-  share 0.3 against the data's 0.21–0.26 is an open decision.
+  drawn once from `Bernoulli(p_bothcollege)`, constant in `t`. `Nk = 2` is exact, not a
+  discretization. The child module's `k_grid` is a *different* object (the child's HC, `theta`).
+  `p_bothcollege` is the target file's `bc_share_children_skill` = 0.2588 (the children the skill
+  moments and `m_BC` are built on; Ali, 2026-10-02), required, no fallback (it was a hard-coded
+  0.3). Since memo 19 the college moments split by BothCollege as the data define it (both
+  parents with 16+ years).
 - **Model/specification changes go through the advisor** before results built on them
   circulate. Numerical fixes (grid bounds, interpolation, solver settings) do not.
 
@@ -106,16 +108,29 @@ decisions taken, open decisions, next actions. Read it first; update it at the e
 - An `rm` on a variable path (`rm $C/*`) is blocked by a safety check; use `"${C:?}"/...` or a
   literal path.
 
-## Before the estimation can run (status 2026-10-02; details `docs/SMM.md` §7)
+## Before the estimation (status 2026-10-02, 20:00; details `docs/SMM.md` §7, runs in `docs/HANDOVER.md`)
 
-1. The composition tables: block C of `28_smm_moments.do` run in Stata, merged with commit
-   `5aa297f`, pushed, the CSVs copied, the targets regenerated.
-2. sd(log AFQT) for the child's wage return to skill (`docs/WAGE_RETURN_ANCHOR.md`).
-3. Ali's decisions: the p99 caps, the BothCollege share, parents' mean schooling, the `sigma_j`
-   boxes, the asset grid (the advisor's rule: at least 60% of nodes below 150k USD).
-4. The advisor's sign-off on memo 18/19, sigma_eta = 0 and the 2026-10-02 calibration.
-5. The stale tests rewritten for memo 19; the valid share of random draws measured at the
-   production grids; the recovery test rerun with the real inputs.
+Done:
+- **The inputs are complete**: Child_Time_Study `a4448b2` (28 block C) supplies the composition
+  tables, the p99 caps and the BothCollege shares; current targets
+  `output/smm_runs/2026-10-02_193217_281837_targets/targets.toml` (all 12 composition frames).
+- **Ali's decisions (2026-10-02)**: no p99 caps; BothCollege share 0.2588; the `sigma_1` start at
+  our parents' mean schooling; the asset grids by the advisor's rule (60% of nodes below 150k USD,
+  top 1M USD); **the search ranges stay as they are**, and the search draws Sobol' points until it
+  has enough valid ones (`--sobol-valid N`).
+- **The valid share at the production grids is 3.8%** (15 of 400;
+  `output/diagnostics/2026-10-02_valid_share/`): 53% of draws break the elasticity rule (rejected
+  before a solve), 39% send no child to college (skill collapses), 3% send every child. **The
+  default start (`smm_start`) is invalid on the real inputs** (every child goes to college); the
+  recovery point theta0 is valid (Q 14,274).
+
+Still open:
+1. sd(log AFQT) = 0.20 and lnw0 = 1.756 are **provisional and flagged**: replace them with measured
+   values before results circulate (`docs/WAGE_RETURN_ANCHOR.md`).
+2. The advisor's sign-off on memo 18/19, sigma_eta = 0 and the 2026-10-02 calibration; until then
+   every run is a test.
+3. The stale tests rewritten for memo 19 (listed below).
+4. The production run's start and budget, from the 2026-10-02 two-arm pilot (with and without theta0).
 
 ## Correlations as moments
 
@@ -129,8 +144,8 @@ enters only the variances, never the covariances. `docs/SMM.md` §3.1 has the fo
 
 **Memo 19: 20 parameters against 67 moments** (2 parent P, 59 skill S, 5 college T, 1 wealth W),
 the DFVW technology of memo 18, the TikTak module ported from `apps/Structural-estimation-v2`
-(2026-10-02). **Not yet estimated**: the data's composition tables and sd(log AFQT) are not
-provided, and the code refuses to estimate without them. `docs/SMM.md` is the one estimation
+(2026-10-02). **Not yet estimated**: the inputs are complete since 2026-10-02 (above); a two-arm
+pilot started that evening (`docs/HANDOVER.md`). `docs/SMM.md` is the one estimation
 document (model, parameters, moments, search, validation, plan, caveats); `docs/SMM_MEMO19.md`,
 `docs/SMM_COMPOSITION.md` and `docs/WAGE_RETURN_ANCHOR.md` hold the memo-19 records.
 
@@ -140,9 +155,8 @@ document (model, parameters, moments, search, validation, plan, caveats); `docs/
   `output/smm_runs/<stamp>_targets/targets.toml`, with every constant under `[constants]`.
 - **Calibrated values are read from the target file, never from code defaults**: the child's
   weight by age and at the half period, the age-1 skill draw, `L0`, `m_psychic`, and the
-  parent's wage process and initial assets (`parent_calibration(targets)`). The parent
-  constructor has **no defaults** for the wage process and initial assets: a call without them
-  fails by design.
+  parent's wage process, initial assets and BothCollege share (`parent_calibration(targets)`).
+  The parent constructor has **no defaults** for these: a call without them fails by design.
 - **`kappa_0` is on a centred scale**: the psychic cost is
   `kappa_0 + kappa_theta*(log theta - m_psychic) + kappa_ParEd*BC`, with `m_psychic` frozen in the
   target file; `check_psychic_centring` errors on a mismatch.
@@ -156,9 +170,27 @@ document (model, parameters, moments, search, validation, plan, caveats); `docs/
   change of box, restart count or design; there is no `--legacy-import` (runs from before
   2026-10-02 warm-start a new run with `--init-from`). Any edit of `code/src/TikTak/*.jl` changes
   the optimizer identity: an in-progress run then resumes only with `--allow-optimizer-change`.
+  **The runtime projection printed at the start times the FIRST evaluation, which includes
+  compilation** (29-30 s against about 11.5 s warmed up, 2026-10-02): it overstates a run about 2.5x.
 - **`SMM_TEST_FIXTURES=1`** runs the objective on labelled stand-ins (composition, wage loading)
-  for TESTS only; refused with `--preset pilot|production`; the spec name gains `_TESTFIX`.
-- **Worker budget**: about 20 worker processes on this shared server; ask before going past it.
+  for TESTS only; refused with `--preset pilot|production`; the spec name gains `_TESTFIX`. A
+  stand-in replaces only a MISSING input: on the current targets (composition present) with
+  sd(log AFQT) set, the switch changes nothing and the tests run on the real inputs. A test that
+  assumes the default start is valid (`test_penalties.jl`'s base point) then fails that check:
+  rewrite it to start from a valid point, never weaken the check.
+- **Worker budget**: about 20 worker processes on this shared server by default; when the server
+  is free (check `uptime`: 112 cores), up to about 40 (Ali, 2026-10-02). Ask before going further.
+
+## Watching a run
+
+- The driver's folder `output/diagnostics/<date>_<tag>/`: `STATUS` (one line per step), `DONE` or
+  `FAILED` at the end, and each job's console output (`*.console.log`).
+- Each run's folder `output/smm_runs/<stamp>_<tag>/`: `run.log` (the progress lines),
+  `run_record.toml` (every setting), `restarts.csv` (one row per finished local search),
+  `tiktak_state.toml` (the checkpoint `--resume` reads), `estimates.toml` at the end.
+- Follow a file with `tail -f <file>` in a terminal, or open it in VS Code (it reloads).
+  `tmux attach -t <session>` shows only the driver script (detach with Ctrl-b, then d);
+  `tmux ls` lists the sessions.
 
 ```bash
 uv run --with pandas --with numpy --with pyreadstat python tools/make_smm_targets.py   # freeze targets

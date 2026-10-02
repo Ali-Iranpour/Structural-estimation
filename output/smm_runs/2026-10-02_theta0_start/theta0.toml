@@ -1,0 +1,27 @@
+# theta0 of the parameter-recovery test (tools/test_param_recovery.jl THETA0), used as ONE supplied candidate
+# in arm A of the 2026-10-02 pilot (Ali: two arms, with and without it). A pilot point, NOT an estimate: the DFVW
+# Table-7 starts with TFP, persistence sigma_3_0, phi_3, lambda_2 and kappa_0 moved toward the data means by
+# 315 Sobplx steps (fixture composition, placeholder wage), then d_2 and phi_3 pulled off their box edges.
+# On the real inputs (targets 2026-10-02_193217_281837, production grids): valid, college 0.326, Q = 14,274.5
+# (output/diagnostics/2026-10-02_valid_share/classify_nonfinite.csv).
+[parameters]
+phi_2 = 0.196278
+phi_3 = 0.100000
+lambda_2 = 1.577178
+sigma_1_0 = -0.630853
+sigma_1_1 = -0.115329
+sigma_2_0 = -7.154000
+sigma_2_1 = 0.072000
+sigma_3_0 = -0.244781
+sigma_3_1 = 0.005000
+sigma_4_0 = -6.598000
+sigma_4_1 = 0.271000
+d_0 = 4.109547
+d_1 = 4.532005
+d_2 = 2.000000
+d_3 = 2.878411
+kappa_0 = 0.413682
+kappa_theta = -0.182563
+kappa_ParEd = -0.108108
+kappa_terminal = 8.786782
+sigma_eps = 1.142235

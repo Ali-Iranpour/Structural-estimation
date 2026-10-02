@@ -5,18 +5,18 @@ when a phase ends, move the superseded state into **History** below (newest firs
 starting a new file. Paths are relative to the repository root
 (`/srv/project/speech/apps/Structural-estimation`) unless absolute.
 
-# Current state (2026-10-02, 19:45)
+# Current state (2026-10-02, 20:05)
 
 ## Branches and working copies
 
 - **Main checkout**: branch `fix/estimation-consistency` at `409d49e`. Not yet fast-forwarded.
-- **`merge/port-memo19`**, worktree `temp/2026-10-02_memo19_merge/`, at `5b5e361` plus
-  **uncommitted** edits (Ali, 2026-10-02 evening: "Do not commit"): the BothCollege share read from
-  `[constants]` `bc_share_children_skill` with no fallback (`moments.jl`, `parent_family.jl`,
-  `tools/make_smm_targets.py`); `Input/SMM_Constants.csv` (Child_Time_Study `a4448b2`); the recovery
-  test on the real composition and wage loading; the integration smoke fixture
-  (`--sobol 400 --sobol-valid 5`); new `tools/measure_valid_share.jl`. The code part is saved as
-  `output/smm_runs/2026-10-02_193856_recovery_real/uncommitted_code.patch`. **Nothing is pushed.**
+- **`merge/port-memo19`**, worktree `temp/2026-10-02_memo19_merge/`: `9e2d760` (Ali: "commit
+  first", 19:55) holds the BothCollege share from `[constants]` `bc_share_children_skill` with no
+  fallback, `Input/SMM_Constants.csv` (Child_Time_Study `a4448b2`), the targets with the
+  composition, the recovery test on the real inputs, the integration smoke fixture, the valid-share
+  tool and measurement; the commit after it updates `CLAUDE.md` and this file. The main checkout's
+  `fix/estimation-consistency` is fast-forwarded to it. **Nothing is pushed.**
+- `temp/2026-10-02_pilot_code/`: detached at `9e2d760`, the pilot's frozen code.
 - `temp/2026-10-02_integration_snapshot/`: detached at `5b5e361` + that patch, frozen while the
   test suite below runs (runner subprocesses load the code when they start).
 - Child_Time_Study: pulled to `a4448b2` (block C exported: composition tables, p99 caps, BC shares).
@@ -26,12 +26,19 @@ starting a new file. Paths are relative to the repository root
 - `temp/2026-10-02_mac_ref/` (the Mac branch, for the equivalence check) can be removed;
   `temp/2026-10-02_tiktak_port/` is the copy where the port was built.
 
-## Running (started 19:37-19:41; each writes STATUS and DONE or FAILED)
+## Running (each writes STATUS and DONE or FAILED; how to watch: `CLAUDE.md` "Watching a run")
 
-- tmux `v1_valid_share`: valid share of 400 Sobol' points at the production grids, 16 workers;
-  `output/diagnostics/2026-10-02_valid_share/`.
-- tmux `v1_recovery_real`: the recovery test (tech and all) on the real inputs, about 3 hours;
-  `output/smm_runs/2026-10-02_193856_recovery_real/`.
+- tmux `v1_pilot` (started 19:57, about 2.5 h; the runner's own projection of ~5 h counts the
+  compile time of the first evaluation): the two-arm pilot (Ali: two arms, 20 workers each, the
+  ~2.6 h size). Both arms: `--preset pilot`, draws until 150 valid (cap 8,000), 20 local searches of
+  up to 600 evaluations all at once, no polish (the verdict will read NOT ACCEPTED: a learning run).
+  Arm A supplies theta0 as one candidate (start Q 14,274.5), arm B uses the draws only. Driver and
+  console logs `output/diagnostics/2026-10-02_pilot/`; runs
+  `output/smm_runs/2026-10-02_195733_pilot_A_theta0/` and `..._pilot_B_random/`. A killed arm
+  resumes with its full command plus `--resume <run folder>`.
+- tmux `v1_recovery_real` (started 19:38): the recovery test (tech and all) on the real inputs,
+  about 3 hours; `output/smm_runs/2026-10-02_193856_recovery_real/` (its code = `9e2d760`).
+- Finished: the valid share (19:40, `output/diagnostics/2026-10-02_valid_share/`).
 - tmux `v1_suite_real`: the nine passing tests on the real inputs, in parallel, from the snapshot;
   `temp/2026-10-02_merge_checks/real_inputs_suite/`.
 
@@ -85,14 +92,13 @@ starting a new file. Paths are relative to the repository root
 - The advisor's sign-off on memo 18/19, sigma_eta = 0 and the 2026-10-02 calibration (a test
   for now, flagged).
 - The stale tests rewritten for memo 19 (`docs/SMM.md` §5).
-- Whether to commit the evening's edits (Ali said not yet).
 
 ## Next actions
 
-1. Read the valid share, the suite and the recovery when they finish; report.
-2. With Ali: the start point and the `sigma_j` boxes; then commit and fast-forward
-   `fix/estimation-consistency` (no push).
-3. Rewrite the stale tests and tools for memo 19.
+1. Read the suite, the recovery and the pilot when they finish; report.
+2. With Ali: the production run's start and budget from the pilot.
+3. Rewrite the stale tests and tools for memo 19 (including `test_penalties.jl`'s base point, which
+   assumes the default start is valid).
 
 # History
 
