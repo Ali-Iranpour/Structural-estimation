@@ -451,6 +451,12 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
 
     # ---- the parent's wage process and initial assets (Ali, 2026-10-02) -----------
     parent_calib = _parent_calibration(raw, path)
+    # the BothCollege share (Ali, 2026-10-02): `bc_share_children_all` from 28 block C when the target
+    # file carries a finite value; nothing (the model's 0.3) while block C is not yet exported
+    p_bc = let v = get(raw, "bc_share_children_all", NaN)
+        v isa Real && isfinite(v) ? (0 < v < 1 ? Float64(v) :
+            error("bc_share_children_all = $v is not a share in (0, 1): $path")) : nothing
+    end
 
     # ---- the child's bargaining weight ---------------------------------------
     Int.(_req(raw, "mu_ages", path)) == collect(T_CHILD_VOICE:SMM_AGE_HI) ||
@@ -515,7 +521,7 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
     end
 
     out["_spec"] = (school_time = school, m_psychic = m_psychic, L0 = L0, sd_lnk17 = sd_lnk17,
-                    init = init, mu_by_age = mu_by_age, mu_half = mu_half, parent_calib = parent_calib,
+                    init = init, mu_by_age = mu_by_age, mu_half = mu_half, parent_calib = parent_calib, p_bothcollege = p_bc,
                     se = se, Sigma = Sigma, cov_names = cov_names,
                     n_clusters = Int.(get(mc, "n_clusters_by_moment", zeros(Int, length(se)))),
                     composition = comp,
@@ -551,6 +557,8 @@ The parent constructor's REQUIRED wage-process and initial-asset keywords, from 
 [constants] (see `_parent_calibration`). Splat it into `Parent_child_interaction_age_specific_AR1`.
 """
 parent_calibration(targets) = targets["_spec"].parent_calib
+"The BothCollege share from the target file, or `nothing` (the model's default 0.3) before 28 block C."
+target_bc_share(targets) = targets["_spec"].p_bothcollege
 target_m_psychic(targets)   = targets["_spec"].m_psychic
 target_L0(targets)          = targets["_spec"].L0
 target_init(targets)        = targets["_spec"].init
@@ -1319,13 +1327,9 @@ incumbent() = [to_search(smm_start(q.name), q) for q in SMM_PARAMS]
 
 The child's wage loading on skill, anchored per SD to Daruich & Fernandez Table B4
 (`anchored_alpha`, decision 2026-10-01), with m_theta = m_psychic (both the latent mean ln k
-at 17). REFUSES while sd(log AFQT) is NaN -- it is NOT PROVIDED yet -- so no estimation can
-run on a wage loading nobody chose. Tests that need a running model pass an explicit
-`child_wage` NamedTuple instead, labelled as a placeholder.
-
-lnw0 is the constructor's normalisation for now. Once alpha_theta is fixed it is re-set to
-keep the mean child wage at BASELINE_MEAN_CHILD_WAGE (`lnw0_for_mean_wage`), and the value
-belongs here.
+at 17). REFUSES if sd(log AFQT) is NaN, so no estimation runs on a wage loading nobody chose; since
+2026-10-02 it is a PROVISIONAL 0.20 (flagged, `CHILD_DEFAULTS`). lnw0 is LNW0_ANCHORED, re-set for that
+value to keep the mean child wage at BASELINE_MEAN_CHILD_WAGE (`lnw0_for_mean_wage`; child_lifecycle.jl).
 """
 function child_wage_config(; sd_log_afqt::Real = CHILD_DEFAULTS.sd_log_afqt)
     # SMM_TEST_FIXTURES: the labelled placeholder (tools/smm_test_fixtures.jl) while sd(log AFQT) is NOT PROVIDED
@@ -1337,7 +1341,7 @@ function child_wage_config(; sd_log_afqt::Real = CHILD_DEFAULTS.sd_log_afqt)
         m_theta = ..., lnw0 = ...)` explicitly for a test.""")
     a, aE = anchored_alpha(sd_log_afqt)
     return (alpha_theta = a, alpha_thetaE = aE, m_theta = CHILD_DEFAULTS.m_psychic,
-            lnw0 = log(CHILD_DEFAULTS.w) - 0.4144)
+            lnw0 = LNW0_ANCHORED)          # re-set for sd(log AFQT) = 0.20 (child_lifecycle.jl; FLAG)
 end
 
 """
@@ -1628,6 +1632,8 @@ function run_pipeline(kw::NamedTuple, targets;
                                                          init_s0 = ini.s0,
                                                          mu_child_by_age = target_mu_by_age(targets),
                                                          parent_calibration(targets)...,   # wage process, initial assets
+                                                         (target_bc_share(targets) === nothing ? (;) :
+                                                          (p_bothcollege = target_bc_share(targets),))...,
                                                          pk..., parent_extra...)   # no `w` -- see smm_objective
     parent.V_child_interp = V_child
     redirect_stdout(devnull) do

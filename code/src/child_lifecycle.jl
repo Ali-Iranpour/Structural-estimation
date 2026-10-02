@@ -93,9 +93,9 @@ hc_log_grid(lo::Float64, hi::Float64, n::Int) = exp.(range(log(lo), log(hi), len
 # from the simulation, which is what made the standardised form diverge before
 # (docs/WAGE_PROCESS.md section 4).
 #
-# NOT PROVIDED: sd(log AFQT raw score). Neither Daruich & Fernandez nor Colas et al. report
-# it; it has to come from the NLSY79. Until it is supplied `CHILD_DEFAULTS.sd_log_afqt` is
-# NaN and the constructor refuses to build a child unless alpha_theta is passed explicitly.
+# sd(log AFQT raw score) is not reported by Daruich & Fernandez or Colas et al.; it has to come from
+# the NLSY79. CHILD_DEFAULTS.sd_log_afqt holds a PROVISIONAL 0.20 since 2026-10-02 (flagged; see there).
+# Set it to NaN and the constructor refuses to build a child unless alpha_theta is passed explicitly.
 const DF_ALPHA_THETA, DF_ALPHA_THETA_E = 0.654, 0.322
 const SD_LNK17 = 0.6524171731017028
 anchored_alpha(sd_log_afqt::Real; sd_lnk17::Real = SD_LNK17) =
@@ -107,6 +107,14 @@ anchored_alpha(sd_log_afqt::Real; sd_lnk17::Real = SD_LNK17) =
 # grids 30/2/30, child 30/30/5, simN 2000, seed 1234), mean of the resimulated children's
 # sim_wage over all t = 14.4640. `lnw0_for_mean_wage` applies the shift.
 const BASELINE_MEAN_CHILD_WAGE = 14.4640
+# lnw0 RE-SET for sd(log AFQT) = 0.20 (Ali, 2026-10-02; FLAG, provisional with it): iterated with
+# lnw0_for_mean_wage until the mean child wage is 14.454 (0.07% off 14.464), at the recovery test's pilot point
+# (tools/test_param_recovery.jl THETA0: skill at 18 near the data's mean, ln k 6.72 against m_theta 6.69),
+# production grids, targets 2026-10-02_152454, the 2026-10-02 parent calibration, grid and sigma_1 start;
+# the college share there is 0.323 (data 0.343). At the SMM start every child goes to college (ln k 8.36),
+# which would put the college premium into the level (0.984), so it was not used. Was log(w) - 0.4144 = 2.581.
+# Re-fit at the first estimate. Script: temp/2026-10-02_k3_checks/afqt/refit_lnw0_theta0*.jl (on the server).
+const LNW0_ANCHORED = 1.755929725341381
 lnw0_for_mean_wage(lnw0::Real, mean_wage::Real) = lnw0 + log(BASELINE_MEAN_CHILD_WAGE / mean_wage)
 
 # ===========================================================================
@@ -252,9 +260,14 @@ const CHILD_DEFAULTS = (
     # both the transfer and enrolment: 1 - mu_half, where mu_half = 0.6540 is the autonomy
     # index at 18 (targets.toml; decision 2026-10-01). Was a hard-coded 0.5.
     mu           = 1 - 0.65404427051544189,
-    # sd(log AFQT raw score) for the alpha_theta anchoring -- NOT PROVIDED yet; see
-    # anchored_alpha. NaN makes the constructor refuse a child without an explicit alpha.
-    sd_log_afqt  = NaN,
+    # sd(log AFQT raw score) for the alpha_theta anchoring (anchored_alpha). FLAG -- A PROVISIONAL VALUE
+    # (Ali, 2026-10-02: "a valid estimate, flagged for later runs"); revisit before results circulate.
+    # 0.20: NLSY79 equated AFQT has SD 31.48 at mean 155.93 (Altonji, Bharadwaj & Lange 2009), i.e. a
+    # coefficient of variation of 0.20, which is sd(log) for a lognormal. Daruich's (2019) "approximately
+    # 0.05" cannot be the total SD: his two education groups' mean log AFQT (5.19, 5.38) alone imply a
+    # between-group SD near 0.09. With 0.20 the return per SD of skill at 17 is 0.131 (HS) / 0.195 (BA);
+    # the CDS/TAS scoping regression gives 0.015 (SE 0.067) / 0.195 (SE 0.078). docs/WAGE_RETURN_ANCHOR.md.
+    sd_log_afqt  = 0.20,
     # --- estimated: the psychic cost of college (exp16b, kappa_theta converted per SD) ---
     kappa_0      = -0.3565912994458334,
     kappa_theta  = -3.6193790303472806 * 0.03290822528077769 / 0.6524171731017028,
@@ -285,7 +298,7 @@ function ConSavLaborCollege_AR1(;
                 # sd(log AFQT) is supplied, and then this constructor refuses to build.
                 # lnw0 and m_theta carry no behaviour (level normalisation and centring).
                 # docs/WAGE_PROCESS.md
-                lnw0::Float64=log(w) - 0.4144,
+                lnw0::Float64=LNW0_ANCHORED,
                 beta_E::Float64=-0.294,
                 alpha_theta::Float64=anchored_alpha(CHILD_DEFAULTS.sd_log_afqt)[1],
                 alpha_thetaE::Float64=anchored_alpha(CHILD_DEFAULTS.sd_log_afqt)[2],
@@ -345,13 +358,17 @@ function ConSavLaborCollege_AR1(;
                 # N13: parental asset grid. ap_min defaults to delta_P -- the smallest
                 # parental asset at which the retained balance is still strictly positive,
                 # so the terminal value is finite on every row and valid_rows is 1:Nap.
-                Nap::Int=Na, ap_min::Float64=delta_P, ap_max::Float64=a_max
+                Nap::Int=Na, ap_min::Float64=delta_P, ap_max::Float64=a_max,
+                # TRANSFER GRID of parental wealth at 18 (Ali, 2026-10-02; the advisor's rule, as v2's G14 with
+                # the 1M USD top kept): at least 60% of nodes strictly below 150,000 USD (ap_focus 14.99, as v2,
+                # so the focus end stays below 150k), denser toward zero. Was ap_min + 2, share 0.2, curvature 1.3.
+                ap_focus::Float64=14.99, ap_focus_share::Float64=0.62, ap_curv::Float64=1.5
                 )
 
     simT = T
     isfinite(alpha_theta) && isfinite(alpha_thetaE) || error("""
         alpha_theta is not set. It is anchored per SD to Daruich & Fernandez Table B4 and needs
-        sd(log AFQT raw score), which is NOT PROVIDED yet (CHILD_DEFAULTS.sd_log_afqt = NaN).
+        sd(log AFQT raw score), and CHILD_DEFAULTS.sd_log_afqt is not set (NaN).
         Supply it there, or pass alpha_theta and alpha_thetaE explicitly.""")
     0.0 <= mu <= 1.0 || error("mu = $mu is the parent's weight at the half period; it must be in [0, 1]")
     a_grid = create_focused_grid(a_min, 2.0, a_max, Na, 0.2, 1.3)
@@ -365,7 +382,7 @@ function ConSavLaborCollege_AR1(;
     ap_min >= ap_max && error("ap_min ($ap_min) must be below ap_max ($ap_max)")
     ap_min < delta_P && error("ap_min ($ap_min) is below delta_P ($delta_P); the parent " *
                               "cannot retain its floor and the terminal value diverges")
-    ap_grid = create_focused_grid(ap_min, ap_min + 2.0, ap_max, Nap, 0.2, 1.3)
+    ap_grid = create_focused_grid(ap_min, ap_focus, ap_max, Nap, ap_focus_share, ap_curv)
     # Same recursion as compute_min_assets, so the node matches bit-for-bit.
     let a_req_1 = a_min
         for _ in 1:t_college

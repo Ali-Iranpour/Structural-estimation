@@ -19,7 +19,8 @@
 #
 # THINGS THAT BREAK SILENTLY IF YOU GET THEM WRONG
 #   * `k` here is the parent's BINARY BothCollege indicator -- [0.0, 1.0], drawn
-#     once from Bernoulli(0.3), constant in t. Nk = 2 is exact, not a
+#     once from Bernoulli(p_bothcollege) (the target file's share; 0.3 before 28 block C),
+#     constant in t. Nk = 2 is exact, not a
 #     discretisation. `k_grid` in child_lifecycle.jl is a DIFFERENT object (the
 #     child's human capital). The child's HC in THIS file is `hc_grid`.
 #   * Keep `hc_max` equal to the child's `k_max`. They are the same object either
@@ -144,9 +145,8 @@ const PARENT_DEFAULTS = (
     #     money        sigma_2 = (-7.154, 0.072)     DFVW d4
     #     persistence  sigma_3 = (-0.254, 0.005)     DFVW d5: 0.79 at 3 -> 0.84 at 16
     #     own study    sigma_4 = (-6.598, 0.271)     DFVW d3
-    #     parent time  sigma_1 = log-linear fit to DFVW d1 + d2 (mother + father) at 13 years of
-    #                  schooling, t = 1..17; max relative error 0.1%. The sample's mean
-    #                  schooling is NOT PROVIDED in DFVW; 12 -> 16 years moves sigma_1_0 by 0.10.
+    #     parent time  sigma_1 = log-linear fit to DFVW d1 + d2 (mother + father) at the CDS sample's mean
+    #                  schooling (below; the model's elasticity has no schooling term).
     # TFP does NOT carry over: R_t absorbs the input units, and with age-varying elasticities
     # the conversion is age-varying. DFVW's R (0.96 -> 2.51, midpoint at 5.3) becomes, in
     # model units, 6.7 at age 1, 4.8 at 4, 6.5 at 7, 5.1 at 13, 6.6 at 17 -- not monotone, so
@@ -156,7 +156,11 @@ const PARENT_DEFAULTS = (
     # s_jt = exp(sigma_j_0 + sigma_j_1 t). Memo 19 named these a_j0 / a_j1; they keep v1's sigma_* names. They are
     # NOT the pre-memo-18 sigma_*: those used (t - 1), held persistence sigma_3 fixed and are what the historical
     # comments elsewhere in this file (e.g. "sigma_3_1 had the wrong SIGN", 2026-08-07) refer to.
-    sigma_1_0 = -0.63085254, sigma_1_1 = -0.11532855,
+    # sigma_1 START at OUR sample's parents (Ali, 2026-10-02: the model's elasticity does not depend on
+    # schooling, so DFVW's schooling-dependent d1, d2 are evaluated at the CDS skill sample's mean years,
+    # mothers 14.265 and fathers 13.859, child-waves of CDS_TwoParent_Sample skill_sample == 1), then
+    # the log-linear fit over t = 1..17 (max relative error 0.12%). Was 13 years for both (-0.63085254).
+    sigma_1_0 = -0.594610, sigma_1_1 = -0.115348,
     sigma_2_0 = -7.154,      sigma_2_1 =  0.072,
     sigma_3_0 = -0.254,      sigma_3_1 =  0.005,
     sigma_4_0 = -6.598,      sigma_4_1 =  0.271,
@@ -436,6 +440,10 @@ function Parent_child_interaction_age_specific_AR1(;
         # ending at 50, with 0.43% of states off-grid; at 100 that falls to 0.10% and the
         # moments barely move (mean terminal assets 22.07 -> 22.13).
         a_max::Float64=100.0, a_min::Float64=0.0, Na::Int=30,
+        # ASSET GRID (Ali, 2026-10-02; the advisor's rule, as v2's G14 but with the 1M USD top kept): at least
+        # 60% of the nodes strictly below 150,000 USD (a_focus = 15 model units), denser toward zero. With
+        # Na = 30: 18 nodes below 150k. Was a_focus = a_min + 3, share 0.3, curvature 1.2 (12 below 150k).
+        a_focus::Float64=15.0, a_focus_share::Float64=0.62, a_curv::Float64=1.5,
         k_max::Float64=1.0, k_min::Float64=0.0, Nk::Int=2,
         # [hc_min, hc_max] is MATCHED to the child's [k_min, k_max] (same object across
         # the age-18 handoff): both default to exp.(HC_LN_MIN, HC_LN_MAX) and both grids
@@ -502,11 +510,13 @@ function Parent_child_interaction_age_specific_AR1(;
         β_age2_capital::Float64, β_age_capital::Float64,
         wage_var_0::Float64,
         init_asset_p0::Float64, init_asset_mu::Float64, init_asset_sd::Float64,
+        # the household's BothCollege share; run_pipeline passes the target file's value when it has one
+        p_bothcollege::Float64 = 0.3,
         )  
 
 
     # Grids (custom grid functions)
-    a_grid = create_focused_grid(a_min, a_min + 3.0, a_max, Na, 0.3, 1.2)
+    a_grid = create_focused_grid(a_min, a_focus, a_max, Na, a_focus_share, a_curv)
     k_grid = range(k_min, k_max, length=Nk)
     hc_grid = hc_log_grid(hc_min, hc_max, Nhc)    # the child's k_grid, node for node
 
@@ -636,7 +646,10 @@ function Parent_child_interaction_age_specific_AR1(;
             sim_a_init[i] = x
         end
     end
-    sim_k_init = Float64.(rand(rng_k, Bernoulli(0.3), simN))  # 70% zeros, 30% ones
+    # BothCollege share (Ali, 2026-10-02): the data's share from the target file
+    # (`bc_share_children_all`, Child_Time_Study 28 block C) once it is exported; until then 0.3.
+    0.0 < p_bothcollege < 1.0 || throw(ArgumentError("p_bothcollege must lie in (0, 1), got $p_bothcollege"))
+    sim_k_init = Float64.(rand(rng_k, Bernoulli(p_bothcollege), simN))
     # Initial child skill at AGE 1 (column 1), DFVW latent units (memo 18 section 7):
     #     ln k_1 = init_m0 + init_mBC * BothCollege + init_s0 * z,   z ~ N(0,1)
     # BothCollege is the household's own draw above, so the family gradient in skill is
