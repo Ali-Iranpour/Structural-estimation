@@ -1,0 +1,43 @@
+name,value,se,n,desc
+init_m0_baseline,.6288715004920959,,,"K1 mean ln k at age 1, BothCollege=0, spline set"
+init_mBC_baseline,.4344903528690338,,,"K1 BothCollege shift in mean ln k at age 1, spline set"
+init_s0_baseline,.5952978730201721,,,"K1 SD of ln k at age 1 within type, spline set"
+init_m0_alt,1.312438011169434,,,"K1 mean ln k at age 1, linear fit on ages 3-5"
+init_mBC_alt,.4344903528690338,,,"K1 BothCollege shift, spline (alt set keeps it)"
+init_s0_alt,.3949264287948608,,,"K1 SD of ln k at age 1, linear fit on ages 3-5"
+L0,-4.59511985013459,,,"DFVW location normalisation ln(0.01/0.99), L1 = 1"
+m_psychic,6.686957400744432,.0504347356163621,253,"K2 latent mean ln k at 17, college frame T4 (DFVW units): psychic-cost centring"
+sd_lnk17,.6524171731017028,.0437408923763027,253,"K2 latent SD of ln k at 17, same frame"
+mean_lw17,49.83399209486166,,253,"K2 mean raw Letter-Word at 17, same frame"
+cw_L,.3257440349587242,.008873931820339,13,"A child weight logistic: lower limit L (logistic, 4 parameters)"
+cw_U,.7495359043516364,.0867422977419314,13,A child weight logistic: upper limit U
+cw_k,.4006250810159882,.0731601533457906,13,A child weight logistic: slope k
+cw_t0,15.75803600974242,1.014051958436637,13,A child weight logistic: inflection age t0
+cw_maxres,.0088677603410123,,12,"A largest absolute data-minus-fit gap, ages 6-17"
+mu_age6,.3340757779536822,.0049730690111851,,A child weight mu_t at age 6 (fitted); parent weight = 1 - mu_t
+mu_age7,.3380619754463771,.0040631995025823,,A child weight mu_t at age 7 (fitted); parent weight = 1 - mu_t
+mu_age8,.3438720939503044,.0033047050102091,,A child weight mu_t at age 8 (fitted); parent weight = 1 - mu_t
+mu_age9,.3522462147878049,.0030329035593982,,A child weight mu_t at age 9 (fitted); parent weight = 1 - mu_t
+mu_age10,.3641227232667437,.0033219729774459,,A child weight mu_t at age 10 (fitted); parent weight = 1 - mu_t
+mu_age11,.3805867938161593,.003728906719051,,A child weight mu_t at age 11 (fitted); parent weight = 1 - mu_t
+mu_age12,.4027034585959703,.0038511001680706,,A child weight mu_t at age 12 (fitted); parent weight = 1 - mu_t
+mu_age13,.4311901187579503,.003838822702692,,A child weight mu_t at age 13 (fitted); parent weight = 1 - mu_t
+mu_age14,.4659583737775583,.0043210655749143,,A child weight mu_t at age 14 (fitted); parent weight = 1 - mu_t
+mu_age15,.5057098422168177,.0050597767979074,,A child weight mu_t at age 15 (fitted); parent weight = 1 - mu_t
+mu_age16,.5479021964453065,.0052415705414548,,A child weight mu_t at age 16 (fitted); parent weight = 1 - mu_t
+mu_age17,.5892943516938516,.0069591372028443,,A child weight mu_t at age 17 (fitted); parent weight = 1 - mu_t
+mu_half,.6540442705154419,.0169372763484716,,A child weight at the age-18 half period = Overall index at 18 (data)
+mu_fit18,.626880700801284,,,"A fitted logistic at 18, for reference"
+A_age6,.3427834808826447,.0066771656274796,742,"A Overall autonomy index mean at age 6 (21, 2014 conditions)"
+A_age7,.3402422964572906,.0066687995567918,834,"A Overall autonomy index mean at age 7 (21, 2014 conditions)"
+A_age8,.3390420973300934,.0071332277730107,785,"A Overall autonomy index mean at age 8 (21, 2014 conditions)"
+A_age9,.3433784544467926,.0061143720522523,809,"A Overall autonomy index mean at age 9 (21, 2014 conditions)"
+A_age10,.3607670068740845,.0068546179682016,907,"A Overall autonomy index mean at age 10 (21, 2014 conditions)"
+A_age11,.3814451396465302,.006085223518312,952,"A Overall autonomy index mean at age 11 (21, 2014 conditions)"
+A_age12,.4114098250865936,.0070758382789791,923,"A Overall autonomy index mean at age 12 (21, 2014 conditions)"
+A_age13,.4272807240486145,.0069018416106701,949,"A Overall autonomy index mean at age 13 (21, 2014 conditions)"
+A_age14,.471498429775238,.0076303281821311,932,"A Overall autonomy index mean at age 14 (21, 2014 conditions)"
+A_age15,.5091120004653931,.0073892674408853,929,"A Overall autonomy index mean at age 15 (21, 2014 conditions)"
+A_age16,.5410598516464233,.0081592667847872,888,"A Overall autonomy index mean at age 16 (21, 2014 conditions)"
+A_age17,.5808646678924561,.0089525077491999,773,"A Overall autonomy index mean at age 17 (21, 2014 conditions)"
+A_age18,.6540442705154419,.0169372763484716,274,"A Overall autonomy index mean at age 18 (21, 2014 conditions)"
