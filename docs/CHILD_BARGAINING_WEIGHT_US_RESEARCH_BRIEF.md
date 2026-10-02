@@ -736,6 +736,6 @@ A: Weighted age-by-wave response shares for `E45/E46`, sample counts, and a comp
 
 [^30]: Ömer Faruk Sözbir, [“Children's Say in the Household”](https://www.sciencedirect.com/science/article/abs/pii/S0304387825002408), *Journal of Development Economics*, DOI 10.1016/j.jdeveco.2025.103689; [replication package](https://data.mendeley.com/datasets/xjcjdytjrt).
 
-[^31]: This project's [estimation memo](./ESTIMATION_MEMO.md), especially §§1, 3, and 5.
+[^31]: This project's estimation memo of 2026-09-06, especially §§1, 3, and 5 (merged into [SMM.md](./SMM.md) on 2026-10-02; the cited text is `git show 409d49e:docs/ESTIMATION_MEMO.md`).
 
 [^32]: This project's [model manuscript](./model.txt), welfare-weight equation.
