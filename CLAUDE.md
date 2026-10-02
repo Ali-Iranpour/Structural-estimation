@@ -181,6 +181,12 @@ document (model, parameters, moments, search, validation, plan, caveats); `docs/
   sd(log AFQT) set, the switch changes nothing and the tests run on the real inputs. A test that
   assumes the default start is valid (`test_penalties.jl`'s base point) then fails that check:
   rewrite it to start from a valid point, never weaken the check.
+- **Local-stage width is always the automatic floor(sqrt(K)) (Ali, 2026-10-02): never pass
+  `--local-procs` to widen it.** TikTak's later restarts start near the best point the earlier ones
+  found; with all K restarts running at once (the 2026-10-02 pilot: `--local-procs 20`, K = 20) none
+  can learn from another and the last ones nearly repeat restart 1. A run therefore takes about
+  ceil(K / floor(sqrt(K))) rounds of one restart's length: size K and `--local-evals` to the time
+  budget, not the width.
 - **Worker budget**: about 20 worker processes on this shared server by default; when the server
   is free (check `uptime`: 112 cores), up to about 40 (Ali, 2026-10-02). Ask before going further.
 
