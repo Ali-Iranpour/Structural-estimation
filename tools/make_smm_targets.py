@@ -53,6 +53,7 @@ intended. Older run folders are untouched.
 """
 
 import hashlib
+import re
 import subprocess
 from datetime import date, datetime
 from pathlib import Path
@@ -165,6 +166,53 @@ def read_stata_vector():
     return m, V, k
 
 
+# The data's age composition of the pooled S frames (docs/SMM_COMPOSITION.md; Ali 2026-10-02): the comp_* rows
+# of SMM_Constants.csv (28_smm_moments.do block C), passed through as one [composition.<FRAME>] table per frame.
+# moments.jl's load_targets / check_composition verifies them against every pooled moment's N.
+COMPOSITION_FRAMES = ("O_LW", "O_taup", "O_tauc", "O_ep", "P_LW", "P_taup", "P_tauc", "P_ep",
+                      "D_taup", "D_tauc", "E_ep", "E_epY")
+ODD_FRAMES = ("O_ep", "P_ep")
+
+
+def composition_tables(const):
+    """[composition.<FRAME>] tables from the comp_* constants; [] when the constants have none."""
+    rows = {}
+    for name, val in const.items():
+        m = re.fullmatch(r"comp_([A-Za-z]+_[A-Za-z]+)_(\d+)(?:_(\d+))?(_odd)?", name)
+        if not m:
+            continue
+        frame, a, a2, odd = m.group(1), int(m.group(2)), m.group(3), bool(m.group(4))
+        key = (a, int(a2)) if a2 else (a,)
+        cell = rows.setdefault(frame, {}).setdefault(key, [0, 0])
+        cell[1 if odd else 0] = int(round(val))
+    if not rows:
+        return []
+    unknown = sorted(set(rows) - set(COMPOSITION_FRAMES))
+    missing = [f for f in COMPOSITION_FRAMES if f not in rows]
+    if unknown or missing:
+        raise ValueError(f"composition frames: unknown {unknown}, missing {missing}")
+    out = ["# ---------------------------------------------------------------------------",
+           "# The data's age composition of the pooled S frames (28_smm_moments.do block C,",
+           "# docs/SMM_COMPOSITION.md): rows per completed age (level frames) or per (base age,",
+           "# end age) (pair frames); n_odd = the cell's rows at an odd CDS wave (O_ep, P_ep)."]
+    for frame in COMPOSITION_FRAMES:
+        cells = rows[frame]
+        keys = sorted(cells)
+        if any(cells[k][1] > cells[k][0] for k in keys):
+            raise ValueError(f"composition {frame}: an odd-wave count exceeds its cell total")
+        out.append(f"[composition.{frame}]")
+        if len(keys[0]) == 2:
+            out.append("a  = [" + ", ".join(str(k[0]) for k in keys) + "]")
+            out.append("a2 = [" + ", ".join(str(k[1]) for k in keys) + "]")
+        else:
+            out.append("age = [" + ", ".join(str(k[0]) for k in keys) + "]")
+        out.append("n   = [" + ", ".join(str(cells[k][0]) for k in keys) + "]")
+        if frame in ODD_FRAMES:
+            out.append("n_odd = [" + ", ".join(str(cells[k][1]) for k in keys) + "]")
+        out.append("")
+    return out
+
+
 def school_schedule():
     """The fixed school schedule by child age, from the micro file (unchanged rule)."""
     micro = pd.read_stata(MICRO)
@@ -239,6 +287,12 @@ def main():
         f'cw_k  = {const.get("cw_k", float("nan")):.17g}',
         f'cw_t0 = {const.get("cw_t0", float("nan")):.17g}',
         'mu_mapping = "parent weight = 1 - mu_t for t >= 6, 1 before 6; mu_half at the half period"',
+        "# 28 block C (2026-10-02): the p99 caps the data apply to the S money moments, and the",
+        "# BothCollege share of the two-parent CDS sample. NOT used by the model until Ali decides.",
+        f'cap_money_p99_usd = {const.get("cap_money_p99", float("nan")):.17g}   # money per year, 2015 USD',
+        f'cap_ratio_p99     = {const.get("cap_ratio_p99", float("nan")):.17g}   # S9 money / pre-tax labour income',
+        f'bc_share_children_all   = {const.get("bc_share_children_all", float("nan")):.17g}',
+        f'bc_share_children_skill = {const.get("bc_share_children_skill", float("nan")):.17g}',
         "",
     ]
     print(f"{'moment':28s} {'block':5s} {'tgt':>3s} {'estimate':>13s} {'se':>11s} {'N':>6s}")
@@ -279,6 +333,12 @@ def main():
     for i in range(len(names)):
         lines.append("  [" + ", ".join(f"{Corr[i, j]:.6f}" for j in range(len(names))) + "],")
     lines += ["]", ""]
+    comp = composition_tables(const)
+    if comp:
+        lines += comp
+        print(f"composition: {sum(1 for l in comp if l.startswith('[composition.'))} frames passed through")
+    else:
+        print("composition: SMM_Constants.csv has no comp_* rows -- moments.jl will refuse this target file")
 
     off = Corr[np.triu_indices(len(names), 1)]
     print(f"\n{len(names)} targeted moments, {int((m.targeted == 0).sum())} diagnostics; "
