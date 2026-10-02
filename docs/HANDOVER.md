@@ -88,6 +88,20 @@ starting a new file. Paths are relative to the repository root
   than the best Sobol' point (`classify_nonfinite.csv` in the same folder).
 - Recovery test with the stand-ins (code `81884e3`): **not recovered** (`docs/SMM.md` §2.3).
 
+## TikTak and runner fixes (evening, Ali: "the sobol printing is wrong", "problems in the eval stage")
+
+- `e12a399`: the Sobol-stage progress line with `--sobol-valid` counts valid draws against the target.
+- `5b78ec9`, module 2.3.0-dev (v1 only; port to v2 later, Ali): a penalised mixed start falls back to
+  the restart's own seed (arm B lost 4 of 20 restarts to this); a known start value is not recomputed
+  (the authors' Fortran evaluates a start only inside its solver). Runner: penalised values print as
+  "penalised", the incumbent is explained, `restarts.csv` has `start_fallback`, the projection times a
+  second (warm) evaluation and warns if the two differ.
+- Tests: synthetic 479/479 (the legacy guard now compares the path bit for bit and the count exactly:
+  lower by one per restart, one more for restart 1 and one for the polish, measured on all six cases
+  before the guard was changed); resume 39/39 on the real objective; projection 78/78; a serial smoke.
+  Integration test with the new module: after the pilot (core budget).
+- The pilot runs the OLD module from its frozen worktree, so its logs keep the old lines.
+
 ## Open decisions and waiting items
 
 - The search's start on the real inputs (above).
