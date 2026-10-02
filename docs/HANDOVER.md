@@ -5,20 +5,18 @@ when a phase ends, move the superseded state into **History** below (newest firs
 starting a new file. Paths are relative to the repository root
 (`/srv/project/speech/apps/Structural-estimation`) unless absolute.
 
-# Current state (2026-10-02, 20:05)
+# Current state (2026-10-02, 22:50)
 
 ## Branches and working copies
 
-- **Main checkout**: branch `fix/estimation-consistency` at `409d49e`. Not yet fast-forwarded.
-- **`merge/port-memo19`**, worktree `temp/2026-10-02_memo19_merge/`: `9e2d760` (Ali: "commit
-  first", 19:55) holds the BothCollege share from `[constants]` `bc_share_children_skill` with no
-  fallback, `Input/SMM_Constants.csv` (Child_Time_Study `a4448b2`), the targets with the
-  composition, the recovery test on the real inputs, the integration smoke fixture, the valid-share
-  tool and measurement; the commit after it updates `CLAUDE.md` and this file. The main checkout's
-  `fix/estimation-consistency` is fast-forwarded to it. **Nothing is pushed.**
-- `temp/2026-10-02_pilot_code/`: detached at `9e2d760`, the pilot's frozen code.
-- `temp/2026-10-02_integration_snapshot/`: detached at `5b5e361` + that patch, frozen while the
-  test suite below runs (runner subprocesses load the code when they start).
+- **`merge/port-memo19`**, worktree `temp/2026-10-02_memo19_merge/`: everything of 2026-10-02 is committed
+  here; the main checkout's `fix/estimation-consistency` is fast-forwarded to it after each commit.
+  **Nothing is pushed.** (In the main checkout two uncommitted deletions, `docs/REVIEW_BRIEF_14PARAM.md` and
+  `docs/REVIEW_TRIAGE.md`, are not from these sessions: left alone.)
+- Frozen code for runs (detached worktrees, do not edit): `temp/2026-10-02_run_k16_code` (`cf0a53a`, the
+  K = 16 run), `temp/2026-10-02_pilot_code` (`9e2d760`, the pilot), `temp/2026-10-02_tiktak23_check`
+  (`63bd2ac`, the integration test), `temp/2026-10-02_integration_snapshot` (`5b5e361` + patch, the
+  real-inputs suite). All can be removed once their runs are reviewed.
 - Child_Time_Study: pulled to `a4448b2` (block C exported: composition tables, p99 caps, BC shares).
 - **Targets**: `output/smm_runs/2026-10-02_193217_281837_targets/targets.toml`: the 12 composition
   frames (check_composition passes), 327 `[constants]`; moments and covariance identical to
@@ -28,31 +26,44 @@ starting a new file. Paths are relative to the repository root
 
 ## Running (each writes STATUS and DONE or FAILED; how to watch: `CLAUDE.md` "Watching a run")
 
-- tmux `v1_run_k16` (driver started 21:40; Ali's choice): waits for the integration test (passed 21:56) and
-  the pilot, then runs `--preset pilot --procs 36 --sobol 10000 --restarts 16 --local-evals 450
-  --polish-evals 300` from the better pilot arm's `estimates.toml`, local width the automatic
-  floor(sqrt(16)) = 4 (no `--local-procs`: Ali's standing rule), code frozen in
-  `temp/2026-10-02_run_k16_code` (`cf0a53a`, module 2.3.0-dev). Projected 7.2-7.8 h, timeout 9 h.
-  `output/diagnostics/2026-10-02_run_k16/` (STATUS, run.console.log); the run folder is named in STATUS.
+- **tmux `v1_run_k16`: the K = 16 run, launched 22:39** (Ali: held at 22:29 to consider the authors'
+  algorithm, released at 22:39 to run on the CURRENT algorithm with the previous settings). `--preset pilot
+  --procs 36 --sobol 10000 --restarts 16 --local-evals 450 --polish-evals 300`, local width the automatic
+  floor(sqrt(16)) = 4 (no `--local-procs`), started from pilot arm A's exact end point. Checked at start:
+  start Q = 6784.794690649624, bit-identical to arm A's `Q_final` (same objective, exact point); the two
+  timing evaluations agree; 16 restarts, 4 at a time, 4 rounds of about 79 min; projection 6.9 h (the
+  draw stage is overstated: about half the draws are rejected without a solve), so expect about 05:00-05:30.
+  Code frozen in `temp/2026-10-02_run_k16_code` (`cf0a53a`, module 2.3.0-dev). Run folder
+  `output/smm_runs/2026-10-02_223909_k16/`; driver `output/diagnostics/2026-10-02_run_k16/` (STATUS,
+  run.console.log); timeout 9 h; a killed run resumes with its full command plus `--resume <run folder>`.
+- tmux `v1_recovery_real` (started 19:38): the recovery test on the real inputs. **tech** (12 free)
+  finished 21:29: Q 19,458.6 -> 3.64 in 1,330 evaluations, worst parameter error 13.7% of its box: NOT
+  RECOVERED by the 2% criterion. **all** (20 free) still running (eval 2,000, Q 11.96 at 22:45).
+  `output/smm_runs/2026-10-02_193856_recovery_real/` (its code = `9e2d760`).
 
-- tmux `v1_pilot` (started 19:57, about 2.5 h; the runner's own projection of ~5 h counts the
-  compile time of the first evaluation): the two-arm pilot (Ali: two arms, 20 workers each, the
-  ~2.6 h size). Both arms: `--preset pilot`, draws until 150 valid (cap 8,000), 20 local searches of
-  up to 600 evaluations all at once, no polish (the verdict will read NOT ACCEPTED: a learning run).
-  Arm A supplies theta0 as one candidate (start Q 14,274.5), arm B uses the draws only. Driver and
-  console logs `output/diagnostics/2026-10-02_pilot/`; runs
-  `output/smm_runs/2026-10-02_195733_pilot_A_theta0/` and `..._pilot_B_random/`. A killed arm
-  resumes with its full command plus `--resume <run folder>`.
-- tmux `v1_recovery_real` (started 19:38): the recovery test (tech and all) on the real inputs,
-  about 3 hours; `output/smm_runs/2026-10-02_193856_recovery_real/` (its code = `9e2d760`).
-- Finished: the valid share (19:40, `output/diagnostics/2026-10-02_valid_share/`).
-- Finished 20:03: the nine tests on the real inputs, in parallel, from the snapshot
-  (`temp/2026-10-02_merge_checks/real_inputs_suite/`). Pass: optimizer synthetic, runtime projection
-  78/78, reopt identity 38/38, reopt integration 20/20, resume 8/8. **Fail, one cause**: penalties
-  18/19, runner_start 13/30, runner_geometry 3/13, integration 25/27 -- each starts from the default
-  point with a handful of plain Sobol' draws (5 to 9), all invalid on the real inputs ("nothing to
-  seed the local stage"; penalties: the base point is not finite). To fix in the test rewrite: a
-  valid start (theta0) or `--sobol-valid`, no check weakened.
+## Finished today
+
+- **The pilot** (19:57-22:31, both arms exit 0): arm A (theta0 supplied) Q_final **6,784.8**; arm B (draws
+  only) **8,704.0**; both "NOT ACCEPTED" (no polish, by design). Flaws, measured: all 20 restarts ran at once
+  (`--local-procs 20`: no restart learned from another -- hence Ali's standing floor(sqrt(K)) rule), and arm
+  B lost 4 restarts to penalised mixed starts (fixed since in module 2.3.0-dev). Runs
+  `output/smm_runs/2026-10-02_195733_pilot_A_theta0/`, `..._pilot_B_random/`.
+- The valid share (19:40, `output/diagnostics/2026-10-02_valid_share/`): 3.8%.
+- The real-inputs test suite (20:03, `temp/2026-10-02_merge_checks/real_inputs_suite/`): pass: optimizer
+  synthetic, runtime projection 78/78, reopt identity 38/38, reopt integration 20/20, resume. **Fail, one
+  cause**: penalties 18/19, runner_start 13/30, runner_geometry 3/13 -- they start from the default point
+  with a handful of plain Sobol' draws, all invalid on the real inputs. To fix in the test rewrite: a valid
+  start (theta0) or `--sobol-valid`, no check weakened. (The integration test's coarse job is fixed:
+  `63bd2ac`; integration 30/30 at 21:56.)
+
+## Deferred: the authors' TikTak (Ali, 2026-10-02 22:30: "we will come back to this later")
+
+Ali decided to implement the authors' algorithm exactly, as a selectable algorithm beside the current
+one, except K (set per run): all three local solvers with `bobyqa_h` the default (translated to Julia: no
+native Julia equivalent exists), oracle-first against the compiled Fortran, the v1 fallback as an option
+off by default, failed points as 67 equal gaps summing to 1e12, out-of-box points solved at the clamped
+point plus the authors' bound penalty, DFPMIN polish with an evaluation cap per run. The differences, the
+decisions and the licence notes are in **`docs/ERRORS.md` T1**. Nothing of it is built.
 
 ## Decisions taken (2026-10-02, Ali)
 
@@ -75,14 +86,14 @@ starting a new file. Paths are relative to the repository root
 
 ## Results and checks
 
-- Optimizer synthetic 455/455; runtime projection 78/78; reopt identity 38/38.
+- Optimizer synthetic 479/479 (module 2.3.0-dev); runtime projection 78/78; reopt identity 38/38.
 - With the stand-ins (code `2351150`): resume 39/39, runner start 48/48, geometry 14/14,
   penalties 19/19, reopt integration 20/20, integration 30/30 (clean rerun, 17:47).
 - Merged objective = the Mac branch to the last digit (with memo 19's own values passed in).
 - **On the real inputs the SMM start point is degenerate**: every child goes to college, the
   non-college group is empty, `kth_lw17_gap` is undefined and the start is penalised
   (Q = 1e12; `temp/2026-10-02_k3_checks/real_inputs/run.out`). TikTak still runs (it seeds the
-  local stage only from valid Sobol' points); whether to warm-start elsewhere is open.
+  local stage only from valid Sobol' points). Runs since start from theta0 or the pilot's end point.
 - **Valid share at the production grids, real inputs** (`output/diagnostics/2026-10-02_valid_share/`,
   400 Sobol' points, 3.1 min on 16 workers): **15 valid (3.8%)**. 213 (53%) break the elasticity rule
   (every s_jt < 1 at every age; rejected before a solve; the sigma_4 and sigma_1 boxes cut most);
@@ -107,11 +118,11 @@ starting a new file. Paths are relative to the repository root
   lower by one per restart, one more for restart 1 and one for the polish, measured on all six cases
   before the guard was changed); resume 39/39 on the real objective; projection 78/78; a serial smoke.
   Integration test with the new module on the real inputs: 30/30 (21:56).
-- The pilot runs the OLD module from its frozen worktree, so its logs keep the old lines.
+- The pilot ran the OLD module from its frozen worktree, so its logs keep the old lines.
 
 ## Open decisions and waiting items
 
-- The search's start on the real inputs (above).
+- The authors' TikTak (`docs/ERRORS.md` T1): decided, deferred.
 - **Decided (Ali, 19:50): the search ranges stay as they are**; the search keeps drawing Sobol' points
   until it has enough valid ones (`--sobol-valid N`, with `--sobol` as the cap on attempts). The
   rejected draws cost nothing (infeasible) or about 11 s each (no college decision).
@@ -121,8 +132,8 @@ starting a new file. Paths are relative to the repository root
 
 ## Next actions
 
-1. Read the suite, the recovery and the pilot when they finish; report.
-2. With Ali: the production run's start and budget from the pilot.
+1. Read the K = 16 run (about 05:00-05:30) and the recovery's "all" mode when they finish; report.
+2. With Ali: the authors' TikTak (`docs/ERRORS.md` T1), when he returns to it.
 3. Rewrite the stale tests and tools for memo 19 (including `test_penalties.jl`'s base point, which
    assumes the default start is valid).
 

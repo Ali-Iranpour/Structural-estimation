@@ -359,6 +359,11 @@ Fortran (`apps/Structural-estimation-v2/archive/TikTak_serdarozkan_reference`):
 Both change the optimizer identity: a run checkpointed before them resumes only with
 `--allow-optimizer-change` (recorded); a job saved in flight before them replays exactly as it ran.
 
+**The authors' algorithm differs in more ways** (K + 1 searches with the initial guess always first, an
+unmixed first wave, `bobyqa_h` on the moment gaps, a 1e-4 tolerance, DFPMIN as the polish, among others).
+The full comparison, and the authors' version Ali decided to add as a selectable algorithm (deferred), are
+in `docs/ERRORS.md` T1.
+
 ### 4.2 One evaluation
 
 `run_pipeline` (`moments.jl`): solve the child's lifecycle and the age-18 problems (the stages

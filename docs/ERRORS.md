@@ -53,12 +53,71 @@ both theoretical masks. **One caveat remains — see P5.**
 | P12 | `σ₂₁ × 1.5` counterfactual no longer solves under the new HC block | parent_family | 🟡 |
 | P10 | Leisure restored (`φ₂` 20.0 → 0.8); `τ_p` level now targeted — see P11 | parent_family | 🟡 |
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
-| P7b | `BothCollege` share hardcoded at `Bernoulli(0.3)`, no empirical source | parent_family | 🟡 |
+| T1 | **The TikTak search is not the authors' algorithm** (Arnoud, Guvenen & Kleineberg); the authors' version is decided as a selectable algorithm, **deferred** (2026-10-02) | src/TikTak, smm/run_smm | 🟡 |
+| P7b | ~~`BothCollege` share hardcoded at `Bernoulli(0.3)`~~ -- **resolved 2026-10-02**: `bc_share_children_skill` = 0.2588 from the target file, required | parent_family | ✅ |
 | P7c | `kappa_ParEd` targeted on *either*-parent college; model means *both* — **open by instruction** | smm/moments | 🟡 |
 | P13 | HC technology has no idiosyncratic shock; child block cannot fit ability and parental education jointly — **g0 = 0 carries 64% of Q** | parent_family / smm | 🟠 |
 | G3 | `create_focused_grid` builds a non-monotone grid when the range is under 3.0 | both | ⚪ |
 | C2 | Psychic cost uses `^4`, model says `^2` | child_lifecycle | ⏸️ |
 | C8 | Duplicate `discrete_draw`; unused `Nt` dimension | child_lifecycle_ar1 | ⏸️ |
+
+---
+
+## 🟡 T1 — The TikTak search is not the authors' algorithm — **recorded 2026-10-02; the authors' version is decided but not built (Ali: "we will come back to this later")**
+
+**Reference.** The authors' Fortran, `apps/Structural-estimation-v2/archive/TikTak_serdarozkan_reference`
+(commit `16ac0d9`): `TiktakGlobalSearch.f90` (`chooseSobol`, `LocalMinimizations`, `completeSearch`,
+`getModifiedParam`, `runAmoeba`, `lastSearch`), `minimize.f90` (`bobyqa_h`, `amoeba`, `EST_dfpmin`),
+`genericParams.f90`, `config.txt`. v2's own comparison is `apps/Structural-estimation-v2/tiktak_problems.md`,
+"How the authors' code compares". Our module is `code/src/TikTak/` (v2's, plus the two v1 rules of
+2026-10-02, version 2.3.0-dev; `docs/SMM.md` §4.1).
+
+**The differences** (K = the number of chosen Sobol' points; "ours" = the runner's current algorithm):
+
+| | Authors | Ours |
+|---|---|---|
+| Local searches | **K + 1**: search 1 always from the user's initial guess, whatever its value; then the K best Sobol' points | **K**: the K best VALID points of one pool, the supplied start competing like a draw |
+| Default K | `maxpoints` = min(200, draws) | `--restarts`, set per run |
+| Seeds | the K lowest of ALL evaluated draws (penalised ones only if too few are valid) | valid draws only; fewer valid than K reduces K or fails the gate (pilot/production) |
+| First wave | **unmixed** until the first local search has finished (`getModifiedParam`: count <= 1) | `immediate_mixed`: restarts 2.. mix with the best pre-tested point at once |
+| Mixing weight | min(max(0.1, sqrt(j/(K+1))), **0.95**) | min(max(0.1, sqrt(j/K)), **0.995**); restart 1 unmixed |
+| Mixed with | the best point so far, or a rank lottery over the top n (`selectType` 1) | the best point so far |
+| Local solver | **`bobyqa_h`** by default: BOBYQA in least-squares form on the vector of moment gaps (Zhang, Conn & Scheinberg); `amoeba` (Nelder-Mead) and DFPMIN selectable | Nelder-Mead (NLopt) on the scalar Q |
+| Its budget / tolerance | `bobyqa_h` 40(n+1) evaluations (840 for n = 20), `rhoend` 1e-3; amoeba tolerance **1e-4**, 1,000 iterations | `--local-evals`; `ftol_rel` **1e-3** |
+| Later BOBYQA restarts | for j/K > 0.5 the trust radius shrinks: `rhobeg` = (narrowest width/2.5)/(4j/K), `rhoend` = 1e-3/(4j/K) | the same initial step for every restart |
+| Nelder-Mead simplex | regular simplex of size range / K^(1/n) around the start | NLopt's default (or `--local-init-step`) |
+| Start and end of a search | the start is evaluated only inside the solver; the END point is evaluated once more after it | the mixed start once, its value reused by the solver (v1 rule); no end re-evaluation |
+| Penalised mixed start | no rule (their test objectives are defined everywhere): the search stalls | falls back to the restart's own seed (v1 rule, 2026-10-02) |
+| Out-of-box points | evaluated, plus a quadratic bound penalty (`getPenalty`) | NLopt keeps every point in the box |
+| Polish | **DFPMIN** (quasi-Newton, finite-difference gradients, gtol 1e-6, up to 1,000 iterations), run by EVERY process | BOBYQA once, `--polish-evals` |
+| Parallel | separate processes coordinating through files; README: at most sqrt(K) cores | a master and floor(sqrt(K)) worker processes (Ali's standing rule), checkpointed |
+| Adding restarts later | option 3 re-ranks and continues with a larger K | refused (v2 finding 24) |
+
+**What it changed in our runs.** The 2026-10-02 pilot lost 4 of 20 restarts in arm B to penalised mixed
+starts (fixed by the v1 fallback). With all restarts started at once (`--local-procs 20`, K = 20) no restart
+learned from another (Ali's rule since: width floor(sqrt(K))). The authors' unmixed first wave would explore
+more widely; ours concentrates around the warm start, which v2 measured as better with a strong incumbent
+(v2 finding 20).
+
+**Decided by Ali on 2026-10-02 for the authors' version (not built):**
+
+- Implement the authors' algorithm **exactly**, as a **selectable algorithm** beside the current one (a runner
+  flag; the current algorithm, its checkpoints and v2 comparability stay), **except K**, which is set per run
+  (no min(200, draws) default).
+- **All three local solvers, `bobyqa_h` the default.** No native Julia derivative-free least-squares solver
+  exists: `DFOLS.jl` wraps the Python DFO-LS (GPL-3, a different algorithm), `PRIMA.jl` is Powell's scalar
+  BOBYQA in Fortran. So `bobyqa_h` (about 1,300 lines), `amoeba` and DFPMIN are to be **translated to Julia**.
+- **Oracle first**: compile the authors' Fortran (gfortran 13.3 is on the server) and require the Julia
+  translation to reproduce it on test functions, solver by solver, before it touches the model.
+- The v1 fallback rule stays available as an **option, off by default**.
+- **A failed (penalised) point** gives `bobyqa_h` 67 equal gaps of sqrt(1e12/67), so its sum of squares is the
+  penalty and no false direction is learned.
+- **Out-of-box points** (Nelder-Mead, DFPMIN): the model is solved at the point clamped into the box, plus
+  the authors' bound penalty for the distance outside.
+- **DFPMIN polish**: their 1,000 iterations and gtol 1e-6, plus an evaluation cap set per run; a cap hit is
+  reported as not converged.
+- **Licences**: `bobyqa_h` carries a GPL-2-or-later notice (v2 finding 25); `amoeba` and DFPMIN follow
+  *Numerical Recipes*. Neither matters for private research; both must be settled before code is distributed.
 
 ---
 
