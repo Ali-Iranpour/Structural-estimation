@@ -23,7 +23,7 @@
 #   W  (1)   kterm_med22                        median retained assets a - tr at the half period
 #
 # THE TECHNOLOGY these moments identify is memo 18 / Del Boca, Flinn, Verriest & Wiswall (JPE
-# 2026): ln k' = ln R_t + sum_j s_jt ln x_jt + s_3t ln k_t, s_jt = exp(a_j0 + a_j1 t), logistic
+# 2026): ln k' = ln R_t + sum_j s_jt ln x_jt + s_3t ln k_t, s_jt = exp(sigma_j0 + sigma_j1 t), logistic
 # TFP, no shock -- see PARENT_DEFAULTS in parent_family.jl.
 #
 # THE ANALYTIC BINOMIAL (memo 18 section 3.1, decision D4). A simulated child of latent skill
@@ -276,17 +276,17 @@ end
 
 Is this parameter draw economically admissible, before any solving happens?
 
-Every elasticity s_jt = exp(a_j0 + a_j1 t) must stay below one at every age it is used
+Every elasticity s_jt = exp(sigma_j0 + sigma_j1 t) must stay below one at every age it is used
 (t = 1..17; own study from T_CHILD_VOICE). For persistence this is memo 18's restriction
-(a_30 + a_31 t < 0): s_3 >= 1 makes ln k explosive and the parent solve diverges rather than
+(sigma_30 + sigma_31 t < 0): s_3 >= 1 makes ln k explosive and the parent solve diverges rather than
 failing cleanly. For the inputs an elasticity of one or more is an explosive Cobb-Douglas
 in that input. The exponent is linear in t, so the maximum is at an end and checking both
 ends is exact, not a sample.
 """
 function smm_feasible(kw)
     get_(n) = hasproperty(kw, n) ? getproperty(kw, n) : getfield(PARENT_DEFAULTS, n)
-    for (n0, n1, lo) in ((:a_1_0, :a_1_1, SMM_AGE_LO), (:a_2_0, :a_2_1, SMM_AGE_LO),
-                         (:a_3_0, :a_3_1, SMM_AGE_LO), (:a_4_0, :a_4_1, T_CHILD_VOICE))
+    for (n0, n1, lo) in ((:sigma_1_0, :sigma_1_1, SMM_AGE_LO), (:sigma_2_0, :sigma_2_1, SMM_AGE_LO),
+                         (:sigma_3_0, :sigma_3_1, SMM_AGE_LO), (:sigma_4_0, :sigma_4_1, T_CHILD_VOICE))
         a0, a1 = get_(n0), get_(n1)
         max(a0 + a1 * lo, a0 + a1 * SMM_AGE_HI) < 0.0 || return false
     end
@@ -1016,24 +1016,24 @@ smm_start(name::Symbol) = hasproperty(SMM_START, name) ? getfield(SMM_START, nam
 # a_*_0/1 on AGE, not t-1), and sigma_eta (zero by memo 18). The memo-18 starts are DFVW Table
 # 7 (see PARENT_DEFAULTS); the boxes below are SEARCH REGIONS around them, not confidence
 # intervals. memo 18 fixes only the TFP box -- (d_0, d_1) in (0, 10), d_2 in (-4, 4), d_3 in
-# (-20, 20). The a_j boxes are NOT PROVIDED by memo 18 and are set here: each contains the
+# (-20, 20). The sigma_j boxes are NOT PROVIDED by memo 18 and are set here: each contains the
 # DFVW value with room on both sides, and smm_feasible keeps every elasticity below one.
 const SMM_PARAMS = [
     SMMParam(:phi_2,     0.01, 20.0, :log),
     SMMParam(:phi_3,     0.05, 20.0, :log),
     SMMParam(:lambda_2,  0.05, 100.0, :log),
     # parental time: DFVW mother + father, exp(-0.631 - 0.115 t) at the start
-    SMMParam(:a_1_0, -4.0,  1.0,  :level),
-    SMMParam(:a_1_1, -0.40, 0.10, :level),
+    SMMParam(:sigma_1_0, -4.0,  1.0,  :level),
+    SMMParam(:sigma_1_1, -0.40, 0.10, :level),
     # money: DFVW d4 = exp(-7.154 + 0.072 t)
-    SMMParam(:a_2_0, -12.0, -1.0, :level),
-    SMMParam(:a_2_1, -0.30,  0.30, :level),
+    SMMParam(:sigma_2_0, -12.0, -1.0, :level),
+    SMMParam(:sigma_2_1, -0.30,  0.30, :level),
     # persistence: DFVW d5 = exp(-0.254 + 0.005 t), 0.79 -> 0.84; must stay below one
-    SMMParam(:a_3_0, -3.0,  0.0,  :level),
-    SMMParam(:a_3_1, -0.10, 0.10, :level),
+    SMMParam(:sigma_3_0, -3.0,  0.0,  :level),
+    SMMParam(:sigma_3_1, -0.10, 0.10, :level),
     # own study, from age 6: DFVW d3 = exp(-6.598 + 0.271 t)
-    SMMParam(:a_4_0, -12.0, -1.0, :level),
-    SMMParam(:a_4_1, -0.20,  0.60, :level),
+    SMMParam(:sigma_4_0, -12.0, -1.0, :level),
+    SMMParam(:sigma_4_1, -0.20,  0.60, :level),
     # TFP, memo 18's box. d_0, d_1 strictly positive so R_t is a convex combination of two
     # positive levels.
     SMMParam(:d_0,  0.01, 10.0, :level),

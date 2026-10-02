@@ -33,7 +33,7 @@
 # over automatically to the real composition and wage loading -- rerun it once they exist.
 #
 # theta0 is a pilot point, NOT an estimate: the DFVW Table-7 starts, with TFP, persistence
-# a_3_0, phi_3, lambda_2 and kappa_0 moved by 315 Sobplx steps toward the real data means
+# sigma_3_0, phi_3, lambda_2 and kappa_0 moved by 315 Sobplx steps toward the real data means
 # (fixture composition, placeholder wage), then d_2 and phi_3 pulled off their box edges.
 # At it the scaled Jacobian has rank 20/20, condition number 1.35e4; the weakest direction
 # is sigma_eps with d_2.
@@ -66,12 +66,12 @@ const GRID = (Na = 20, Nk = 2, Nhc = 20, simN = 1000, seed = 1234,
 
 const THETA0 = Dict{Symbol,Float64}(
     :phi_2 => 0.196278, :phi_3 => 0.100000, :lambda_2 => 1.577178,
-    :a_1_0 => -0.630853, :a_1_1 => -0.115329, :a_2_0 => -7.154000, :a_2_1 => 0.072000,
-    :a_3_0 => -0.244781, :a_3_1 => 0.005000, :a_4_0 => -6.598000, :a_4_1 => 0.271000,
+    :sigma_1_0 => -0.630853, :sigma_1_1 => -0.115329, :sigma_2_0 => -7.154000, :sigma_2_1 => 0.072000,
+    :sigma_3_0 => -0.244781, :sigma_3_1 => 0.005000, :sigma_4_0 => -6.598000, :sigma_4_1 => 0.271000,
     :d_0 => 4.109547, :d_1 => 4.532005, :d_2 => 2.000000, :d_3 => 2.878411,
     :kappa_0 => 0.413682, :kappa_theta => -0.182563, :kappa_ParEd => -0.108108,
     :kappa_terminal => 8.786782, :sigma_eps => 1.142235)
-const TECH = [:a_1_0, :a_1_1, :a_2_0, :a_2_1, :a_3_0, :a_3_1, :a_4_0, :a_4_1, :d_0, :d_1, :d_2, :d_3]
+const TECH = [:sigma_1_0, :sigma_1_1, :sigma_2_0, :sigma_2_1, :sigma_3_0, :sigma_3_1, :sigma_4_0, :sigma_4_1, :d_0, :d_1, :d_2, :d_3]
 
 T0 = load_targets(TARGET_PATH; require_composition = false)
 TF = with_composition(T0, fixture_composition(T0))

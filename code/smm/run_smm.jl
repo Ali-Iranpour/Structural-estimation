@@ -546,7 +546,7 @@ const SOURCE_SHA = bytes2hex(SHA.sha256(
  length(SMM_P_MOMENTS), length(SMM_S_MOMENTS), length(SMM_T_MOMENTS), length(SMM_W_MOMENTS)) ==
     (20, 15, 5, 67, 2, 59, 5, 1) ||
     error("the banner says 20 = 15 + 5 parameters against 67 = 2 P + 59 S + 5 T + 1 W moments; moments.jl disagrees")
-# 2026-10-02: memo-18 technology (a_j on age, logistic TFP, no shock), memo-19 moment vector.
+# 2026-10-02: memo-18 technology (sigma_j on age, logistic TFP, no shock), memo-19 moment vector.
 const SPEC_VERSION = "smm20_memo19_v1"
 
 # -----------------------------------------------------------------------------

@@ -1,5 +1,10 @@
 # The memo-19 moment vector and the memo-18 technology in the Julia model
 
+> **Server merge, 2026-10-02 (Ali):** in the code the elasticity parameters written a_j0 / a_j1 below
+> (a_10 ... a_41) are named `sigma_j_0` / `sigma_j_1` (sigma_1_0 ... sigma_4_1); the form
+> s_jt = exp(sigma_j_0 + sigma_j_1 t) is unchanged. The merge also kept parent y = 0.1632, child y = 0.144,
+> college_cost = 0.6 and omega = 0.2 from the server's 2026-09-27 alignment, and added the TikTak port.
+
 2026-10-02. Implements the model side of Child_Time_Study memo 19, section 8, together with
 the technology of memo 18. That technology is Del Boca, Flinn, Verriest & Wiswall (2026),
 "Parenting with Patience", JPE 134(1), eq. (4) and online appendix C.1.2 / C.1.5. Nothing

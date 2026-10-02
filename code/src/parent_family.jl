@@ -130,7 +130,7 @@ const PARENT_DEFAULTS = (
     # 2026-10-02. Replaces R_0/R_1, sigma_*_0/1 and the HC shock of the exp16b baseline.
     #
     #     ln k_{t+1} = ln R_t + s1_t ln tau_p + s2_t ln e_p + s3_t ln k_t + 1{t>=6} s4_t ln tau_c
-    #     s_jt = exp(a_j0 + a_j1 * t),     t = CHILD AGE (not t-1, not t-5)
+    #     s_jt = exp(sigma_j0 + sigma_j1 * t),     t = CHILD AGE (not t-1, not t-5)
     #     R_t  = d_0 + (d_1 - d_0) / (1 + exp(-d_2 (t - d_3)))
     #
     # DFVW app. C.1.2 / eq. (4), with their two parental-time inputs pooled into tau_p, no
@@ -141,21 +141,25 @@ const PARENT_DEFAULTS = (
     #
     # VALUES ARE SMM STARTING POINTS FROM DFVW TABLE 7, not a fit (decision 2026-10-01).
     # Elasticities carry over unit-free:
-    #     money        a_2 = (-7.154, 0.072)     DFVW d4
-    #     persistence  a_3 = (-0.254, 0.005)     DFVW d5: 0.79 at 3 -> 0.84 at 16
-    #     own study    a_4 = (-6.598, 0.271)     DFVW d3
-    #     parent time  a_1 = log-linear fit to DFVW d1 + d2 (mother + father) at 13 years of
+    #     money        sigma_2 = (-7.154, 0.072)     DFVW d4
+    #     persistence  sigma_3 = (-0.254, 0.005)     DFVW d5: 0.79 at 3 -> 0.84 at 16
+    #     own study    sigma_4 = (-6.598, 0.271)     DFVW d3
+    #     parent time  sigma_1 = log-linear fit to DFVW d1 + d2 (mother + father) at 13 years of
     #                  schooling, t = 1..17; max relative error 0.1%. The sample's mean
-    #                  schooling is NOT PROVIDED in DFVW; 12 -> 16 years moves a_1_0 by 0.10.
+    #                  schooling is NOT PROVIDED in DFVW; 12 -> 16 years moves sigma_1_0 by 0.10.
     # TFP does NOT carry over: R_t absorbs the input units, and with age-varying elasticities
     # the conversion is age-varying. DFVW's R (0.96 -> 2.51, midpoint at 5.3) becomes, in
     # model units, 6.7 at age 1, 4.8 at 4, 6.5 at 7, 5.1 at 13, 6.6 at 17 -- not monotone, so
     # the generalised logistic cannot follow it (best fit inside the memo-18 box is flat at
     # 5.58 and sits on two box edges). Started FLAT at 5.6 instead: d_0 = d_1.
-    a_1_0 = -0.63085254, a_1_1 = -0.11532855,
-    a_2_0 = -7.154,      a_2_1 =  0.072,
-    a_3_0 = -0.254,      a_3_1 =  0.005,
-    a_4_0 = -6.598,      a_4_1 =  0.271,
+    # NAMES (Ali, 2026-10-02, server merge): the elasticity of input j at child age t is
+    # s_jt = exp(sigma_j_0 + sigma_j_1 t). Memo 19 named these a_j0 / a_j1; they keep v1's sigma_* names. They are
+    # NOT the pre-memo-18 sigma_*: those used (t - 1), held persistence sigma_3 fixed and are what the historical
+    # comments elsewhere in this file (e.g. "sigma_3_1 had the wrong SIGN", 2026-08-07) refer to.
+    sigma_1_0 = -0.63085254, sigma_1_1 = -0.11532855,
+    sigma_2_0 = -7.154,      sigma_2_1 =  0.072,
+    sigma_3_0 = -0.254,      sigma_3_1 =  0.005,
+    sigma_4_0 = -6.598,      sigma_4_1 =  0.271,
     d_0 = 5.6, d_1 = 5.6, d_2 = 1.0, d_3 = 5.3,
     lambda_1 = 1.0,           # NORMALISATION, not estimated
     # Interior at 74.0% of [0.05, 100] (in logs) -- an order of magnitude below what the
@@ -464,10 +468,10 @@ function Parent_child_interaction_age_specific_AR1(;
         # ---- HC block, recalibrated together (see the note below) ----
         phi_3 = PARENT_DEFAULTS.phi_3,
         # --- the memo-18 technology (see PARENT_DEFAULTS) ---
-        a_1_0 = PARENT_DEFAULTS.a_1_0, a_1_1 = PARENT_DEFAULTS.a_1_1,
-        a_2_0 = PARENT_DEFAULTS.a_2_0, a_2_1 = PARENT_DEFAULTS.a_2_1,
-        a_3_0 = PARENT_DEFAULTS.a_3_0, a_3_1 = PARENT_DEFAULTS.a_3_1,
-        a_4_0 = PARENT_DEFAULTS.a_4_0, a_4_1 = PARENT_DEFAULTS.a_4_1,
+        sigma_1_0 = PARENT_DEFAULTS.sigma_1_0, sigma_1_1 = PARENT_DEFAULTS.sigma_1_1,
+        sigma_2_0 = PARENT_DEFAULTS.sigma_2_0, sigma_2_1 = PARENT_DEFAULTS.sigma_2_1,
+        sigma_3_0 = PARENT_DEFAULTS.sigma_3_0, sigma_3_1 = PARENT_DEFAULTS.sigma_3_1,
+        sigma_4_0 = PARENT_DEFAULTS.sigma_4_0, sigma_4_1 = PARENT_DEFAULTS.sigma_4_1,
         d_0 = PARENT_DEFAULTS.d_0, d_1 = PARENT_DEFAULTS.d_1,
         d_2 = PARENT_DEFAULTS.d_2, d_3 = PARENT_DEFAULTS.d_3,
         sigma_eta = PARENT_DEFAULTS.sigma_eta, Neta::Int = 5,
@@ -525,10 +529,10 @@ function Parent_child_interaction_age_specific_AR1(;
     mu_vector      = [t < T_CHILD_VOICE ? 1.0 : 1.0 - mu_child_by_age[t - T_CHILD_VOICE + 1]
                       for t in 1:T]
 
-    sigma_1_vector = [exp(a_1_0 + a_1_1 * t) for t in 1:T]
-    sigma_2_vector = [exp(a_2_0 + a_2_1 * t) for t in 1:T]
-    sigma_3_vector = [exp(a_3_0 + a_3_1 * t) for t in 1:T]
-    sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 : exp(a_4_0 + a_4_1 * t) for t in 1:T]
+    sigma_1_vector = [exp(sigma_1_0 + sigma_1_1 * t) for t in 1:T]
+    sigma_2_vector = [exp(sigma_2_0 + sigma_2_1 * t) for t in 1:T]
+    sigma_3_vector = [exp(sigma_3_0 + sigma_3_1 * t) for t in 1:T]
+    sigma_4_vector = [t < T_CHILD_VOICE ? 0.0 : exp(sigma_4_0 + sigma_4_1 * t) for t in 1:T]
 
     # TFP enters as ln R_t, so it must be strictly positive. With d_0, d_1 > 0 the logistic is
     # a convex combination of the two and cannot reach zero; the check catches a box error.
@@ -538,13 +542,13 @@ function Parent_child_interaction_age_specific_AR1(;
     # Self-productivity must stay BELOW ONE. ln k' = ... + sigma_3 ln k, so sigma_3 >= 1 makes
     # the recursion explosive and the model has no bounded solution -- the parent solve then
     # fails as a convergence shortfall, which reads like a solver bug and is not one. Caught
-    # here, where the number is visible. memo 18: a_3_0 + a_3_1*t < 0 at t = 1 and t = T.
+    # here, where the number is visible. memo 18: sigma_3_0 + sigma_3_1*t < 0 at t = 1 and t = T.
     if maximum(sigma_3_vector) >= 1.0
         bad = findall(>=(1.0), sigma_3_vector)
         error("sigma_3 >= 1 at age $bad (max $(round(maximum(sigma_3_vector), digits=3))): " *
               "self-productivity at or above one makes HC explosive and the model unsolvable. " *
-              "a_3_0 = $a_3_0, a_3_1 = $a_3_1 give sigma_3 = exp(a_3_0 + a_3_1*t); keep " *
-              "a_3_0 + a_3_1*t < 0 at t = 1 and t = $T.")
+              "sigma_3_0 = $sigma_3_0, sigma_3_1 = $sigma_3_1 give sigma_3 = exp(sigma_3_0 + sigma_3_1*t); keep " *
+              "sigma_3_0 + sigma_3_1*t < 0 at t = 1 and t = $T.")
     end
     
 
