@@ -124,6 +124,20 @@ decisions and the licence notes are in **`docs/ERRORS.md` T1**. Nothing of it is
   Integration test with the new module on the real inputs: 30/30 (21:56).
 - The pilot ran the OLD module from its frozen worktree, so its logs keep the old lines.
 
+## Report changes (22:55-23:20, Ali)
+
+- The estimates table shows each parameter's ACTUAL start (it printed the code's default even with
+  `--init-from`), its box and its position in the box (search coordinates; flags within 2% and 5%, the
+  acceptance scale); the near-bound check itself was already v2's, ported.
+- A new untargeted section: the transfer at 18 by path (college / work), by BothCollege and by
+  parental-asset tertile, with the data's support figures (`ksup_*`, `val_sup_*`, `wealth2122_*`) as context.
+- `tools/report_point.jl <targets> <estimates.toml>`: the report at a saved point with the current code
+  (the K = 16 run's own log will have the old report: run this on its estimates when it ends).
+- Answers to Ali: `kterm_med22` (median net worth at first-child ages 21-22) is matched to the median of
+  `a_term = a - tr` at the age-18 half period (no age adjustment, decision 2026-10-01); the T-block numbers
+  are computed correctly -- their misfit is `docs/ERRORS.md` F1 (skill dispersion collapses); the transfers
+  are F2.
+
 ## Open decisions and waiting items
 
 - The authors' TikTak (`docs/ERRORS.md` T1): decided, deferred.
