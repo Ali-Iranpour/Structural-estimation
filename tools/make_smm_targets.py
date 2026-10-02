@@ -241,6 +241,15 @@ def main():
         'mu_mapping = "parent weight = 1 - mu_t for t >= 6, 1 before 6; mu_half at the half period"',
         "",
     ]
+    # Every calibrated constant of SMM_Constants, verbatim, so nothing the Stata side
+    # calibrates (initial assets and the wage process from steps 29/30, the child
+    # weight, initial skill) has to be added here by hand. Values only; the SEs and
+    # descriptions stay in SMM_Constants.csv.
+    lines += ["# All calibrated constants (SMM_Constants.csv), name = value.", "[constants]"]
+    for name, value in zip(k.name, k.value):
+        lines.append(f"{name} = {float(value):.17g}")
+    lines.append("")
+
     print(f"{'moment':28s} {'block':5s} {'tgt':>3s} {'estimate':>13s} {'se':>11s} {'N':>6s}")
     print("-" * 72)
     for _, row in m.iterrows():
