@@ -1,0 +1,346 @@
+# TikTak run state, schema 2 (code/src/TikTak/checkpoint.jl). Machine-written;
+# the sha256 on the last line covers everything above it. Do not edit by hand.
+checkpoint_seq = 13
+inflight = []
+kind = "tiktak_state"
+purpose = "custom"
+resume_semantics = "async_continuation"
+run_id = "20261002_214625_401b7aff"
+schema_version = 2
+stage = "complete"
+status = "complete"
+tiktak_version = "2.3.0-dev"
+written = "2026-10-02 21:49:26"
+
+[[accounted]]
+attempt = 1
+how = "committed"
+j = 1
+run_id = "20261002_214625_401b7aff"
+stage = "local"
+[[accounted]]
+attempt = 1
+how = "committed"
+j = 2
+run_id = "20261002_214625_401b7aff"
+stage = "local"
+[[accounted]]
+attempt = 1
+how = "committed"
+j = 3
+run_id = "20261002_214625_401b7aff"
+stage = "local"
+[[accounted]]
+attempt = 1
+how = "committed"
+j = 4
+run_id = "20261002_214625_401b7aff"
+stage = "local"
+
+[counters]
+attempts_unknown = 0
+counts_complete = true
+duplicates_ignored = 0
+evals_abandoned = 0
+evals_local = 59
+evals_polish = 0
+evals_pretest = 88
+jobs_lost = 0
+pretest_lost = 0
+retries = 0
+
+[[epochs]]
+from_segment = 1
+index = 1
+normalize = false
+note = "start"
+optimizer_id = "a3a28ba9bb3f3179"
+skip_polish = true
+
+    [epochs.local]
+    alg = "LN_NELDERMEAD"
+    ftol_abs = 1.0e-10
+    ftol_rel = 0.001
+    initial_step = 0.0
+    maxeval = 15
+    step_min = 0.1
+    step_schedule = "fixed"
+    xtol_rel = 1.0e-8
+
+    [epochs.polish]
+    alg = "LN_BOBYQA"
+    ftol_abs = 1.0e-14
+    ftol_rel = 1.0e-10
+    initial_step = 0.0
+    maxeval = 120
+    step_min = 0.0
+    step_schedule = "fixed"
+    xtol_rel = 1.0e-10
+
+[[events]]
+detail = "K = 4 of 4 requested; pre-testing pool 87 draws (valid_target)"
+kind = "start"
+seq = 1
+time = "2026-10-02 21:46:25"
+[[events]]
+detail = "stop_after_restarts = 2 reached (2 of 4 committed)"
+kind = "pause"
+seq = 2
+time = "2026-10-02 21:46:50"
+[[events]]
+detail = "resumed at restart 3 of 4 with 0 job(s) in flight, status was paused"
+kind = "resume"
+seq = 3
+time = "2026-10-02 21:48:38"
+[[events]]
+detail = "planned restarts complete"
+kind = "complete"
+seq = 4
+time = "2026-10-02 21:49:26"
+
+[incumbent]
+f = 81656.28122284389
+version = 3
+x = [1.9176509966429007, 0.5877459480266538, 1.0699448798839557, -2.6631969639457194, -0.28467913088062025, -7.871011010582974, -0.08958151230511742, -1.432784589716279, 0.05225335557922502, -5.408655850593821, 0.009308142222638774, 3.874045571151039, 9.39044010372526, 3.8818470599732544, 4.534596061457301, -0.4897991411348847, -0.13926896471627886, -0.9146790912232547, 1.5414172309213308, -0.16202385447406936]
+
+    [incumbent.origin]
+    attempt = 1
+    candidate = 0
+    objective_id = "4a20ba3199c99321"
+    restart = 4
+    ret = "MAXEVAL_REACHED"
+    stage = "local"
+
+    [incumbent.verification]
+    attempt = 0
+    coord_tol = nan
+    distance = nan
+    f_tested = nan
+    objective_id = ""
+    restart = 0
+    ret = "NONE"
+    solver = ""
+    stage = "none"
+    status = "none"
+    x_tested = []
+
+[objective]
+id = "4a20ba3199c99321"
+
+    [objective.fields]
+    child_grid = "12x12x3"
+    grid_extra = "parent:  | child: "
+    grid_report = 12
+    grid_search = 12
+    m_psychic = 6.686957400744432
+    moment_names = ["mean_c_p", "mean_h_p", "S1_mean_LW_age3", "S1_mean_LW_age4", "S1_mean_LW_age5", "S1_mean_LW_age6", "S1_mean_LW_age7", "S1_mean_LW_age8", "S1_mean_LW_age9", "S1_mean_LW_age10", "S1_mean_LW_age11", "S1_mean_LW_age12", "S1_mean_LW_age13", "S1_mean_LW_age14", "S1_mean_LW_age15", "S1_mean_LW_age16", "S1_mean_LW_age17", "S3_sd_LW_3_17", "S3_sd_LW_3_7", "S3_sd_LW_8_11", "S3_sd_LW_12_17", "S4_mean_dLW_base3_7", "S4_mean_dLW_base8_12", "S5_corr_LW_LWt5_base3_12", "S5_corr_LW_LWt5_base3_7", "S5_corr_LW_LWt5_base8_12", "S6_corr_taup_LW_3_17", "S6_corr_tauc_LW_6_17", "S6_corr_ep_LW_3_17", "S7_corr_taup_dLW_base3_12", "S7_corr_taup_dLW_base3_7", "S7_corr_taup_dLW_base8_12", "S7_corr_tauc_dLW_base6_12", "S7_corr_tauc_dLW_base6_7", "S7_corr_tauc_dLW_base8_12", "S7_corr_ep_dLW_base3_12", "S7_corr_ep_dLW_base3_7", "S7_corr_ep_dLW_base8_12", "S8_mean_taup_3_5", "S8_sd_taup_3_5", "S8_mean_taup_6_8", "S8_sd_taup_6_8", "S8_mean_taup_9_12", "S8_sd_taup_9_12", "S8_mean_taup_13_17", "S8_sd_taup_13_17", "S8_mean_ep_3_5", "S8_sd_ep_3_5", "S8_mean_ep_6_8", "S8_sd_ep_6_8", "S8_mean_ep_9_12", "S8_sd_ep_9_12", "S8_mean_ep_13_17", "S8_sd_ep_13_17", "S8_mean_tauc_6_8", "S8_sd_tauc_6_8", "S8_mean_tauc_9_12", "S8_sd_tauc_9_12", "S8_mean_tauc_13_17", "S8_sd_tauc_13_17", "S9_mean_ep_over_Y_3_17", "k0_complete", "kpe_bc0_c", "kpe_bc1_c", "kth_lw17_gap", "m_eps", "kterm_med22"]
+    param_hi = [20.0, 20.0, 100.0, 1.0, 0.1, -1.0, 0.3, 0.0, 0.1, -1.0, 0.6, 10.0, 10.0, 4.0, 20.0, 1.0, 0.0, 0.5, 40.0, 2.0]
+    param_link = ["log", "log", "log", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "log", "log"]
+    param_lo = [0.01, 0.05, 0.05, -4.0, -0.4, -12.0, -0.3, -3.0, -0.1, -12.0, -0.2, 0.01, 0.01, -4.0, -20.0, -3.0, -3.0, -1.0, 0.5, 0.1]
+    param_names = ["phi_2", "phi_3", "lambda_2", "sigma_1_0", "sigma_1_1", "sigma_2_0", "sigma_2_1", "sigma_3_0", "sigma_3_1", "sigma_4_0", "sigma_4_1", "d_0", "d_1", "d_2", "d_3", "kappa_0", "kappa_theta", "kappa_ParEd", "kappa_terminal", "sigma_eps"]
+    seed = 1234
+    sim_n = 300
+    source_sha = "d219b5325b1f6584"
+    spec_version = "smm20_memo19_v1"
+    targets_sha = "04354116e9bc994f"
+
+[optimizer]
+id = "a3a28ba9bb3f3179"
+
+    [optimizer.fields]
+    bootstrap = "immediate_mixed"
+    hi = [2.995732273553991, 2.995732273553991, 4.605170185988092, 1.0, 0.1, -1.0, 0.3, 0.0, 0.1, -1.0, 0.6, 10.0, 10.0, 4.0, 20.0, 1.0, 0.0, 0.5, 3.6888794541139363, 0.6931471805599453]
+    invalid_value = 1.0e12
+    lo = [-4.605170185988091, -2.995732273553991, -2.995732273553991, -4.0, -0.4, -12.0, -0.3, -3.0, -0.1, -12.0, -0.2, 0.01, 0.01, -4.0, -20.0, -3.0, -3.0, -1.0, -0.6931471805599453, -2.3025850929940455]
+    n_sobol = 200
+    n_supplied = 1
+    n_valid_target = 4
+    nlopt_jl_version = "1.1.2"
+    nlopt_version = "2.10.0"
+    normalize = false
+    nstar_requested = 4
+    on_error = "rethrow"
+    require_valid_target = false
+    skip_first = true
+    skip_polish = true
+    sobol_version = "1.5.0"
+    stop_tol = 0.0
+    supplied_seeds_sha = "a601bf809cc1a5ce"
+    theta = [0.5, 0.1, 0.995]
+    tiktak_source_sha = "0ee015f7fb21a146"
+    tiktak_version = "2.3.0-dev"
+    verify = [1.0e-9, 1.0e-8, 1.0e-12]
+
+        [optimizer.fields.local]
+        alg = "LN_NELDERMEAD"
+        ftol_abs = 1.0e-10
+        ftol_rel = 0.001
+        initial_step = 0.0
+        maxeval = 15
+        step_min = 0.1
+        step_schedule = "fixed"
+        xtol_rel = 1.0e-8
+
+        [optimizer.fields.polish]
+        alg = "LN_BOBYQA"
+        ftol_abs = 1.0e-14
+        ftol_rel = 1.0e-10
+        initial_step = 0.0
+        maxeval = 120
+        step_min = 0.0
+        step_schedule = "fixed"
+        xtol_rel = 1.0e-10
+
+[plan]
+hi = [2.995732273553991, 2.995732273553991, 4.605170185988092, 1.0, 0.1, -1.0, 0.3, 0.0, 0.1, -1.0, 0.6, 10.0, 10.0, 4.0, 20.0, 1.0, 0.0, 0.5, 3.6888794541139363, 0.6931471805599453]
+lo = [-4.605170185988091, -2.995732273553991, -2.995732273553991, -4.0, -0.4, -12.0, -0.3, -3.0, -0.1, -12.0, -0.2, 0.01, 0.01, -4.0, -20.0, -3.0, -3.0, -1.0, -0.6931471805599453, -2.3025850929940455]
+nstar_effective = 4
+nstar_requested = 4
+schedule_denominator = 4
+
+[polish]
+done = false
+epoch = 0
+improved = false
+n_eval = 0
+ret = "NOT_RUN"
+
+[pretest]
+attempted = 87
+errors = 0
+invalid = 83
+nonfinite = 0
+overshoot = 0
+reused = 0
+selected = 4
+selected_supplied = 0
+stop_reason = "valid_target"
+supplied = 1
+supplied_valid = 0
+target = 4
+target_reached = true
+valid = 4
+
+[progress]
+commit_seq = 4
+dispatch_seq = 4
+fZ_prev_distinct = 98937.08715799684
+f_prepolish = 81656.28122284389
+legacy_through = 0
+n_exception = 0
+next_j = 5
+stopped_early = false
+
+[[records]]
+action = "improved"
+attempt = 1
+commit_seq = 1
+commits_at_dispatch = 0
+dispatch_seq = 2
+elapsed = 22.5490939617157
+epoch = 1
+error = ""
+f_local = 98937.08715799684
+f_start = 153675.12596170427
+incumbent_version = 1
+j = 2
+legacy = false
+n_eval = 15
+ret = "MAXEVAL_REACHED"
+start_fallback = false
+theta = 0.7071067811865476
+version_after = 2
+worker = 3
+x = [1.9208871684347546, 0.601284240503384, 1.0685920530974247, -2.67120140848816, -0.28510072827198013, -7.888696681490426, -0.09128010030665068, -1.4393956303681197, 0.05252378701429651, -5.42346850562193, 0.009574766052903291, 3.8444384666090845, 7.590688466609086, 3.5341213466261494, 4.646893026590252, -0.4924174785275223, -0.12689563036811943, -0.9147803366565374, 1.5393996505899752, -0.16173445175012732]
+x0 = [1.9208871684347546, -0.8965818962736114, 1.0685920530974247, -2.67120140848816, -0.28510072827198013, -7.888696681490426, -0.09128010030665068, -2.1893956303681197, 0.05252378701429651, -5.42346850562193, 0.009574766052903291, 3.8444384666090845, 5.093188466609085, 2.136485386504598, 4.646893026590252, -0.4924174785275223, -0.12689563036811943, -0.9147803366565374, 1.5393996505899752, -0.16173445175012732]
+[[records]]
+action = "none"
+attempt = 1
+commit_seq = 2
+commits_at_dispatch = 0
+dispatch_seq = 1
+elapsed = 23.613090991973877
+epoch = 1
+error = ""
+f_local = 126032.51267623717
+f_start = 164055.54007381506
+incumbent_version = 1
+j = 1
+legacy = false
+n_eval = 14
+ret = "MAXEVAL_REACHED"
+start_fallback = false
+theta = 0.0
+version_after = 2
+worker = 2
+x = [2.1643835670415763, -1.9659493045198064, 2.5861804701722257, -3.31640625, -0.2828125, -6.328125, -0.02812500000000001, -1.453125, 0.040624999999999994, -4.265625, -0.1625, 5.473281249999999, 6.722031250000001, 3.78125, 8.125, -0.4375, -0.140625, -0.9765625, 1.8402119676108923, -0.4770607387970822]
+x0 = [2.1643835670415763, -1.9659493045198064, 0.6859548552867052, -3.609375, -0.2828125, -6.328125, -0.02812500000000001, -2.203125, 0.040624999999999994, -4.265625, -0.1625, 2.97578125, 4.22453125, 3.125, 8.125, -0.4375, -0.140625, -0.9765625, 1.8402119676108923, -0.4770607387970822]
+[[records]]
+action = "improved"
+attempt = 1
+commit_seq = 3
+commits_at_dispatch = 2
+dispatch_seq = 4
+elapsed = 36.356733083724976
+epoch = 1
+error = ""
+f_local = 81656.28122284389
+f_start = 98906.44677185183
+incumbent_version = 2
+j = 4
+legacy = false
+n_eval = 15
+ret = "MAXEVAL_REACHED"
+start_fallback = false
+theta = 0.995
+version_after = 3
+worker = 3
+x = [1.9176509966429007, 0.5877459480266538, 1.0699448798839557, -2.6631969639457194, -0.28467913088062025, -7.871011010582974, -0.08958151230511742, -1.432784589716279, 0.05225335557922502, -5.408655850593821, 0.009308142222638774, 3.874045571151039, 9.39044010372526, 3.8818470599732544, 4.534596061457301, -0.4897991411348847, -0.13926896471627886, -0.9146790912232547, 1.5414172309213308, -0.16202385447406936]
+x0 = [1.9176509966429007, 0.5877459480266538, 1.0699448798839557, -2.6631969639457194, -0.28467913088062025, -7.871011010582974, -0.08958151230511742, -1.432784589716279, 0.05225335557922502, -5.408655850593821, 0.009308142222638774, 3.874045571151039, 7.56176041490104, 3.5273882398930185, 4.534596061457301, -0.4897991411348847, -0.13926896471627886, -0.9146790912232547, 1.5414172309213308, -0.16202385447406936]
+[[records]]
+action = "none"
+attempt = 1
+commit_seq = 4
+commits_at_dispatch = 2
+dispatch_seq = 3
+elapsed = 41.09360098838806
+epoch = 1
+error = ""
+f_local = 107479.30232131999
+f_start = 126158.14426680119
+incumbent_version = 2
+j = 3
+legacy = false
+n_eval = 15
+ret = "MAXEVAL_REACHED"
+start_fallback = false
+theta = 0.8660254037844386
+version_after = 3
+worker = 2
+x = [1.2295420528674015, 1.861815430464048, 0.8820817230537789, -1.9220377230238777, -0.26752400101978036, -4.43454172051949, 0.05650497811995857, -1.6013765266597584, 0.03774152751363184, -5.717371122104139, 0.01917742657962147, 3.6757789739440923, 9.354888851487477, 3.4541892426183263, 2.8101826314923897, -0.572980760283083, -0.11931492832443816, -0.9057874142503894, 1.4650367481693893, -0.18203122504561992]
+x0 = [1.2295420528674015, 0.3639492936870526, 0.8820817230537789, -2.812592984585073, -0.26752400101978036, -7.18454172051949, -0.09349502188004143, -1.6013765266597584, 0.03774152751363184, -5.717371122104139, 0.01917742657962147, 3.6757789739440923, 6.857388851487477, 3.4541892426183263, 2.8101826314923897, -0.572980760283083, -0.11931492832443816, -0.9057874142503894, 1.4650367481693893, -0.18203122504561992]
+
+[seeds]
+candidate = [57, 28, 87, 65]
+f = [164055.54007381506, 166247.75641958028, 208099.8964297995, 346723.67646466754]
+f_sobol_best = 164055.54007381506
+origin = ["sobol", "sobol", "sobol", "sobol"]
+x = [[2.1643835670415763, -1.9659493045198064, 0.6859548552867052, -3.609375, -0.2828125, -6.328125, -0.02812500000000001, -2.203125, 0.040624999999999994, -4.265625, -0.1625, 2.97578125, 4.22453125, 3.125, 8.125, -0.4375, -0.140625, -0.9765625, 1.8402119676108923, -0.4770607387970822], [1.3330348605291604, 1.6850994038741196, 1.9923599655205009, -0.40625, -0.290625, -11.65625, -0.24375, -2.15625, 0.08125000000000002, -8.21875, 0.425, 5.9415625, 7.1903125, -0.25, -3.75, -0.625, -0.09375, -0.765625, 0.8131744751092015, 0.599530547011383], [-3.239383025289123, -1.1702079193570276, -0.3235400026212276, -3.7265625, -0.15390625000000002, -2.6328125, -0.1078125, -2.6484375, -0.0578125, -7.6171875, 0.08124999999999999, 2.585546875, 2.117265625, 2.9375, -9.0625, -1.09375, -0.0703125, -0.84765625, 0.9843473905261498, -0.3132316300870983], [1.2736528100639886, -2.10637425484265, 1.3391574104036033, -1.0703125, -0.20078125000000002, -4.3515625, 0.24843750000000003, -0.1171875, -0.0015624999999999944, -2.4609375, -0.04375000000000001, 9.765859375, 1.805078125, 2.1875, -17.8125, 0.03125, -2.6015625, -0.89453125, 1.9429157168610613, -0.2196149965385361]]
+
+[[segments]]
+index = 1
+mode = "async_process"
+next_j = 1
+note = "start"
+started = "2026-10-02 21:46:25"
+stop_after = 2
+workers = 2
+[[segments]]
+index = 2
+mode = "async_process"
+next_j = 3
+note = "resume"
+started = "2026-10-02 21:48:38"
+stop_after = 9223372036854775807
+workers = 2
+# sha256 3223edf8bda883074211d3290d4bd8a3d24dbc89c48ceb188331267cab556d16

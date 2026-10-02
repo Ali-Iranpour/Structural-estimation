@@ -1,0 +1,4 @@
+2026-10-02 19:57:36 start; code 9e2d760; targets 04354116e9bc994f; arm A -> /srv/project/speech/apps/Structural-estimation/temp/2026-10-02_memo19_merge/output/smm_runs/2026-10-02_195733_pilot_A_theta0; arm B -> /srv/project/speech/apps/Structural-estimation/temp/2026-10-02_memo19_merge/output/smm_runs/2026-10-02_195733_pilot_B_random
+2026-10-02 22:28:14 arm A exit=0
+2026-10-02 22:31:41 arm B exit=0
+2026-10-02 22:31:41 both arms exit 0

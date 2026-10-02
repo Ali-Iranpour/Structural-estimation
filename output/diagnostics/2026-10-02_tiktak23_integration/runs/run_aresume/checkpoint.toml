@@ -1,0 +1,50 @@
+# A summary of the current best point, DERIVED from tiktak_state.toml by code/smm/run_smm.jl.
+# --resume <this dir> reads tiktak_state.toml; --init-from uses [search_vector] exactly ([parameters] is rounded).
+stage         = "final"
+restarts_done = 4
+param_names = ["phi_2", "phi_3", "lambda_2", "sigma_1_0", "sigma_1_1", "sigma_2_0", "sigma_2_1", "sigma_3_0", "sigma_3_1", "sigma_4_0", "sigma_4_1", "d_0", "d_1", "d_2", "d_3", "kappa_0", "kappa_theta", "kappa_ParEd", "kappa_terminal", "sigma_eps"]
+param_lo = [0.01, 0.05, 0.05, -4.0, -0.4, -12.0, -0.3, -3.0, -0.1, -12.0, -0.2, 0.01, 0.01, -4.0, -20.0, -3.0, -3.0, -1.0, 0.5, 0.1]
+param_hi = [20.0, 20.0, 100.0, 1.0, 0.1, -1.0, 0.3, 0.0, 0.1, -1.0, 0.6, 10.0, 10.0, 4.0, 20.0, 1.0, 0.0, 0.5, 40.0, 2.0]
+param_link = ["log", "log", "log", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "log", "log"]
+targets_sha = "04354116e9bc994f"
+source_sha = "d219b5325b1f6584"
+spec_version = "smm20_memo19_v1"
+grid_extra = "parent:  | child: "
+m_psychic = 6.686957400744432
+moment_names = ["mean_c_p", "mean_h_p", "S1_mean_LW_age3", "S1_mean_LW_age4", "S1_mean_LW_age5", "S1_mean_LW_age6", "S1_mean_LW_age7", "S1_mean_LW_age8", "S1_mean_LW_age9", "S1_mean_LW_age10", "S1_mean_LW_age11", "S1_mean_LW_age12", "S1_mean_LW_age13", "S1_mean_LW_age14", "S1_mean_LW_age15", "S1_mean_LW_age16", "S1_mean_LW_age17", "S3_sd_LW_3_17", "S3_sd_LW_3_7", "S3_sd_LW_8_11", "S3_sd_LW_12_17", "S4_mean_dLW_base3_7", "S4_mean_dLW_base8_12", "S5_corr_LW_LWt5_base3_12", "S5_corr_LW_LWt5_base3_7", "S5_corr_LW_LWt5_base8_12", "S6_corr_taup_LW_3_17", "S6_corr_tauc_LW_6_17", "S6_corr_ep_LW_3_17", "S7_corr_taup_dLW_base3_12", "S7_corr_taup_dLW_base3_7", "S7_corr_taup_dLW_base8_12", "S7_corr_tauc_dLW_base6_12", "S7_corr_tauc_dLW_base6_7", "S7_corr_tauc_dLW_base8_12", "S7_corr_ep_dLW_base3_12", "S7_corr_ep_dLW_base3_7", "S7_corr_ep_dLW_base8_12", "S8_mean_taup_3_5", "S8_sd_taup_3_5", "S8_mean_taup_6_8", "S8_sd_taup_6_8", "S8_mean_taup_9_12", "S8_sd_taup_9_12", "S8_mean_taup_13_17", "S8_sd_taup_13_17", "S8_mean_ep_3_5", "S8_sd_ep_3_5", "S8_mean_ep_6_8", "S8_sd_ep_6_8", "S8_mean_ep_9_12", "S8_sd_ep_9_12", "S8_mean_ep_13_17", "S8_sd_ep_13_17", "S8_mean_tauc_6_8", "S8_sd_tauc_6_8", "S8_mean_tauc_9_12", "S8_sd_tauc_9_12", "S8_mean_tauc_13_17", "S8_sd_tauc_13_17", "S9_mean_ep_over_Y_3_17", "k0_complete", "kpe_bc0_c", "kpe_bc1_c", "kth_lw17_gap", "m_eps", "kterm_med22"]
+child_grid = "12x12x3"
+seed = 1234
+sim_n = 300
+grid_search = 12
+grid_report = 12
+restarts_total= 4
+Q_best        = 81656.28122284389
+objective_grid= 12   # the grid Q_best was computed at
+Q_incumbent   = 1.0e12   # at grid_search
+minutes       = 0.9
+updated       = "2026-10-02 21:49:29"
+
+[search_vector]
+z = [1.9176509966429007, 0.58774594802665381, 1.0699448798839557, -2.6631969639457194, -0.28467913088062025, -7.8710110105829738, -0.089581512305117419, -1.432784589716279, 0.052253355579225023, -5.4086558505938207, 0.0093081422226387739, 3.8740455711510391, 9.3904401037252594, 3.8818470599732544, 4.5345960614573011, -0.48979914113488471, -0.13926896471627886, -0.91467909122325475, 1.5414172309213308, -0.16202385447406936]
+
+[parameters]
+phi_2      = 6.80495482
+phi_3      = 1.79992671
+lambda_2   = 2.91521881
+sigma_1_0  = -2.66319696
+sigma_1_1  = -0.28467913
+sigma_2_0  = -7.87101101
+sigma_2_1  = -0.08958151
+sigma_3_0  = -1.43278459
+sigma_3_1  = 0.05225336
+sigma_4_0  = -5.40865585
+sigma_4_1  = 0.00930814
+d_0        = 3.87404557
+d_1        = 9.39044010
+d_2        = 3.88184706
+d_3        = 4.53459606
+kappa_0    = -0.48979914
+kappa_theta = -0.13926896
+kappa_ParEd = -0.91467909
+kappa_terminal = 4.67120576
+sigma_eps  = 0.85042092

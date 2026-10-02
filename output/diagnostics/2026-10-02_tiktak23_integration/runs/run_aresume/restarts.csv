@@ -1,0 +1,5 @@
+restart,theta,f_start,f_local,improved,ret,attempt,n_eval,action,worker,elapsed_s,incumbent_version,commit_seq,start_fallback
+1,0.0,164055.54007381506,126032.51267623717,false,MAXEVAL_REACHED,1,14,none,2,23.61,1,2,false
+2,0.7071067811865476,153675.12596170427,98937.08715799684,true,MAXEVAL_REACHED,1,15,improved,3,22.55,1,1,false
+3,0.8660254037844386,126158.14426680119,107479.30232131999,false,MAXEVAL_REACHED,1,15,none,2,41.09,2,4,false
+4,0.995,98906.44677185183,81656.28122284389,true,MAXEVAL_REACHED,1,15,improved,3,36.36,2,3,false

@@ -1,0 +1,664 @@
+
+============================================================================
+SMM: 20 parameters (15 parent + 5 child) against 67 moments (2 P + 59 S + 5 T + 1 W)   [QUICK -- smoke test, not an estimate]
+============================================================================
+started    2026-10-02 21:43:20
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 46.2
+workers    2 of 112 cores (2%) -- capped by shared-server budget
+purpose    custom -- no preset: settings as given
+budget     4 VALID Sobol draws (at most 200 attempts), 4 restarts (<= 15 evals each, polish SKIPPED)
+grids      Na=Nhc=12 for both the search and the report
+writing to ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume
+           (also reachable as ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/latest -- tail that, no timestamp needed)
+6.8s
+running on 3 process(es): 1 master + 2 worker(s); Julia threads per process 1, BLAS threads 1
+11.8s
+18.7s (all processes at once)
+
+============================================================================
+Targets  (../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/targets.toml)
+============================================================================
+67 moments, 20 parameters -- 47 more moments than parameters (the weights matter at a misfit)
+(a count is not identification, and says nothing about the attainable Q: see the fit table and tools/check_jacobian_rank.jl)
+parameters: phi_2, phi_3, lambda_2, sigma_1_0, sigma_1_1, sigma_2_0, sigma_2_1, sigma_3_0, sigma_3_1, sigma_4_0, sigma_4_1, d_0, d_1, d_2, d_3, kappa_0, kappa_theta, kappa_ParEd, kappa_terminal, sigma_eps
+moment                               mean           se        N   source
+mean_c_p                           4.1186       0.0507     6742   Consumption incl. housing minus money investment - p99 cap - equal-age mean 1-17
+mean_h_p                           0.3073       0.0022    15665   Work hours per parent / 112 - equal-age mean 1-17
+S1_mean_LW_age3                    5.0909       0.4942       44   Mean raw LW at age 3
+S1_mean_LW_age4                    6.7603       0.3330      121   Mean raw LW at age 4
+S1_mean_LW_age5                   10.2483       0.4599      145   Mean raw LW at age 5
+S1_mean_LW_age6                   17.2917       0.5777      168   Mean raw LW at age 6
+S1_mean_LW_age7                   27.7351       0.7065      151   Mean raw LW at age 7
+S1_mean_LW_age8                   34.1067       0.4982      178   Mean raw LW at age 8
+S1_mean_LW_age9                   38.8243       0.5219      148   Mean raw LW at age 9
+S1_mean_LW_age10                  42.4483       0.3917      174   Mean raw LW at age 10
+S1_mean_LW_age11                  44.5721       0.4114      208   Mean raw LW at age 11
+S1_mean_LW_age12                  45.8342       0.3835      193   Mean raw LW at age 12
+S1_mean_LW_age13                  47.0055       0.4067      183   Mean raw LW at age 13
+S1_mean_LW_age14                  47.9933       0.3926      150   Mean raw LW at age 14
+S1_mean_LW_age15                  49.3588       0.3573      170   Mean raw LW at age 15
+S1_mean_LW_age16                  49.8944       0.4102      161   Mean raw LW at age 16
+S1_mean_LW_age17                  49.9535       0.3909      172   Mean raw LW at age 17
+S3_sd_LW_3_17                     15.4734       0.1880     2366   SD of raw LW at ages 3-17
+S3_sd_LW_3_7                      10.4126       0.3126      629   SD of raw LW at ages 3-7
+S3_sd_LW_8_11                      7.1633       0.2034      708   SD of raw LW at ages 8-11
+S3_sd_LW_12_17                     5.1927       0.1972     1029   SD of raw LW at ages 12-17
+S4_mean_dLW_base3_7               28.0469       0.4550      405   Mean 5-year change in raw LW - base age 3-7
+S4_mean_dLW_base8_12               8.0739       0.2176      555   Mean 5-year change in raw LW - base age 8-12
+S5_corr_LW_LWt5_base3_12           0.6490       0.0173      960   corr of LW now and 5 years later - base age 3-12
+S5_corr_LW_LWt5_base3_7            0.4733       0.0332      405   corr of LW now and 5 years later - base age 3-7
+S5_corr_LW_LWt5_base8_12           0.7168       0.0204      555   corr of LW now and 5 years later - base age 8-12
+S6_corr_taup_LW_3_17              -0.3709       0.0220     2366   corr of active parental time and LW - ages 3-17
+S6_corr_tauc_LW_6_17               0.2216       0.0179     2028   corr of own study time and LW - ages 6-17
+S6_corr_ep_LW_3_17                 0.1013       0.0369      610   corr of money and LW - ages 3-17 - one-child families
+S7_corr_taup_dLW_base3_12          0.3372       0.0313      960   corr of parental time and 5-year LW change - base age 3-12
+S7_corr_taup_dLW_base3_7           0.3168       0.0412      405   corr of parental time and 5-year LW change - base age 3-7
+S7_corr_taup_dLW_base8_12          0.0732       0.0418      555   corr of parental time and 5-year LW change - base age 8-12
+S7_corr_tauc_dLW_base6_12         -0.2210       0.0293      769   corr of own study and 5-year LW change - base age 6-12
+S7_corr_tauc_dLW_base6_7          -0.2046       0.0637      225   corr of own study and 5-year LW change - base age 6-7
+S7_corr_tauc_dLW_base8_12         -0.1039       0.0374      544   corr of own study and 5-year LW change - base age 8-12
+S7_corr_ep_dLW_base3_12            0.1388       0.0726      203   corr of money and 5-year LW change - base age 3-12 - one-child
+S7_corr_ep_dLW_base3_7             0.1092       0.0805       95   corr of money and 5-year LW change - base age 3-7 - one-child
+S7_corr_ep_dLW_base8_12           -0.0601       0.0723      108   corr of money and 5-year LW change - base age 8-12 - one-child
+S8_mean_taup_3_5                   0.3420       0.0065      564   Mean active parental time / 112 - ages 3-5
+S8_sd_taup_3_5                     0.1442       0.0041      564   SD of active parental time / 112 - ages 3-5
+S8_mean_taup_6_8                   0.2397       0.0042      628   Mean active parental time / 112 - ages 6-8
+S8_sd_taup_6_8                     0.1015       0.0033      628   SD of active parental time / 112 - ages 6-8
+S8_mean_taup_9_12                  0.2152       0.0039      905   Mean active parental time / 112 - ages 9-12
+S8_sd_taup_9_12                    0.1094       0.0033      905   SD of active parental time / 112 - ages 9-12
+S8_mean_taup_13_17                 0.1619       0.0042      979   Mean active parental time / 112 - ages 13-17
+S8_sd_taup_13_17                   0.1219       0.0063      979   SD of active parental time / 112 - ages 13-17
+S8_mean_ep_3_5                     0.3035       0.0226      478   Mean money / 10000 - ages 3-5 - one-child - PSID years
+S8_sd_ep_3_5                       0.4258       0.0304      478   SD of money / 10000 - ages 3-5 - one-child - PSID years
+S8_mean_ep_6_8                     0.3000       0.0289      326   Mean money / 10000 - ages 6-8 - one-child - PSID years
+S8_sd_ep_6_8                       0.4842       0.0484      326   SD of money / 10000 - ages 6-8 - one-child - PSID years
+S8_mean_ep_9_12                    0.2908       0.0327      478   Mean money / 10000 - ages 9-12 - one-child - PSID years
+S8_sd_ep_9_12                      0.5955       0.0864      478   SD of money / 10000 - ages 9-12 - one-child - PSID years
+S8_mean_ep_13_17                   0.4814       0.0372     1304   Mean money / 10000 - ages 13-17 - one-child - PSID years
+S8_sd_ep_13_17                     0.9587       0.0766     1304   SD of money / 10000 - ages 13-17 - one-child - PSID years
+S8_mean_tauc_6_8                   0.0294       0.0012      616   Mean own study time / 112 - ages 6-8
+S8_sd_tauc_6_8                     0.0295       0.0012      616   SD of own study time / 112 - ages 6-8
+S8_mean_tauc_9_12                  0.0453       0.0016      893   Mean own study time / 112 - ages 9-12
+S8_sd_tauc_9_12                    0.0444       0.0016      893   SD of own study time / 112 - ages 9-12
+S8_mean_tauc_13_17                 0.0557       0.0024      968   Mean own study time / 112 - ages 13-17
+S8_sd_tauc_13_17                   0.0662       0.0027      968   SD of own study time / 112 - ages 13-17
+S9_mean_ep_over_Y_3_17             0.0391       0.0023     2543   Mean money / parents pre-tax labour income - ages 3-17 - one-child
+k0_complete                        0.3425       0.0131     2213   Share with a BA at the first TAS wave at age 25 or 26
+kpe_bc0_c                          0.2991       0.0149     1314   BA share - BothCollege = 0 - both parents 16+ years from IND2023ER
+kpe_bc1_c                          0.7971       0.0244      350   BA share - BothCollege = 1
+kth_lw17_gap                       3.3484       0.5532      253   Mean raw LW at 17 - BA minus no BA
+m_eps                              0.1922       0.0149      187   Residual variance RSS/(N-3) of BA on BothCollege and raw LW at 17 - no centring
+kterm_med22                       15.6230       1.2942      327   Median family net worth incl. home - first-child ages 21-22 - fathers 25-27 at first birth
+
+settings written to ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/run_record.toml  (status = started)
+initial point
+  phi_2              0.196278   (smm_start)
+  phi_3               1.53373   (smm_start)
+  lambda_2             13.862   (smm_start)
+  sigma_1_0          -0.59461   (smm_start)
+  sigma_1_1         -0.115348   (smm_start)
+  sigma_2_0            -7.154   (smm_start)
+  sigma_2_1             0.072   (smm_start)
+  sigma_3_0            -0.254   (smm_start)
+  sigma_3_1             0.005   (smm_start)
+  sigma_4_0            -6.598   (smm_start)
+  sigma_4_1             0.271   (smm_start)
+  d_0                     5.6   (smm_start)
+  d_1                     5.6   (smm_start)
+  d_2                       1   (smm_start)
+  d_3                     5.3   (smm_start)
+  kappa_0           -0.356591   (smm_start)
+  kappa_theta       -0.182563   (smm_start)
+  kappa_ParEd       -0.108108   (smm_start)
+  kappa_terminal      8.78678   (smm_start)
+  sigma_eps           1.14224   (smm_start)
+  sigma_eta                 0   (FIXED, not estimated: DFVW's technology is deterministic)
+22.4s (a second evaluation at the same point: 2.2s; the projection uses the second, the first includes compilation)
+start Q (full precision) = 1.0e12   [smm_start start, sha a601bf809cc1a5ce]
+
+projected runtime -- scenarios, not a deadline (a driver's timeout is the enforced limit)
+  one evaluation took 2.2 s (the second on the master, after compilation; workers under load can be slower)
+  stage                 cap   empirical
+  pre-testing       0.1 min          --   5 evals on 2 worker(s), at least (valid-draw target)
+  local stage       1.2 min          --   4 restarts, 2 at a time from the start; at the cap 2 round(s) of 0.6 min
+  polish            0.0 min          --   skipped
+  total             1.3 min          --   
+  core-hours            0/0          --   busy / held: an idle worker holds a core without loading the machine
+  cap: every restart uses its 15 evaluations (+1 for its start) and the polish its 0
+  empirical: none given (--runtime-evals with the per-restart counts of a compatible run, e.g. mu08: 500,500,500,423,268)
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 1000000000000.000000
+
+Parameters
+--------------------------------------------------------------
+  phi_2              0.1963   (start 0.1963)
+  phi_3              1.5337   (start 1.5337)
+  lambda_2          13.8620   (start 13.8620)
+  sigma_1_0         -0.5946   (start -0.5946)
+  sigma_1_1         -0.1153   (start -0.1153)
+  sigma_2_0         -7.1540   (start -7.1540)
+  sigma_2_1          0.0720   (start 0.0720)
+  sigma_3_0         -0.2540   (start -0.2540)
+  sigma_3_1          0.0050   (start 0.0050)
+  sigma_4_0         -6.5980   (start -6.5980)
+  sigma_4_1          0.2710   (start 0.2710)
+  d_0                5.6000   (start 5.6000)
+  d_1                5.6000   (start 5.6000)
+  d_2                1.0000   (start 1.0000)
+  d_3                5.3000   (start 5.3000)
+  kappa_0           -0.3566   (start -0.3566)
+  kappa_theta       -0.1826   (start -0.1826)
+  kappa_ParEd       -0.1081   (start -0.1081)
+  kappa_terminal     8.7868   (start 8.7868)
+  sigma_eps          1.1422   (start 1.1422)
+
+Targeted moments -- 67 moments, 20 parameters
+----------------------------------------------------------------------------------------------------
+  moment                             model        data         t  Q share   measure
+  ------------------------------ block P ------------------------------
+  mean_c_p                          2.4731      4.1186     -32.5     NaN%   Consumption incl. housing minus money investme
+  mean_h_p                          0.2442      0.3073     -28.6     NaN%   Work hours per parent / 112 - equal-age mean 1
+  ------------------------------ block S ------------------------------
+  S1_mean_LW_age3                  13.0378      5.0909      16.1     NaN%   Mean raw LW at age 3
+  S1_mean_LW_age4                  23.9172      6.7603      51.5     NaN%   Mean raw LW at age 4
+  S1_mean_LW_age5                  34.4447     10.2483      52.6     NaN%   Mean raw LW at age 5
+  S1_mean_LW_age6                  42.3014     17.2917      43.3     NaN%   Mean raw LW at age 6
+  S1_mean_LW_age7                  46.4882     27.7351      26.5     NaN%   Mean raw LW at age 7
+  S1_mean_LW_age8                  49.2813     34.1067      30.5     NaN%   Mean raw LW at age 8
+  S1_mean_LW_age9                  51.1832     38.8243      23.7     NaN%   Mean raw LW at age 9
+  S1_mean_LW_age10                 52.5108     42.4483      25.7     NaN%   Mean raw LW at age 10
+  S1_mean_LW_age11                 53.4607     44.5721      21.6     NaN%   Mean raw LW at age 11
+  S1_mean_LW_age12                 54.1528     45.8342      21.7     NaN%   Mean raw LW at age 12
+  S1_mean_LW_age13                 54.6658     47.0055      18.8     NaN%   Mean raw LW at age 13
+  S1_mean_LW_age14                 55.0554     47.9933      18.0     NaN%   Mean raw LW at age 14
+  S1_mean_LW_age15                 55.3531     49.3588      16.8     NaN%   Mean raw LW at age 15
+  S1_mean_LW_age16                 55.5811     49.8944      13.9     NaN%   Mean raw LW at age 16
+  S1_mean_LW_age17                 55.7379     49.9535      14.8     NaN%   Mean raw LW at age 17
+  S3_sd_LW_3_17                     9.9768     15.4734     -29.2     NaN%   SD of raw LW at ages 3-17
+  S3_sd_LW_3_7                     11.0727     10.4126       2.1     NaN%   SD of raw LW at ages 3-7
+  S3_sd_LW_8_11                     2.7636      7.1633     -21.6     NaN%   SD of raw LW at ages 8-11
+  S3_sd_LW_12_17                    1.4797      5.1927     -18.8     NaN%   SD of raw LW at ages 12-17
+  S4_mean_dLW_base3_7              16.4661     28.0469     -25.5     NaN%   Mean 5-year change in raw LW - base age 3-7
+  S4_mean_dLW_base8_12              3.3715      8.0739     -21.6     NaN%   Mean 5-year change in raw LW - base age 8-12
+  S5_corr_LW_LWt5_base3_12          0.5778      0.6490      -4.1     NaN%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base3_7           0.4345      0.4733      -1.2     NaN%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base8_12          0.1684      0.7168     -26.9     NaN%   corr of LW now and 5 years later - base age 8-
+  S6_corr_taup_LW_3_17             -0.7579     -0.3709     -17.6     NaN%   corr of active parental time and LW - ages 3-1
+  S6_corr_tauc_LW_6_17              0.7121      0.2216      27.4     NaN%   corr of own study time and LW - ages 6-17
+  S6_corr_ep_LW_3_17                0.3743      0.1013       7.4     NaN%   corr of money and LW - ages 3-17 - one-child f
+  S7_corr_taup_dLW_base3_12         0.8380      0.3372      16.0     NaN%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base3_7          0.7253      0.3168       9.9     NaN%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base8_12         0.4399      0.0732       8.8     NaN%   corr of parental time and 5-year LW change - b
+  S7_corr_tauc_dLW_base6_12        -0.6247     -0.2210     -13.8     NaN%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base6_7         -0.4047     -0.2046      -3.1     NaN%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base8_12        -0.4437     -0.1039      -9.1     NaN%   corr of own study and 5-year LW change - base 
+  S7_corr_ep_dLW_base3_12          -0.6155      0.1388     -10.4     NaN%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base3_7           -0.6119      0.1092      -9.0     NaN%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base8_12          -0.1243     -0.0601      -0.9     NaN%   corr of money and 5-year LW change - base age 
+  S8_mean_taup_3_5                  0.8213      0.3420      73.9     NaN%   Mean active parental time / 112 - ages 3-5
+  S8_sd_taup_3_5                    0.0255      0.1442     -29.1     NaN%   SD of active parental time / 112 - ages 3-5
+  S8_mean_taup_6_8                  0.6009      0.2397      86.0     NaN%   Mean active parental time / 112 - ages 6-8
+  S8_sd_taup_6_8                    0.0199      0.1015     -24.8     NaN%   SD of active parental time / 112 - ages 6-8
+  S8_mean_taup_9_12                 0.4925      0.2152      70.9     NaN%   Mean active parental time / 112 - ages 9-12
+  S8_sd_taup_9_12                   0.0463      0.1094     -19.4     NaN%   SD of active parental time / 112 - ages 9-12
+  S8_mean_taup_13_17                0.2238      0.1619      14.6     NaN%   Mean active parental time / 112 - ages 13-17
+  S8_sd_taup_13_17                  0.1140      0.1219      -1.3     NaN%   SD of active parental time / 112 - ages 13-17
+  S8_mean_ep_3_5                    0.0557      0.3035     -11.0     NaN%   Mean money / 10000 - ages 3-5 - one-child - PS
+  S8_sd_ep_3_5                      0.0361      0.4258     -12.8     NaN%   SD of money / 10000 - ages 3-5 - one-child - P
+  S8_mean_ep_6_8                    0.1660      0.3000      -4.6     NaN%   Mean money / 10000 - ages 6-8 - one-child - PS
+  S8_sd_ep_6_8                      0.0689      0.4842      -8.6     NaN%   SD of money / 10000 - ages 6-8 - one-child - P
+  S8_mean_ep_9_12                   0.2272      0.2908      -1.9     NaN%   Mean money / 10000 - ages 9-12 - one-child - P
+  S8_sd_ep_9_12                     0.0946      0.5955      -5.8     NaN%   SD of money / 10000 - ages 9-12 - one-child - 
+  S8_mean_ep_13_17                  0.1486      0.4814      -8.9     NaN%   Mean money / 10000 - ages 13-17 - one-child - 
+  S8_sd_ep_13_17                    0.1068      0.9587     -11.1     NaN%   SD of money / 10000 - ages 13-17 - one-child -
+  S8_mean_tauc_6_8                  0.0320      0.0294       2.2     NaN%   Mean own study time / 112 - ages 6-8
+  S8_sd_tauc_6_8                    0.0091      0.0295     -17.0     NaN%   SD of own study time / 112 - ages 6-8
+  S8_mean_tauc_9_12                 0.1103      0.0453      41.7     NaN%   Mean own study time / 112 - ages 9-12
+  S8_sd_tauc_9_12                   0.0358      0.0444      -5.4     NaN%   SD of own study time / 112 - ages 9-12
+  S8_mean_tauc_13_17                0.2638      0.0557      85.2     NaN%   Mean own study time / 112 - ages 13-17
+  S8_sd_tauc_13_17                  0.0483      0.0662      -6.6     NaN%   SD of own study time / 112 - ages 13-17
+  S9_mean_ep_over_Y_3_17            0.1515      0.0391      49.6     NaN%   Mean money / parents pre-tax labour income - a
+  ------------------------------ block T ------------------------------
+  k0_complete                       1.0000      0.3425      50.4     NaN%   Share with a BA at the first TAS wave at age 2
+  kpe_bc0_c                         1.0000      0.2991      47.1     NaN%   BA share - BothCollege = 0 - both parents 16+ 
+  kpe_bc1_c                         1.0000      0.7971       8.3     NaN%   BA share - BothCollege = 1
+  kth_lw17_gap                         NaN      3.3484       NaN     NaN%   Mean raw LW at 17 - BA minus no BA
+  m_eps                            -0.0000      0.1922     -12.9     NaN%   Residual variance RSS/(N-3) of BA on BothColle
+  ------------------------------ block W ------------------------------
+  kterm_med22                      11.9839     15.6230      -2.8     NaN%   Median family net worth incl. home - first-chi
+  Q                                                                   NaN
+  Q share of block P: NaN%
+  Q share of block S: NaN%
+  Q share of block T: NaN%
+  Q share of block W: NaN%
+
+  Q concentration: top 5 moments carry NaN% of Q  (kth_lw17_gap NaN%, S8_mean_taup_6_8 NaN%, S8_mean_tauc_13_17 NaN%, S8_mean_taup_3_5 NaN%, S8_mean_taup_9_12 NaN%)
+
+Untargeted -- the college regression, the skill gradient, the handoff
+----------------------------------------------------------------------------
+  LW at 17: college 55.74 / not NaN   (data 51.98 / 48.63)   [analytic LW17, FLAGGED]
+  m_eps regression: b_BC -0.000  b_LW -0.0000  R2 Inf   (data 0.457 / 0.0283 / 0.225)
+  bc_lw_corr_3_5     model 0.110  data 0.264
+  bc_lw_corr_6_8     model 0.085  data 0.169
+  bc_lw_corr_9_12    model 0.037  data 0.233
+  bc_lw_corr_13_17   model 0.014  data 0.275
+  college 300 of 300 simulated children; 77 BothCollege
+  mean transfer 19.0335 (190335 USD); median retained 11.9839 (119839 USD) vs data 156230 USD
+  LIMITATION: the data are at first-child ages 21-22; the model's a_term is at 18.
+  mean ln k by age   1:0.75 2:2.20 3:3.34 4:4.26 5:5.03 6:5.66 7:6.09 8:6.45 9:6.77 10:7.06 11:7.31 12:7.54 13:7.75 14:7.94 15:8.11 16:8.26 17:8.38 
+  sd ln k by age     1:0.65 2:0.50 3:0.39 4:0.31 5:0.25 6:0.20 7:0.16 8:0.13 9:0.10 10:0.08 11:0.07 12:0.06 13:0.05 14:0.04 15:0.03 16:0.03 17:0.02 
+  (data: latent mean ln k at 17 = 6.687, SD 0.652)
+
+  c_p     24731 USD/yr  vs data 41186
+  h_p      27.3 hrs/wk  vs data 34.4
+  after-tax income 3.8670 (38670 USD/yr); implied saving rate 35.1%
+  invalid sim cells 0
+  assets above a_max=100: 0 households ever; skill outside [0.135, 2.2e+04]: 0 ever above, 0 ever below
+
+============================================================================
+TikTak search
+============================================================================
+pre-testing: until 4 Sobol' draws are valid (at most 200 attempts); the progress line counts the supplied start too (penalised)
+  sobol    valid    0/4      0%   attempts     1 (cap 201)   best Q  (none valid)     0.4 min elapsed, no ETA before the first valid draw
+  sobol    valid    0/4      0%   attempts     2 (cap 201)   best Q  (none valid)     0.6 min elapsed, no ETA before the first valid draw
+  sobol    valid    0/4      0%   attempts     9 (cap 201)   best Q  (none valid)     0.7 min elapsed, no ETA before the first valid draw
+  sobol    valid    0/4      0%   attempts    14 (cap 201)   best Q  (none valid)     0.7 min elapsed, no ETA before the first valid draw
+  sobol    valid    0/4      0%   attempts    16 (cap 201)   best Q  (none valid)     0.8 min elapsed, no ETA before the first valid draw
+  sobol    valid    0/4      0%   attempts    20 (cap 201)   best Q  (none valid)     0.8 min elapsed, no ETA before the first valid draw
+  sobol    valid    0/4      0%   attempts    25 (cap 201)   best Q  (none valid)     0.9 min elapsed, no ETA before the first valid draw
+  sobol    valid    0/4      0%   attempts    27 (cap 201)   best Q  (none valid)     0.9 min elapsed, no ETA before the first valid draw
+  sobol    valid    1/4     25%   attempts    29 (cap 201)   best Q   1.662e+05     0.9 min elapsed, ~3 min left
+  sobol    valid    1/4     25%   attempts    40 (cap 201)   best Q   1.662e+05     1.0 min elapsed, ~3 min left
+  sobol    valid    1/4     25%   attempts    42 (cap 201)   best Q   1.662e+05     1.0 min elapsed, ~3 min left
+  sobol    valid    1/4     25%   attempts    51 (cap 201)   best Q   1.662e+05     1.1 min elapsed, ~3 min left
+  sobol    valid    1/4     25%   attempts    56 (cap 201)   best Q   1.662e+05     1.1 min elapsed, ~3 min left
+  sobol    valid    2/4     50%   attempts    59 (cap 201)   best Q   1.641e+05     1.2 min elapsed, ~1 min left
+  sobol    valid    2/4     50%   attempts    65 (cap 201)   best Q   1.641e+05     1.2 min elapsed, ~1 min left
+  sobol    valid    3/4     75%   attempts    68 (cap 201)   best Q   1.641e+05     1.3 min elapsed, ~0 min left
+  sobol    valid    3/4     75%   attempts    69 (cap 201)   best Q   1.641e+05     1.3 min elapsed, ~0 min left
+  sobol    valid    3/4     75%   attempts    75 (cap 201)   best Q   1.641e+05     1.3 min elapsed, ~0 min left
+  sobol    valid    3/4     75%   attempts    82 (cap 201)   best Q   1.641e+05     1.4 min elapsed, ~0 min left
+  sobol    valid    3/4     75%   attempts    85 (cap 201)   best Q   1.641e+05     1.4 min elapsed, ~0 min left
+  sobol    valid    4/4    100%   attempts    88 (cap 201)   best Q   1.641e+05     1.5 min elapsed, target reached
+  sobol    complete: 88 values, 4 valid (the supplied start included), best Q 164055.5401, 1.5 min
+  local searches: 'best in this search' is a search's own progress; 'incumbent' is the best point of the FINISHED searches (it moves when a search ends)
+  restart   1/4    eval     1   this Q  168810.9879   best in this search  164055.5401   incumbent  164055.5401     1.6 min   [2 running]
+  restart   2/4    eval     1   this Q  153675.1260   best in this search  153675.1260   incumbent  164055.5401     1.6 min   [2 running]
+  restart   1/4    eval     3   this Q  162059.3362   best in this search  162059.3362   incumbent  164055.5401     1.6 min   [2 running]
+  restart   2/4    eval     3   this Q  153276.9703   best in this search  153276.9703   incumbent  164055.5401     1.6 min   [2 running]
+  restart   1/4    eval     5   this Q  162284.7114   best in this search  162043.2160   incumbent  164055.5401     1.7 min   [2 running]
+  restart   2/4    eval     5   this Q  153711.4433   best in this search  153276.9703   incumbent  164055.5401     1.7 min   [2 running]
+  restart   1/4    eval     7   this Q  162866.3684   best in this search  162043.2160   incumbent  164055.5401     1.8 min   [2 running]
+  restart   2/4    eval     7   this Q  153434.0499   best in this search  153276.9703   incumbent  164055.5401     1.8 min   [2 running]
+  restart   2/4    eval     9   this Q  128765.9162   best in this search  128765.9162   incumbent  164055.5401     1.8 min   [2 running]
+  restart   1/4    eval    10   this Q  269174.0279   best in this search  150777.5873   incumbent  164055.5401     1.8 min   [2 running]
+  restart   2/4    eval    12   this Q  152062.7657   best in this search  128765.9162   incumbent  164055.5401     1.9 min   [2 running]
+  restart   1/4    eval    12   this Q  148377.6687   best in this search  148377.6687   incumbent  164055.5401     1.9 min   [2 running]
+  restart   2/4    eval    14   this Q   98969.5114   best in this search   98969.5114   incumbent  164055.5401     1.9 min   [2 running]
+  restart   2/4   DONE  MAXEVAL_REACHED  start Q  153675.1260   end Q   98937.0872   incumbent   98937.0872     1.9 min
+  restart   1/4    eval    14   this Q  126032.5127   best in this search  126032.5127   incumbent   98937.0872     2.0 min   [1 running]
+  restart   1/4   DONE  MAXEVAL_REACHED  start Q  164055.5401   end Q  126032.5127   incumbent   98937.0872     2.0 min
+
+============================================================================
+PAUSED after 2 of 4 restarts (--stop-after-restarts 2) -- 2.0 min
+============================================================================
+incumbent Q 98937.1 (search grid 12); the polish, the refinement and the report are NOT run.
+continue with the same command plus:  --resume ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume
+(drop --stop-after-restarts, or raise it, to go further; the schedule denominator stays 4)
+wrote ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/tiktak_state.toml
+
+============================================================================
+SMM: 20 parameters (15 parent + 5 child) against 67 moments (2 P + 59 S + 5 T + 1 W)   [QUICK -- smoke test, not an estimate]
+============================================================================
+started    2026-10-02 21:46:57
+host       haflinger.ceu.edu
+machine    112 cores, 503 GB RAM, load average 45.8
+workers    2 of 112 cores (2%) -- capped by shared-server budget
+purpose    custom -- no preset: settings as given
+budget     4 VALID Sobol draws (at most 200 attempts), 4 restarts (<= 15 evals each, polish SKIPPED)
+grids      Na=Nhc=12 for both the search and the report
+writing to ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume
+           (also reachable as ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/latest -- tail that, no timestamp needed)
+6.3s
+running on 3 process(es): 1 master + 2 worker(s); Julia threads per process 1, BLAS threads 1
+11.8s
+
+============================================================================
+RESUMING
+============================================================================
+continuing ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume from restart 3 of 4 (checkpoint status paused, stage local)
+incumbent from the checkpoint: Q = 98937.1 (at grid 12)
+The pre-testing stage is skipped: the seeds, the incumbent with its origin and every
+committed restart are reloaded from tiktak_state.toml; restarts still in flight are replayed
+from their recorded starts. How the result relates to an uninterrupted run is recorded as
+resume_semantics (serial_exact only if every segment was serial and nothing was replayed).
+18.5s (all processes at once)
+
+============================================================================
+Targets  (../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/targets.toml)
+============================================================================
+67 moments, 20 parameters -- 47 more moments than parameters (the weights matter at a misfit)
+(a count is not identification, and says nothing about the attainable Q: see the fit table and tools/check_jacobian_rank.jl)
+parameters: phi_2, phi_3, lambda_2, sigma_1_0, sigma_1_1, sigma_2_0, sigma_2_1, sigma_3_0, sigma_3_1, sigma_4_0, sigma_4_1, d_0, d_1, d_2, d_3, kappa_0, kappa_theta, kappa_ParEd, kappa_terminal, sigma_eps
+moment                               mean           se        N   source
+mean_c_p                           4.1186       0.0507     6742   Consumption incl. housing minus money investment - p99 cap - equal-age mean 1-17
+mean_h_p                           0.3073       0.0022    15665   Work hours per parent / 112 - equal-age mean 1-17
+S1_mean_LW_age3                    5.0909       0.4942       44   Mean raw LW at age 3
+S1_mean_LW_age4                    6.7603       0.3330      121   Mean raw LW at age 4
+S1_mean_LW_age5                   10.2483       0.4599      145   Mean raw LW at age 5
+S1_mean_LW_age6                   17.2917       0.5777      168   Mean raw LW at age 6
+S1_mean_LW_age7                   27.7351       0.7065      151   Mean raw LW at age 7
+S1_mean_LW_age8                   34.1067       0.4982      178   Mean raw LW at age 8
+S1_mean_LW_age9                   38.8243       0.5219      148   Mean raw LW at age 9
+S1_mean_LW_age10                  42.4483       0.3917      174   Mean raw LW at age 10
+S1_mean_LW_age11                  44.5721       0.4114      208   Mean raw LW at age 11
+S1_mean_LW_age12                  45.8342       0.3835      193   Mean raw LW at age 12
+S1_mean_LW_age13                  47.0055       0.4067      183   Mean raw LW at age 13
+S1_mean_LW_age14                  47.9933       0.3926      150   Mean raw LW at age 14
+S1_mean_LW_age15                  49.3588       0.3573      170   Mean raw LW at age 15
+S1_mean_LW_age16                  49.8944       0.4102      161   Mean raw LW at age 16
+S1_mean_LW_age17                  49.9535       0.3909      172   Mean raw LW at age 17
+S3_sd_LW_3_17                     15.4734       0.1880     2366   SD of raw LW at ages 3-17
+S3_sd_LW_3_7                      10.4126       0.3126      629   SD of raw LW at ages 3-7
+S3_sd_LW_8_11                      7.1633       0.2034      708   SD of raw LW at ages 8-11
+S3_sd_LW_12_17                     5.1927       0.1972     1029   SD of raw LW at ages 12-17
+S4_mean_dLW_base3_7               28.0469       0.4550      405   Mean 5-year change in raw LW - base age 3-7
+S4_mean_dLW_base8_12               8.0739       0.2176      555   Mean 5-year change in raw LW - base age 8-12
+S5_corr_LW_LWt5_base3_12           0.6490       0.0173      960   corr of LW now and 5 years later - base age 3-12
+S5_corr_LW_LWt5_base3_7            0.4733       0.0332      405   corr of LW now and 5 years later - base age 3-7
+S5_corr_LW_LWt5_base8_12           0.7168       0.0204      555   corr of LW now and 5 years later - base age 8-12
+S6_corr_taup_LW_3_17              -0.3709       0.0220     2366   corr of active parental time and LW - ages 3-17
+S6_corr_tauc_LW_6_17               0.2216       0.0179     2028   corr of own study time and LW - ages 6-17
+S6_corr_ep_LW_3_17                 0.1013       0.0369      610   corr of money and LW - ages 3-17 - one-child families
+S7_corr_taup_dLW_base3_12          0.3372       0.0313      960   corr of parental time and 5-year LW change - base age 3-12
+S7_corr_taup_dLW_base3_7           0.3168       0.0412      405   corr of parental time and 5-year LW change - base age 3-7
+S7_corr_taup_dLW_base8_12          0.0732       0.0418      555   corr of parental time and 5-year LW change - base age 8-12
+S7_corr_tauc_dLW_base6_12         -0.2210       0.0293      769   corr of own study and 5-year LW change - base age 6-12
+S7_corr_tauc_dLW_base6_7          -0.2046       0.0637      225   corr of own study and 5-year LW change - base age 6-7
+S7_corr_tauc_dLW_base8_12         -0.1039       0.0374      544   corr of own study and 5-year LW change - base age 8-12
+S7_corr_ep_dLW_base3_12            0.1388       0.0726      203   corr of money and 5-year LW change - base age 3-12 - one-child
+S7_corr_ep_dLW_base3_7             0.1092       0.0805       95   corr of money and 5-year LW change - base age 3-7 - one-child
+S7_corr_ep_dLW_base8_12           -0.0601       0.0723      108   corr of money and 5-year LW change - base age 8-12 - one-child
+S8_mean_taup_3_5                   0.3420       0.0065      564   Mean active parental time / 112 - ages 3-5
+S8_sd_taup_3_5                     0.1442       0.0041      564   SD of active parental time / 112 - ages 3-5
+S8_mean_taup_6_8                   0.2397       0.0042      628   Mean active parental time / 112 - ages 6-8
+S8_sd_taup_6_8                     0.1015       0.0033      628   SD of active parental time / 112 - ages 6-8
+S8_mean_taup_9_12                  0.2152       0.0039      905   Mean active parental time / 112 - ages 9-12
+S8_sd_taup_9_12                    0.1094       0.0033      905   SD of active parental time / 112 - ages 9-12
+S8_mean_taup_13_17                 0.1619       0.0042      979   Mean active parental time / 112 - ages 13-17
+S8_sd_taup_13_17                   0.1219       0.0063      979   SD of active parental time / 112 - ages 13-17
+S8_mean_ep_3_5                     0.3035       0.0226      478   Mean money / 10000 - ages 3-5 - one-child - PSID years
+S8_sd_ep_3_5                       0.4258       0.0304      478   SD of money / 10000 - ages 3-5 - one-child - PSID years
+S8_mean_ep_6_8                     0.3000       0.0289      326   Mean money / 10000 - ages 6-8 - one-child - PSID years
+S8_sd_ep_6_8                       0.4842       0.0484      326   SD of money / 10000 - ages 6-8 - one-child - PSID years
+S8_mean_ep_9_12                    0.2908       0.0327      478   Mean money / 10000 - ages 9-12 - one-child - PSID years
+S8_sd_ep_9_12                      0.5955       0.0864      478   SD of money / 10000 - ages 9-12 - one-child - PSID years
+S8_mean_ep_13_17                   0.4814       0.0372     1304   Mean money / 10000 - ages 13-17 - one-child - PSID years
+S8_sd_ep_13_17                     0.9587       0.0766     1304   SD of money / 10000 - ages 13-17 - one-child - PSID years
+S8_mean_tauc_6_8                   0.0294       0.0012      616   Mean own study time / 112 - ages 6-8
+S8_sd_tauc_6_8                     0.0295       0.0012      616   SD of own study time / 112 - ages 6-8
+S8_mean_tauc_9_12                  0.0453       0.0016      893   Mean own study time / 112 - ages 9-12
+S8_sd_tauc_9_12                    0.0444       0.0016      893   SD of own study time / 112 - ages 9-12
+S8_mean_tauc_13_17                 0.0557       0.0024      968   Mean own study time / 112 - ages 13-17
+S8_sd_tauc_13_17                   0.0662       0.0027      968   SD of own study time / 112 - ages 13-17
+S9_mean_ep_over_Y_3_17             0.0391       0.0023     2543   Mean money / parents pre-tax labour income - ages 3-17 - one-child
+k0_complete                        0.3425       0.0131     2213   Share with a BA at the first TAS wave at age 25 or 26
+kpe_bc0_c                          0.2991       0.0149     1314   BA share - BothCollege = 0 - both parents 16+ years from IND2023ER
+kpe_bc1_c                          0.7971       0.0244      350   BA share - BothCollege = 1
+kth_lw17_gap                       3.3484       0.5532      253   Mean raw LW at 17 - BA minus no BA
+m_eps                              0.1922       0.0149      187   Residual variance RSS/(N-3) of BA on BothCollege and raw LW at 17 - no centring
+kterm_med22                       15.6230       1.2942      327   Median family net worth incl. home - first-child ages 21-22 - fathers 25-27 at first birth
+
+settings written to ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/run_record.toml  (status = started)
+initial point
+  phi_2              0.196278   (smm_start)
+  phi_3               1.53373   (smm_start)
+  lambda_2             13.862   (smm_start)
+  sigma_1_0          -0.59461   (smm_start)
+  sigma_1_1         -0.115348   (smm_start)
+  sigma_2_0            -7.154   (smm_start)
+  sigma_2_1             0.072   (smm_start)
+  sigma_3_0            -0.254   (smm_start)
+  sigma_3_1             0.005   (smm_start)
+  sigma_4_0            -6.598   (smm_start)
+  sigma_4_1             0.271   (smm_start)
+  d_0                     5.6   (smm_start)
+  d_1                     5.6   (smm_start)
+  d_2                       1   (smm_start)
+  d_3                     5.3   (smm_start)
+  kappa_0           -0.356591   (smm_start)
+  kappa_theta       -0.182563   (smm_start)
+  kappa_ParEd       -0.108108   (smm_start)
+  kappa_terminal      8.78678   (smm_start)
+  sigma_eps           1.14224   (smm_start)
+  sigma_eta                 0   (FIXED, not estimated: DFVW's technology is deterministic)
+22.9s (a second evaluation at the same point: 2.2s; the projection uses the second, the first includes compilation)
+start Q (full precision) = 1.0e12   [smm_start start, sha a601bf809cc1a5ce]
+
+projected runtime -- scenarios, not a deadline (a driver's timeout is the enforced limit)
+  one evaluation took 2.2 s (the second on the master, after compilation; workers under load can be slower)
+  stage                 cap   empirical
+  pre-testing       0.1 min          --   5 evals on 2 worker(s), at least (valid-draw target)
+  local stage       1.2 min          --   4 restarts, 2 at a time from the start; at the cap 2 round(s) of 0.6 min
+  polish            0.0 min          --   skipped
+  total             1.3 min          --   
+  core-hours            0/0          --   busy / held: an idle worker holds a core without loading the machine
+  cap: every restart uses its 15 evaluations (+1 for its start) and the polish its 0
+  empirical: none given (--runtime-evals with the per-restart counts of a compatible run, e.g. mu08: 500,500,500,423,268)
+  (resuming: part of this is already done)
+
+============================================================================
+Incumbent calibration
+============================================================================
+Q = 1000000000000.000000
+(resuming: fit table skipped, see the original run's log)
+
+============================================================================
+TikTak search
+============================================================================
+  restart   3/4    eval     1   this Q  126158.1443   best in this search  126158.1443   incumbent   98937.0872     0.5 min   [2 running]
+  restart   4/4    eval     1   this Q   98906.4468   best in this search   98906.4468   incumbent   98937.0872     0.5 min   [2 running]
+  restart   3/4    eval     3   this Q  125019.5550   best in this search  125019.5550   incumbent   98937.0872     0.5 min   [2 running]
+  restart   4/4    eval     3   this Q  100295.9671   best in this search   98906.4468   incumbent   98937.0872     0.5 min   [2 running]
+  restart   3/4    eval     5   this Q  124747.9483   best in this search  124747.9483   incumbent   98937.0872     0.6 min   [2 running]
+  restart   4/4    eval     5   this Q  101060.1055   best in this search   98906.4468   incumbent   98937.0872     0.6 min   [2 running]
+  restart   3/4    eval     7   this Q  124606.2065   best in this search  124606.2065   incumbent   98937.0872     0.6 min   [2 running]
+  restart   4/4    eval     7   this Q   99488.6781   best in this search   98906.4468   incumbent   98937.0872     0.6 min   [2 running]
+  restart   4/4    eval    11   this Q  183441.5125   best in this search   98906.4468   incumbent   98937.0872     0.7 min   [2 running]
+  restart   3/4    eval     9   this Q    penalised   best in this search  124530.3756   incumbent   98937.0872     0.7 min   [2 running]
+  restart   3/4    eval    11   this Q  232149.4299   best in this search  124530.3756   incumbent   98937.0872     0.7 min   [2 running]
+  restart   4/4    eval    13   this Q   99415.2633   best in this search   98906.4468   incumbent   98937.0872     0.7 min   [2 running]
+  restart   4/4   DONE  MAXEVAL_REACHED  start Q   98906.4468   end Q   81656.2812   incumbent   81656.2812     0.8 min
+  restart   3/4    eval    13   this Q  124839.0716   best in this search  124530.3756   incumbent   81656.2812     0.8 min   [1 running]
+  restart   3/4   DONE  MAXEVAL_REACHED  start Q  126158.1443   end Q  107479.3023   incumbent   81656.2812     0.9 min
+
+============================================================================
+Finished in 0.9 min -- 147 evaluations
+============================================================================
+Q: sobol-best 164056  ->  pre-polish 81656.3  ->  final 81656.3
+pre-testing: 87 Sobol draws in the pool -- 4 valid, 83 penalised, 0 non-finite, 0 discarded; 1 supplied (0 valid)
+             stop: valid_target (target 4 valid: reached); 0 values reused from a cache, 0 draws evaluated past the pool
+restarts: 4 requested, 4 effective (the schedule denominator)
+incumbent Q was 1e+12  (improvement 100.0%)
+
+how the local searches ended
+  MAXEVAL_REACHED            4   (limit)
+                             0 converged / 4 hit a budget / 0 other
+polish: SKIPPED by --skip-polish (0 evaluations); the pre-polish point is final
+
+!! 4 of 4 restarts stopped on a BUDGET, not a convergence test.
+   Raise --local-evals, or read the trace before quoting this as a minimum.
+
+search ran at the full grid -- no refinement stage needed
+
+penalised evaluations: 6 of 147 (4.1%)
+  invalid_sim_child_nonfinite      4
+  infeasible_elasticity         2
+(a penalised draw is a parameter vector the model cannot be solved at --
+ scored SMM_PENALTY = 1.0e12 rather than crashed on. A high rate means the SEARCH BOX is
+ too wide, not that the model is wrong.)
+
+============================================================================
+Estimated calibration
+============================================================================
+
+Parameters
+--------------------------------------------------------------
+  phi_2              6.8050   (start 0.1963)
+  phi_3              1.7999   (start 1.5337)
+  lambda_2           2.9152   (start 13.8620)
+  sigma_1_0         -2.6632   (start -0.5946)
+  sigma_1_1         -0.2847   (start -0.1153)
+  sigma_2_0         -7.8710   (start -7.1540)
+  sigma_2_1         -0.0896   (start 0.0720)
+  sigma_3_0         -1.4328   (start -0.2540)
+  sigma_3_1          0.0523   (start 0.0050)
+  sigma_4_0         -5.4087   (start -6.5980)
+  sigma_4_1          0.0093   (start 0.2710)
+  d_0                3.8740   (start 5.6000)
+  d_1                9.3904   (start 5.6000)
+  d_2                3.8818   (start 1.0000)
+  d_3                4.5346   (start 5.3000)
+  kappa_0           -0.4898   (start -0.3566)
+  kappa_theta       -0.1393   (start -0.1826)
+  kappa_ParEd       -0.9147   (start -0.1081)
+  kappa_terminal     4.6712   (start 8.7868)
+  sigma_eps          0.8504   (start 1.1422)
+
+Targeted moments -- 67 moments, 20 parameters
+----------------------------------------------------------------------------------------------------
+  moment                             model        data         t  Q share   measure
+  ------------------------------ block P ------------------------------
+  mean_c_p                          1.5851      4.1186     -50.0     3.1%   Consumption incl. housing minus money investme
+  mean_h_p                          0.0800      0.3073    -103.0    13.0%   Work hours per parent / 112 - equal-age mean 1
+  ------------------------------ block S ------------------------------
+  S1_mean_LW_age3                   2.5391      5.0909      -5.2     0.0%   Mean raw LW at age 3
+  S1_mean_LW_age4                   2.8364      6.7603     -11.8     0.2%   Mean raw LW at age 4
+  S1_mean_LW_age5                   3.5268     10.2483     -14.6     0.3%   Mean raw LW at age 5
+  S1_mean_LW_age6                   7.1242     17.2917     -17.6     0.4%   Mean raw LW at age 6
+  S1_mean_LW_age7                   9.7614     27.7351     -25.4     0.8%   Mean raw LW at age 7
+  S1_mean_LW_age8                  11.3855     34.1067     -45.6     2.5%   Mean raw LW at age 8
+  S1_mean_LW_age9                  12.6661     38.8243     -50.1     3.1%   Mean raw LW at age 9
+  S1_mean_LW_age10                 13.9205     42.4483     -72.8     6.5%   Mean raw LW at age 10
+  S1_mean_LW_age11                 15.2836     44.5721     -71.2     6.2%   Mean raw LW at age 11
+  S1_mean_LW_age12                 16.8280     45.8342     -75.6     7.0%   Mean raw LW at age 12
+  S1_mean_LW_age13                 18.6090     47.0055     -69.8     6.0%   Mean raw LW at age 13
+  S1_mean_LW_age14                 20.6842     47.9933     -69.6     5.9%   Mean raw LW at age 14
+  S1_mean_LW_age15                 23.1114     49.3588     -73.5     6.6%   Mean raw LW at age 15
+  S1_mean_LW_age16                 25.9441     49.8944     -58.4     4.2%   Mean raw LW at age 16
+  S1_mean_LW_age17                 29.2184     49.9535     -53.0     3.4%   Mean raw LW at age 17
+  S3_sd_LW_3_17                     8.1918     15.4734     -38.7     1.8%   SD of raw LW at ages 3-17
+  S3_sd_LW_3_7                      3.5943     10.4126     -21.8     0.6%   SD of raw LW at ages 3-7
+  S3_sd_LW_8_11                     3.5303      7.1633     -17.9     0.4%   SD of raw LW at ages 8-11
+  S3_sd_LW_12_17                    5.6427      5.1927       2.3     0.0%   SD of raw LW at ages 12-17
+  S4_mean_dLW_base3_7               9.2989     28.0469     -41.2     2.1%   Mean 5-year change in raw LW - base age 3-7
+  S4_mean_dLW_base8_12              9.8194      8.0739       8.0     0.1%   Mean 5-year change in raw LW - base age 8-12
+  S5_corr_LW_LWt5_base3_12          0.6340      0.6490      -0.9     0.0%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base3_7           0.3019      0.4733      -5.2     0.0%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base8_12          0.3168      0.7168     -19.6     0.5%   corr of LW now and 5 years later - base age 8-
+  S6_corr_taup_LW_3_17             -0.7789     -0.3709     -18.5     0.4%   corr of active parental time and LW - ages 3-1
+  S6_corr_tauc_LW_6_17             -0.6025      0.2216     -46.1     2.6%   corr of own study time and LW - ages 6-17
+  S6_corr_ep_LW_3_17               -0.4130      0.1013     -13.9     0.2%   corr of money and LW - ages 3-17 - one-child f
+  S7_corr_taup_dLW_base3_12        -0.0111      0.3372     -11.1     0.2%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base3_7          0.2635      0.3168      -1.3     0.0%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base8_12        -0.2930      0.0732      -8.8     0.1%   corr of parental time and 5-year LW change - b
+  S7_corr_tauc_dLW_base6_12         0.3012     -0.2210      17.8     0.4%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base6_7          0.1358     -0.2046       5.3     0.0%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base8_12         0.3038     -0.1039      10.9     0.1%   corr of own study and 5-year LW change - base 
+  S7_corr_ep_dLW_base3_12          -0.0090      0.1388      -2.0     0.0%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base3_7           -0.0112      0.1092      -1.5     0.0%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base8_12          -0.0058     -0.0601       0.8     0.0%   corr of money and 5-year LW change - base age 
+  S8_mean_taup_3_5                  0.0080      0.3420     -51.5     3.2%   Mean active parental time / 112 - ages 3-5
+  S8_sd_taup_3_5                    0.0013      0.1442     -35.0     1.5%   SD of active parental time / 112 - ages 3-5
+  S8_mean_taup_6_8                  0.0038      0.2397     -56.2     3.9%   Mean active parental time / 112 - ages 6-8
+  S8_sd_taup_6_8                    0.0010      0.1015     -30.6     1.1%   SD of active parental time / 112 - ages 6-8
+  S8_mean_taup_9_12                 0.0016      0.2152     -54.6     3.6%   Mean active parental time / 112 - ages 9-12
+  S8_sd_taup_9_12                   0.0004      0.1094     -33.5     1.4%   SD of active parental time / 112 - ages 9-12
+  S8_mean_taup_13_17                0.0010      0.1619     -38.0     1.8%   Mean active parental time / 112 - ages 13-17
+  S8_sd_taup_13_17                  0.0000      0.1219     -19.4     0.5%   SD of active parental time / 112 - ages 13-17
+  S8_mean_ep_3_5                    0.0100      0.3035     -13.0     0.2%   Mean money / 10000 - ages 3-5 - one-child - PS
+  S8_sd_ep_3_5                      0.0000      0.4258     -14.0     0.2%   SD of money / 10000 - ages 3-5 - one-child - P
+  S8_mean_ep_6_8                    0.0100      0.3000     -10.0     0.1%   Mean money / 10000 - ages 6-8 - one-child - PS
+  S8_sd_ep_6_8                      0.0000      0.4842     -10.0     0.1%   SD of money / 10000 - ages 6-8 - one-child - P
+  S8_mean_ep_9_12                   0.0100      0.2908      -8.6     0.1%   Mean money / 10000 - ages 9-12 - one-child - P
+  S8_sd_ep_9_12                     0.0000      0.5955      -6.9     0.1%   SD of money / 10000 - ages 9-12 - one-child - 
+  S8_mean_ep_13_17                  0.0077      0.4814     -12.7     0.2%   Mean money / 10000 - ages 13-17 - one-child - 
+  S8_sd_ep_13_17                    0.0041      0.9587     -12.5     0.2%   SD of money / 10000 - ages 13-17 - one-child -
+  S8_mean_tauc_6_8                  0.0304      0.0294       0.9     0.0%   Mean own study time / 112 - ages 6-8
+  S8_sd_tauc_6_8                    0.0008      0.0295     -24.0     0.7%   SD of own study time / 112 - ages 6-8
+  S8_mean_tauc_9_12                 0.0329      0.0453      -7.9     0.1%   Mean own study time / 112 - ages 9-12
+  S8_sd_tauc_9_12                   0.0015      0.0444     -27.2     0.9%   SD of own study time / 112 - ages 9-12
+  S8_mean_tauc_13_17                0.0259      0.0557     -12.2     0.2%   Mean own study time / 112 - ages 13-17
+  S8_sd_tauc_13_17                  0.0071      0.0662     -21.7     0.6%   SD of own study time / 112 - ages 13-17
+  S9_mean_ep_over_Y_3_17            0.0077      0.0391     -13.9     0.2%   Mean money / parents pre-tax labour income - a
+  ------------------------------ block T ------------------------------
+  k0_complete                       0.4667      0.3425       9.5     0.1%   Share with a BA at the first TAS wave at age 2
+  kpe_bc0_c                         0.2825      0.2991      -1.1     0.0%   BA share - BothCollege = 0 - both parents 16+ 
+  kpe_bc1_c                         1.0000      0.7971       8.3     0.1%   BA share - BothCollege = 1
+  kth_lw17_gap                     -0.0004      3.3484      -6.1     0.0%   Mean raw LW at 17 - BA minus no BA
+  m_eps                             0.1507      0.1922      -2.8     0.0%   Residual variance RSS/(N-3) of BA on BothColle
+  ------------------------------ block W ------------------------------
+  kterm_med22                       3.1083     15.6230      -9.7     0.1%   Median family net worth incl. home - first-chi
+  Q                                                            81656.2812
+  Q share of block P: 16.0%
+  Q share of block S: 83.6%
+  Q share of block T: 0.3%
+  Q share of block W: 0.1%
+
+  Q concentration: top 5 moments carry 39.3% of Q  (mean_h_p 13%, S1_mean_LW_age12 7%, S1_mean_LW_age15 7%, S1_mean_LW_age10 6%, S1_mean_LW_age11 6%)
+
+Untargeted -- the college regression, the skill gradient, the handoff
+----------------------------------------------------------------------------
+  LW at 17: college 29.22 / not 29.22   (data 51.98 / 48.63)   [analytic LW17, FLAGGED]
+  m_eps regression: b_BC 0.717  b_LW -0.0000  R2 0.395   (data 0.457 / 0.0283 / 0.225)
+  bc_lw_corr_3_5     model 0.005  data 0.264
+  bc_lw_corr_6_8     model -0.000  data 0.169
+  bc_lw_corr_9_12    model -0.000  data 0.233
+  bc_lw_corr_13_17   model 0.000  data 0.275
+  college 140 of 300 simulated children; 77 BothCollege
+  mean transfer 9.1412 (91412 USD); median retained 3.1083 (31083 USD) vs data 156230 USD
+  LIMITATION: the data are at first-child ages 21-22; the model's a_term is at 18.
+  mean ln k by age   1:0.75 2:1.32 3:1.53 4:1.65 5:1.88 6:2.65 7:3.02 8:3.21 9:3.34 10:3.47 11:3.59 12:3.72 13:3.87 14:4.03 15:4.21 16:4.42 17:4.65 
+  sd ln k by age     1:0.65 2:0.16 3:0.04 4:0.01 5:0.00 6:0.00 7:0.00 8:0.00 9:0.00 10:0.00 11:0.00 12:0.00 13:0.00 14:0.00 15:0.00 16:0.00 17:0.00 
+  (data: latent mean ln k at 17 = 6.687, SD 0.652)
+
+  c_p     15851 USD/yr  vs data 41186
+  h_p       9.0 hrs/wk  vs data 34.4
+  after-tax income 1.6106 (16106 USD/yr); implied saving rate 10.1%
+  invalid sim cells 0
+  assets above a_max=100: 0 households ever; skill outside [0.135, 2.2e+04]: 0 ever above, 0 ever below
+
+!  APPROACHING A BOUND (within 5%) -- not a failure, but watch it across runs:
+  kappa_theta =    -0.1393  95.4% of its box, near the upper bound
+
+!! PARAMETERS NEAR A SEARCH BOUND -- boundary review required:
+  d_2        =     3.8818  near its UPPER bound [-4.000, 4.000]  (98.5% into the box)
+This proximity flag is separate from the optimizer stopping status. Check a
+boundary profile and numerical sensitivity before promoting the result; proximity
+alone does not prove that the box is too narrow or the target is unattainable.
+
+acceptance -- about the REPORTED POINT, on the reporting objective (grid 12)
+  point came from         local restart 4  (its search: MAXEVAL_REACHED, limit)
+  verified afterwards     no
+  refinement              skipped (ret NOT_RUN, 0 evals)
+  execution ok            yes  (0 objective exceptions)
+  candidate valid         yes  (Q = 81656.3, 0 invalid cells in the final simulation)
+  locally converged       NO   (evidence on the reporting objective)
+  search budget complete  yes  (complete; 4 of 4 restarts committed, 0 in flight; resume: async_continuation)
+  no parameter on a bound NO   (d_2)
+  (for context: 0 of 4 restarts converged, 4 hit a budget, 0 other)
+  NOT ACCEPTED -- do not quote this point:
+    - no convergence evidence for the reported point on the reporting objective
+    - parameter(s) near a search bound: d_2
+  a finite Q is not a certification, and neither is another restart's convergence.
+
+verdict: custom: NOT ACCEPTED -- no convergence evidence for the reported point on the reporting objective; parameter(s) near a search bound: d_2
+
+wrote ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/run_record.toml
+wrote ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/restarts.csv
+wrote ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/estimates.toml
+wrote ../2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs/run_aresume/run.log

@@ -1,0 +1,42 @@
+# TikTak pre-testing cache, schema 1 (code/src/TikTak/pretest.jl). One value per
+# Sobol' candidate index (nan = not evaluated). Keyed by the objective and the design.
+design_id = "d0abe721a14894f9"
+done = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+errored = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+imported = 0
+kind = "tiktak_pretest_cache"
+lost = 0
+n_done = 108
+objective_id = "4a20ba3199c99321"
+schema_version = 1
+supplied_done = [true]
+supplied_errored = [false]
+supplied_values = [1.0e12]
+updated = "2026-10-02 21:46:28"
+values = [1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 166247.75641958028, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 164055.54007381506, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 346723.67646466754, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 208099.8964297995, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 1.0e12, 176050.53076927812]
+
+[design]
+first_points_sha = "b4c40da2b135bb49"
+hi = [2.995732273553991, 2.995732273553991, 4.605170185988092, 1.0, 0.1, -1.0, 0.3, 0.0, 0.1, -1.0, 0.6, 10.0, 10.0, 4.0, 20.0, 1.0, 0.0, 0.5, 3.6888794541139363, 0.6931471805599453]
+lo = [-4.605170185988091, -2.995732273553991, -2.995732273553991, -4.0, -0.4, -12.0, -0.3, -3.0, -0.1, -12.0, -0.2, 0.01, 0.01, -4.0, -20.0, -3.0, -3.0, -1.0, -0.6931471805599453, -2.3025850929940455]
+skip_first = true
+sobol_version = "1.5.0"
+supplied = [[-1.628223238547961, 0.42770074270390834, 2.6291515043608955, -0.59461, -0.115348, -7.154, 0.072, -0.254, 0.005, -6.598, 0.271, 5.6, 5.6, 1.0, 5.3, -0.3565912994458334, -0.1825631596129427, -0.1081080950368823, 2.1732485922077136, 0.13298690441668073]]
+
+[objective_fields]
+child_grid = "12x12x3"
+grid_extra = "parent:  | child: "
+grid_report = 12
+grid_search = 12
+m_psychic = 6.686957400744432
+moment_names = ["mean_c_p", "mean_h_p", "S1_mean_LW_age3", "S1_mean_LW_age4", "S1_mean_LW_age5", "S1_mean_LW_age6", "S1_mean_LW_age7", "S1_mean_LW_age8", "S1_mean_LW_age9", "S1_mean_LW_age10", "S1_mean_LW_age11", "S1_mean_LW_age12", "S1_mean_LW_age13", "S1_mean_LW_age14", "S1_mean_LW_age15", "S1_mean_LW_age16", "S1_mean_LW_age17", "S3_sd_LW_3_17", "S3_sd_LW_3_7", "S3_sd_LW_8_11", "S3_sd_LW_12_17", "S4_mean_dLW_base3_7", "S4_mean_dLW_base8_12", "S5_corr_LW_LWt5_base3_12", "S5_corr_LW_LWt5_base3_7", "S5_corr_LW_LWt5_base8_12", "S6_corr_taup_LW_3_17", "S6_corr_tauc_LW_6_17", "S6_corr_ep_LW_3_17", "S7_corr_taup_dLW_base3_12", "S7_corr_taup_dLW_base3_7", "S7_corr_taup_dLW_base8_12", "S7_corr_tauc_dLW_base6_12", "S7_corr_tauc_dLW_base6_7", "S7_corr_tauc_dLW_base8_12", "S7_corr_ep_dLW_base3_12", "S7_corr_ep_dLW_base3_7", "S7_corr_ep_dLW_base8_12", "S8_mean_taup_3_5", "S8_sd_taup_3_5", "S8_mean_taup_6_8", "S8_sd_taup_6_8", "S8_mean_taup_9_12", "S8_sd_taup_9_12", "S8_mean_taup_13_17", "S8_sd_taup_13_17", "S8_mean_ep_3_5", "S8_sd_ep_3_5", "S8_mean_ep_6_8", "S8_sd_ep_6_8", "S8_mean_ep_9_12", "S8_sd_ep_9_12", "S8_mean_ep_13_17", "S8_sd_ep_13_17", "S8_mean_tauc_6_8", "S8_sd_tauc_6_8", "S8_mean_tauc_9_12", "S8_sd_tauc_9_12", "S8_mean_tauc_13_17", "S8_sd_tauc_13_17", "S9_mean_ep_over_Y_3_17", "k0_complete", "kpe_bc0_c", "kpe_bc1_c", "kth_lw17_gap", "m_eps", "kterm_med22"]
+param_hi = [20.0, 20.0, 100.0, 1.0, 0.1, -1.0, 0.3, 0.0, 0.1, -1.0, 0.6, 10.0, 10.0, 4.0, 20.0, 1.0, 0.0, 0.5, 40.0, 2.0]
+param_link = ["log", "log", "log", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "level", "log", "log"]
+param_lo = [0.01, 0.05, 0.05, -4.0, -0.4, -12.0, -0.3, -3.0, -0.1, -12.0, -0.2, 0.01, 0.01, -4.0, -20.0, -3.0, -3.0, -1.0, 0.5, 0.1]
+param_names = ["phi_2", "phi_3", "lambda_2", "sigma_1_0", "sigma_1_1", "sigma_2_0", "sigma_2_1", "sigma_3_0", "sigma_3_1", "sigma_4_0", "sigma_4_1", "d_0", "d_1", "d_2", "d_3", "kappa_0", "kappa_theta", "kappa_ParEd", "kappa_terminal", "sigma_eps"]
+seed = 1234
+sim_n = 300
+source_sha = "d219b5325b1f6584"
+spec_version = "smm20_memo19_v1"
+targets_sha = "04354116e9bc994f"
+# sha256 9f082cf4e0a57bc8c1f5b8b5480bce5c07746bd5a11d853c8da1f50b2c7b4f44

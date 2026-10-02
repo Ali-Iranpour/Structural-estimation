@@ -1,0 +1,3 @@
+restart,theta,f_start,f_local,improved,ret,attempt,n_eval,action,worker,elapsed_s,incumbent_version,commit_seq,start_fallback
+1,0.0,164381.8399238059,150799.14677217725,true,MAXEVAL_REACHED,1,11,improved,1,12.59,1,1,false
+2,0.995,150575.47291460133,82625.37781936087,true,MAXEVAL_REACHED,1,12,improved,1,14.61,2,2,false

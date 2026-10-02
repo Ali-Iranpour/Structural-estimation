@@ -1,0 +1,13 @@
+integration runs -> /srv/project/speech/apps/Structural-estimation/temp/2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs
+  async      finished in 8.6 min
+  serial     finished in 11.9 min
+  pmap       finished in 12.0 min
+  refine     finished in 4.0 min
+  aresume_a  finished in 3.6 min
+  resume_a   finished in 6.4 min
+  aresume_b  finished in 2.9 min
+  resume_b   finished in 7.0 min
+Test Summary:                    | Pass  Total  Time
+TikTak on the real SMM objective |   30     30  4.1s
+
+integration logs and runs: /srv/project/speech/apps/Structural-estimation/temp/2026-10-02_memo19_merge/output/diagnostics/2026-10-02_tiktak23_integration/runs

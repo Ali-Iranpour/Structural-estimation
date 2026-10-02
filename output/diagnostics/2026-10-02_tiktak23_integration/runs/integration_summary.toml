@@ -1,0 +1,23 @@
+[pmap]
+ok = true
+seconds = 721.34701481
+
+[async]
+ok = true
+seconds = 515.562664299
+
+[refine]
+ok = true
+seconds = 241.729379621
+
+[aresume]
+ok = true
+seconds = 390.894947074
+
+[serial]
+ok = true
+seconds = 714.681524995
+
+[resume]
+ok = true
+seconds = 807.494891519
