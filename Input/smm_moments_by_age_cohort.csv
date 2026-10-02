@@ -3,6 +3,7 @@
 # c_p, e_p, a_p: model units (10k USD/yr). a_p EXCLUDES home equity and is the
 # mean of the TWO-YEAR age bin containing each age (SMM_Assets_ByChildAge.dta).
 # h_p, t_p, i_c, school_c, i_total, l_c: shares of the 112h week.
+# t_p = ACTIVE parental time (par_time_act = parent_Act), the targets' taup definition.
 # i_c = own study; school_c = mean of the median-school variable by age.
 # i_total = legacy school-plus-study input (includes imputations).
 # l_c = 1 - t_p - i_c - school_c; untargeted, variable-specific coverage.

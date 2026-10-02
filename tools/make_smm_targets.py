@@ -388,6 +388,7 @@ def write_by_age():
         m_method2_final_w99            3,945            3,243          -17.8%
         cons_exhous_real_w99          31,577           29,162           -7.7%
         par_time_tot                   43.39            45.00           +3.7%
+        (measured on par_time_tot; the by-age t_p below uses par_time_act since 2026-10-02)
         leis_mom_wk                    84.55            84.64           +0.1%
 
     The MODEL assumes parents are aged 26 at the child's birth, which is what the cohort
@@ -428,7 +429,7 @@ def write_by_age():
         d = pd.read_stata(path)
         missing = [c for c in ("mu_cons_exhous_real_w99", "mu_m_method2_final_w99",
                                "mu_leis_mom_wk", "mu_leis_dad_wk",
-                               "mu_par_time_tot", "mu_c_time_hrs", "mu_study_hrs", "mu_school_hrs", "mu_x_gach", "mu_x_lw")
+                               "mu_par_time_act", "mu_c_time_hrs", "mu_study_hrs", "mu_school_hrs", "mu_x_gach", "mu_x_lw")
                    if c not in d.columns]
         if missing:
             print(f"  SKIP {dst}: {src} is missing {', '.join(missing)}. "
@@ -453,14 +454,16 @@ def write_by_age():
             # work is not stored directly by age; leis_*_wk IS 112 - own work, so invert it
             "h_p": (((HOURS_PER_WEEK - d.mu_leis_mom_wk) +
                      (HOURS_PER_WEEK - d.mu_leis_dad_wk)) / 2.0) / HOURS_PER_WEEK,
-            "t_p": d.mu_par_time_tot / HOURS_PER_WEEK,
+            # ACTIVE parental time only (par_time_act = parent_Act): the definition of the targets' taup
+            # (28_smm_moments.do) and of the model's sim_t. Was par_time_tot (active + nearby) until 2026-10-02 (Ali).
+            "t_p": d.mu_par_time_act / HOURS_PER_WEEK,
             "i_c": d.mu_study_hrs / HOURS_PER_WEEK,
             "school_c": d.mu_school_hrs / HOURS_PER_WEEK,
             "i_total": d.mu_c_time_hrs / HOURS_PER_WEEK,
             # Same leisure identity: school, own study and parental time are
             # deducted. These are by-age means with variable-specific coverage.
-            # Active+nearby parental time retains its pre-existing overlap caveat.
-            "l_c": (HOURS_PER_WEEK - d.mu_study_hrs - d.mu_school_hrs - d.mu_par_time_tot) / HOURS_PER_WEEK,
+            # Parental time is the ACTIVE time, as in t_p above.
+            "l_c": (HOURS_PER_WEEK - d.mu_study_hrs - d.mu_school_hrs - d.mu_par_time_act) / HOURS_PER_WEEK,
             "x_gach": d.mu_x_gach,
             "x_lw":   d.mu_x_lw,
         })
@@ -470,6 +473,7 @@ def write_by_age():
             "# c_p, e_p, a_p: model units (10k USD/yr). a_p EXCLUDES home equity and is the\n"
             "# mean of the TWO-YEAR age bin containing each age (SMM_Assets_ByChildAge.dta).\n"
             "# h_p, t_p, i_c, school_c, i_total, l_c: shares of the 112h week.\n"
+            "# t_p = ACTIVE parental time (par_time_act = parent_Act), the targets' taup definition.\n"
             "# i_c = own study; school_c = mean of the median-school variable by age.\n"
             "# i_total = legacy school-plus-study input (includes imputations).\n"
             "# l_c = 1 - t_p - i_c - school_c; untargeted, variable-specific coverage.\n"

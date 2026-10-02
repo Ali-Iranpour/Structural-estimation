@@ -51,7 +51,7 @@ So `sd_leis_hh` is the unweighted SD of household parental leisure in that age c
 | `leis_mom_wk` | hrs/week | 17266 | Mother leisure, work only: 112 - work (hrs/wk, annual coverage) |
 | `leis_dad_wk` | hrs/week | 17266 | Father leisure, work only: 112 - work (hrs/wk, annual coverage) |
 | `par_time_act` | hrs/week | 1075 | Parental time investment, ACTIVE only (hrs/wk, CDS diary) |
-| `par_time_tot` | hrs/week | 1075 | Parental time investment, active + nearby (hrs/wk) = the p of the model |
+| `par_time_tot` | hrs/week | 1075 | Parental time investment, active + nearby (hrs/wk). NOT the model's p: the SMM uses ACTIVE time (`par_time_act` / `parent_Act`) since 2026-09-27; memo 19's `taup = parent_Act / 112` (note added 2026-10-02; the Stata label in 19_smm_moments.do still says otherwise) |
 | `study_hrs` | hrs/week | 8504 | Child own study time (hrs/wk, CDS diary); ZERO below age 6 by convention (KDD 12 |
 | `school_hrs` | hrs/week | 8512 | Median school time by (Year, Age), hrs/wk; ZERO below age 6 by convention (KDD 1 |
 | `c_time_hrs` | hrs/week | 9725 | Child time input c (hrs/wk): median school by age-year + own study (07 c_final) |
@@ -113,7 +113,7 @@ So `sd_leis_hh` is the unweighted SD of household parental leisure in that age c
 | `leis_dad_clip` | double | Father leisure, clipped at 0 (diagnostic only - see KDD 2) |
 | `leis_hh_clip` | double | Household leisure, clipped at 0 (diagnostic only) |
 | `par_time_act` | double | Parental time investment, ACTIVE only (hrs/wk, CDS diary) |
-| `par_time_tot` | double | Parental time investment, active + nearby (hrs/wk) = the p of the model |
+| `par_time_tot` | double | Parental time investment, active + nearby (hrs/wk). NOT the model's p: the SMM uses ACTIVE time (`par_time_act` / `parent_Act`) since 2026-09-27; memo 19's `taup = parent_Act / 112` (note added 2026-10-02; the Stata label in 19_smm_moments.do still says otherwise) |
 | `Asset_Family` | double | 1 Asset |
 | `Asset_Plus_Home_Family` | double | 1 Asset_With_Home |
 | `assets_real` | double | Family net worth EXCLUDING home equity (real 2015 USD; odd years only) |

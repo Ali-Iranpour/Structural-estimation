@@ -1,5 +1,12 @@
 # SMM — sixteen parameters, seventeen moments
 
+> **Current specification (2026-10-02): memo 19 — 20 parameters against 67 moments.** See
+> `docs/SMM_MEMO19.md` (moments, technology, decisions) and `docs/SMM_COMPOSITION.md`. The
+> parent's wage process and initial assets are calibrated in Child_Time_Study (29/30) and read
+> from `targets.toml` `[constants]`. The sections on running, cores, watching, acceptance and
+> `reopt.jl` are current; **"What is being matched", "What is being estimated" and the text below
+> this note describe the pre-memo-19 specification (2026-09-11 / 09-27) and are kept as history.**
+
 **Since 11 September 2026 (preliminary, not through the advisor):** eleven parent
 parameters — the ten below plus `sigma_eta`, the SD of an i.i.d. log shock in the HC
 technology — and five child parameters — `kappa_0`, `kappa_theta`, `kappa_ParEd`,
@@ -380,6 +387,11 @@ filled it and stalled the workers.)
 
 ## What is being matched
 
+> **Historical (pre-memo-19).** This table is the 2026-09-11 moment set; its `t_p` rows used
+> `par_time_tot` (active + nearby) until 2026-09-27. Memo 19's parental-time moments (S6–S8) use
+> ACTIVE time, `taup = parent_Act / 112` (Child_Time_Study `28_smm_moments.do`), matched to the
+> model's `sim_t`. Current moments: `docs/SMM_MEMO19.md`.
+
 | Moment | Data source | Data mean | N |
 |---|---|---|---|
 | mean consumption | `cons_exhous_real_w99` | 3.158 (= $31,577/yr) | 6,742 |
@@ -446,6 +458,11 @@ adult stands for two earners sharing one time allocation. The data counterpart i
 the *average* of mother and father. Using `leis_hh` would double the target.
 
 ## What is being estimated
+
+> **Historical (pre-memo-19).** Memo 19 estimates 20 parameters: the age-varying elasticities
+> `sigma_j_0`, `sigma_j_1` (j = 1..4, persistence included), the logistic TFP `d_0..d_3`, `phi_2`,
+> `phi_3`, `lambda_2` and the five child parameters; `sigma_eta` = 0 and `R_0`/`R_1`, `mu_0`/`mu_1`
+> no longer exist. See `docs/SMM_MEMO19.md`.
 
 **Fourteen parameters against seventeen moments — over-identified by three (2026-09-10).**
 Ten parent parameters against ten parent moments, plus four child parameters
