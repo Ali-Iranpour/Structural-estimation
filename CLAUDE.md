@@ -18,7 +18,7 @@ every edit.
 ```julia
 using Printf, Random, NLopt, Interpolations, Statistics, Distributions,
       QuantEcon, FastGaussQuadrature, Parameters, Dierckx
-includet("src/child_lifecycle.jl"); includet("src/parent_family.jl")
+includet("code/src/child_lifecycle.jl"); includet("code/src/parent_family.jl")
 ```
 
 Two things to know: `julia_eval` returns **stdout only**, so use `println` / `@show` — a
@@ -49,87 +49,63 @@ bare `x + 1` reports "(no output)". And solving the child once and keeping
   to the parent's terminal problem.
 - **The parent's `k` is the binary BothCollege indicator**, not capital: `[0.0, 1.0]`,
   `Bernoulli(0.3)`, constant in `t`. `Nk = 2` is exact, not a discretization. The child
-  module's `k_grid` is a *different* object (the child's HC, `theta`). **The SMM targets it against
-  TAS's EITHER-parent college group, which is a different set** — open by instruction,
-  measured in `docs/ERRORS.md` P7c. Do not read the estimated `kappa_ParEd` as the effect
-  of parental education.
+  module's `k_grid` is a *different* object (the child's HC, `theta`). Since memo 19 the college
+  moments split by BothCollege as the data define it (both parents with 16+ years); the model's
+  share 0.3 against the data's 0.21–0.26 is an open decision.
 - **Model/specification changes go through the advisor** before results built on them
   circulate. Numerical fixes (grid bounds, interpolation, solver settings) do not.
 
-## The SMM is 15 parameters against 16 moments (since 2026-09-27; 16 / 17 from 2026-09-11)
+## The estimation (current state: `docs/SMM.md`)
 
-**2026-09-27 (Ali), aligned with apps/Structural-estimation-v2, values/targets only:**
-`kse_w_gap` untargeted (wrong moment: wealth measured ~11 years after the transfer),
-`kterm_x_strict_w99` replaced by the parent-block `mean_a_p_late` (same flaw; 11 parent + 5 TAS),
-`sigma_eps` fixed at 2.0, `t_p` on `par_time_act` (active only), `mu` 0.8, `omega` 0.2,
-parent `y` 0.1632 (Daruich & Fernández), child `y` 0.144 (Guner, Rauh & Ventura). Not yet
-re-estimated; the exp16b values below are starting values now. docs/SMM.md, "The
-2026-09-27 respecification". The text below describes the 16 / 17 design.
+**Memo 19: 20 parameters against 67 moments** (2 parent P, 59 skill S, 5 college T, 1 wealth W),
+the DFVW technology of memo 18, the TikTak module ported from `apps/Structural-estimation-v2`
+(2026-10-02). **Not yet estimated**: the data's composition tables and sd(log AFQT) are not
+provided, and the code refuses to estimate without them. `docs/SMM.md` is the one estimation
+document (model, parameters, moments, search, validation, plan, caveats); `docs/SMM_MEMO19.md`,
+`docs/SMM_COMPOSITION.md` and `docs/WAGE_RETURN_ANCHOR.md` hold the memo-19 records.
 
-**The baseline is the exp16b fit (promoted 2026-09-12).** `PARENT_DEFAULTS` and
-`CHILD_DEFAULTS` carry run `2026-09-11_182836_exp16b` at full precision; the notebook and
-`run_all.jl` build the child with `ConSavLaborCollege_AR1(; ..., CHILD_DEFAULTS...)`. The
-next run's boxes: `kappa_0 [-3, 1]`, `kappa_ParEd [-1, 0.5]`, `sigma_4_1 [-0.05, 0.30]`
-(`docs/SMM.md`, "The sixteen parameters").
-
-Ten parent parameters against ten parent moments, plus **five child parameters** —
-`kappa_0`, `kappa_theta`, `kappa_ParEd`, `kappa_terminal`, `sigma_eps` — and one more
-parent parameter, `sigma_eta`, against seven TAS moments (college completion overall and
-by parental education; the mean log-ability gap between completers and non-completers;
-parental net worth retained after the transfer; the completion–wealth gap; the SD of log
-HC at 17). **The 2026-09-11 additions are a preliminary experiment that has not been
-through the advisor** — `docs/SMM.md` (the seven TAS moments, and the appendix) and
-`docs/ERRORS.md` P13.
-
-- `sigma_eta` is the SD of an i.i.d. zero-mean log shock in the HC technology
-  (`hc_apply_shock` in `parent_family.jl`), integrated in the parent's continuation once
-  per period (`eta_expected_interp`) and by quadrature on the age-18 handoff
-  (`eval_child_value_eta`). `sigma_eta = 0.0` is the deterministic technology,
-  bit-identical to the pre-shock solver; since 2026-09-12 `PARENT_DEFAULTS.sigma_eta` is
-  the fitted 0.0315 and the search starts there (`SMM_START` is empty). `R_1` stays fixed at 0.
-- `sigma_eps` is the SD of the college taste shock, now a struct field of the child model
-  and part of `CHILD_ESTIMATED`; the cached work and graduate blocks are eps-free.
-- `run_smm.jl` validates every flag, takes `--init-from <estimates.toml>` (warm start by
-  name) and `--skip-polish` (an explicit bypass; `--polish-evals 0` is refused because
-  NLopt reads it as no limit). Spec version `smm16_tas7_gap_v1`.
-
-Three consequences that will bite if you assume the old design:
-
-- **The child block is no longer solved once per process.** All four child parameters
-  change it. `build_child_solution` (`moments.jl`) rebuilds it per evaluation from a
-  complete dependency key and caches only the two stages that provably read none of the
-  four — the high-school path and the graduate's working life. That refresh is
-  **bit-identical** to a full re-solve (verified: `max |diff| = 0.000e+00`) and 16.9×
-  faster, so an evaluation costs ~1.2 s more rather than ~12.9 s more. The cache stores
-  solution ARRAYS, never a model, so no simulator can contaminate it.
-- **`kappa_0` is on a CENTRED scale.** The psychic cost is
-  `kappa_0 + kappa_theta*(log theta - m_psychic)`, with `m_psychic` frozen in the target
-  file (6.2634). Uncentred, the two parameters are collinear at a condition number near
-  180. `CHILD_DEFAULTS` (in `child_lifecycle.jl` since 2026-09-12, fitted at exp16b)
-  records the `m_psychic` its `kappa_0` belongs to; `check_psychic_centring` errors if a
-  target file carries a different one.
-- **The objective weights by `1/se_j^2`**, from the joint cluster-robust covariance the
-  generator rebuilds from both micro files. `moment_scale` is now used only by the frozen
-  parent-block regression in `tools/test_smm_baseline.jl`.
+- **Targets come from Stata.** `tools/make_smm_targets.py` passes through
+  `Input/SMM_Moments.csv`, `SMM_VCov.csv` and `SMM_Constants.csv` (copied from
+  Child_Time_Study `Output/Data/SMM/`, built by `28_smm_moments.do`) into
+  `output/smm_runs/<stamp>_targets/targets.toml`, with every constant under `[constants]`.
+- **Calibrated values are read from the target file, never from code defaults**: the child's
+  weight by age and at the half period, the age-1 skill draw, `L0`, `m_psychic`, and the
+  parent's wage process and initial assets (`parent_calibration(targets)`). The parent
+  constructor has **no defaults** for the wage process and initial assets: a call without them
+  fails by design.
+- **`kappa_0` is on a centred scale**: the psychic cost is
+  `kappa_0 + kappa_theta*(log theta - m_psychic) + kappa_ParEd*BC`, with `m_psychic` frozen in the
+  target file; `check_psychic_centring` errors on a mismatch.
+- **The objective weights by `1/se_j^2`**, the diagonal of Stata's joint covariance.
+- **The child block is rebuilt on every evaluation** (`build_child_solution`, `moments.jl`); only
+  stages that read no estimated child parameter are cached, as solution ARRAYS under a complete
+  key. Keep the refresh bit-identical to a full re-solve.
+- **The runner** (`code/smm/run_smm.jl`; flags in `code/smm/README.md`): the worker flag is
+  `--procs`; an unknown flag is an error; fresh runs start the local stage with
+  `--bootstrap immediate_mixed`; `--resume` continues from `tiktak_state.toml` and refuses any
+  change of box, restart count or design; there is no `--legacy-import` (runs from before
+  2026-10-02 warm-start a new run with `--init-from`). Any edit of `code/src/TikTak/*.jl` changes
+  the optimizer identity: an in-progress run then resumes only with `--allow-optimizer-change`.
+- **`SMM_TEST_FIXTURES=1`** runs the objective on labelled stand-ins (composition, wage loading)
+  for TESTS only; refused with `--preset pilot|production`; the spec name gains `_TESTFIX`.
+- **Worker budget**: about 20 worker processes on this shared server; ask before going past it.
 
 ```bash
-uv run --with pandas --with numpy python tools/make_smm_targets.py   # freeze targets
-julia --project=. tools/test_smm_tas.jl <targets.toml>               # 120 checks, ~90s
-julia --project=. tools/test_smm_resume.jl <targets.toml>            # --resume refusal cases
-julia --project=. code/smm/selftest.jl                               # specification is frozen
-julia --project=. tools/check_jacobian_rank.jl <targets.toml>        # local identification
+uv run --with pandas --with numpy --with pyreadstat python tools/make_smm_targets.py   # freeze targets
+julia --project=. tools/test_tiktak.jl                                   # the optimizer, synthetic
+SMM_TEST_FIXTURES=1 julia --project=. tools/test_smm_resume.jl <targets.toml>
+SMM_TEST_FIXTURES=1 julia --project=. tools/test_runner_start.jl <targets.toml>
+SMM_TEST_FIXTURES=1 julia --project=. tools/test_runner_geometry.jl <targets.toml>
+SMM_TEST_FIXTURES=1 julia --project=. tools/test_tiktak_integration.jl <targets.toml>
+SMM_TEST_FIXTURES=1 julia --project=. tools/test_reopt_integration.jl <targets.toml> <start.toml>
+SMM_TEST_FIXTURES=1 julia --project=. tools/test_penalties.jl <targets.toml>
 ```
 
-The runner's worker flag is **`--procs`**, not `--workers`; an unknown flag is now an
-error before anything is written (it used to be silently ignored, so `--workers 1` started
-the full 20). `--serial` runs everything on the master.
-
-`tools/test_smm_tas.jl` is the standing guard on parameter routing, child-solution
-refresh, cache-key completeness, parity against an independent full solve, mutation
-isolation, partial parameter points, the handoff arrays, isolation of the demonstration
-simulation, determinism, the centring's neutrality and post-transfer wealth accounting.
-`docs/SMM.md`, "Fixes from external review (2026-09-10)", lists the defects an external
-review found and which test now covers each.
+Not yet rewritten for memo 19 (they pin the old specification or miss the wage loading):
+`code/smm/selftest.jl`, `tools/test_smm_tas.jl`, `tools/test_smm_own_study.jl`,
+`tools/test_smm_baseline.jl`, `tools/test_hc_process_shock.jl` (check 7),
+`tools/check_jacobian_rank.jl`, and the analysis tools `jacobian.jl`, `profile_param.jl`,
+`sensitivity.jl`, `grid_sensitivity.jl` (`docs/SMM.md` §5).
 
 ## Gotchas that have already cost a day
 
@@ -152,16 +128,13 @@ review found and which test now covers each.
 
 ## Layout
 
-`code/src/` model modules · `code/run_all.jl` end-to-end run · `code/smm/` + `src/tiktak.jl`
-estimation (`run_smm.jl` drives it, `moments.jl` is the economics) ·
+`code/src/` model modules · `code/run_all.jl` end-to-end run · `code/smm/` estimation (`run_smm.jl` drives it, `moments.jl` is the economics; `reopt.jl` and the
+tests in `tools/`) · `code/src/TikTak/` the optimizer module (`code/src/tiktak.jl` is its adapter) ·
 `code/transfer_CRRA_wage.ipynb` exploration and counterfactuals ·
 `docs/ERRORS.md` open and resolved findings, with the measurements behind them.
 
-`Input/CODEBOOK.md` is the **merged** codebook (regenerated 2026-09-11): Part A is the
-PSID/CDS parent block, Part B the TAS-linked child block. They are different units of
-observation — one child-year vs one child — and must not be pooled. `CODEBOOK_TAS.md` no
-longer exists. The 2026-09-11 Stata rerun supplies `SMM_TAS_VCov.dta`, `_Funnel`,
-`_TermWealth` and `_Weighted`, and moved parental net worth out of the by-age files into
-`SMM_Assets_ByChildAge.dta` in **two-year bins** (`age_bin` = lower edge). The generator
-reconstructs every TAS moment and the joint covariance from `SMM_TAS_Micro.dta` and
-checks them against the supplied files to six decimals (`tools/test_smm_target_generator.py`).
+`Input/` holds only what the memo-19 code reads (source data and the generated `smm_*.csv`
+plotting files the notebook uses); the pre-memo-19 TAS inputs were archived on 2026-10-02
+(`temp/Input_archive_2026-10-02/`, and in git history). `Input/CODEBOOK.md` describes the
+PSID/CDS parent block (Part A) and the TAS-linked child block (Part B): different units of
+observation, never pooled. Parental time in the moments is ACTIVE time (`parent_Act`).
