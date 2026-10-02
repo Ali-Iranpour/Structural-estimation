@@ -1,117 +1,54 @@
 # =============================================================================
-# moments.jl -- SMM on ten parent-block moments.
-#
-# Estimates TEN parent parameters against TEN data moments: household consumption,
-# parental WORK hours, parent TIME with the child, monetary investment, the child's own
-# study time, and the LEVEL OF CHILD SKILL -- the last four split by child age. Baseline
-# only; nothing here touches the child lifecycle, the counterfactuals or the belief
-# machinery.
+# moments.jl -- SMM on the 67-moment vector of memo 19 (2026-10-01).
 #
 # WHAT SMM IS DOING HERE, IN ONE PARAGRAPH
 # ----------------------------------------
-# The model has parameters we cannot observe (how much parents value leisure,
-# how productive money is in producing child skill). For any guess at those
-# parameters we can SOLVE the model and SIMULATE a cohort, which gives us
-# simulated versions of things we CAN observe -- average consumption, average
-# leisure, average investment. Simulated Method of Moments picks the parameters
-# that make the simulated averages line up with the averages in the PSID/CDS
-# data. "Method of moments" because we match moments (here, means) rather than
-# a likelihood; "simulated" because the model has no closed form, so the moments
-# come out of a simulation.
+# The model has parameters we cannot observe (how much parents value leisure, how
+# productive parental time is in producing child skill). For any guess at those parameters
+# we SOLVE the model and SIMULATE a cohort, which gives simulated versions of things we CAN
+# observe. Simulated Method of Moments picks the parameters that make the simulated moments
+# line up with the PSID/CDS/TAS moments. The weights are diagonal inverse variances.
 #
-# TEN MOMENTS, TEN PARAMETERS: LOCAL IDENTIFICATION MUST BE RECHECKED
-# ----------------------------------------------------
-# Own study plus fixed school time, 2026-09-09. sigma_4_1 is now estimated;
-# the late HC moment covers ages 12-17 (early HC remains 3-9). Equal counts do
-# not establish identification or guarantee an exact fit. Earlier Jacobian
-# diagnostics below describe the previous nine-parameter specification only.
+# THE TARGET VECTOR (memo 19 section 3; targets.toml, written by tools/make_smm_targets.py
+# from Child_Time_Study/Code/28_smm_moments.do). Order = [moment_cov].names:
 #
-#   phi_2      weight on leisure           ->  mean h_p   (work; l = 1 - h - t)
-#   phi_3      parents' weight on skill    ->  mean t_p and mean e_p
-#   lambda_2   child's weight on skill     ->  mean i_c   (child's time input)
-#   R_0        HC technology TFP           ->  mean log HC
-#   sigma_1_0  LEVEL of the t_p elasticity ->  mean t_p, ages 1-9
-#   sigma_1_1  SLOPE of the t_p elasticity ->  mean t_p, ages 10-17
-#   sigma_2_0  LEVEL of the e_p elasticity ->  mean e_p, ages 1-9
-#   sigma_2_1  SLOPE of the e_p elasticity ->  mean e_p, ages 10-17
-#   sigma_4_0  LEVEL of the i_c elasticity ->  mean i_c
-#   sigma_4_1  SLOPE of the i_c elasticity ->  child study and HC age profiles
+#   P  (2)   mean_c_p, mean_h_p                 equal-age means over t = 1..17
+#   S  (59)  the DFVW skill block (memo 18 section 3), raw Letter-Word through the analytic
+#            binomial at the DATA's ages and composition:
+#              S1 (15) mean LW by age 3..17        S5 (3)  5-year autocorrelation
+#              S3 (4)  SD of LW, pooled bins        S6 (3)  corr(input, LW)
+#              S4 (2)  mean 5-year change           S7 (9)  corr(input, 5-year change)
+#              S8 (22) mean and SD of each input    S9 (1)  money / pre-tax labour income
+#   T  (5)   k0_complete, kpe_bc0_c, kpe_bc1_c, kth_lw17_gap, m_eps
+#   W  (1)   kterm_med22                        median retained assets a - tr at the half period
 #
-# MEASURED at the incumbent (central differences, columns scaled to a full-box move):
-# the residual Jacobian has full column rank with condition number 49 and smallest
-# singular value 0.271. The weakest direction is lambda_2 against
-# sigma_1_0 + sigma_4_0 + sigma_2_0 -- valuation against technology -- and the second
-# weakest is sigma_2_1, whose whole-box effect on the investment moments is ~10x smaller
-# than sigma_2_0's. Both are identified; neither is sharply identified.
+# THE TECHNOLOGY these moments identify is memo 18 / Del Boca, Flinn, Verriest & Wiswall (JPE
+# 2026): ln k' = ln R_t + sum_j s_jt ln x_jt + s_3t ln k_t, s_jt = exp(a_j0 + a_j1 t), logistic
+# TFP, no shock -- see PARENT_DEFAULTS in parent_family.jl.
 #
-# WHY h_p AND t_p RATHER THAN l_p
-# -------------------------------
-# l_p = 1 - h_p - t_p identically, so targeting leisure pins the SUM of work and
-# child time and says nothing about the split. The 2026-08-27 estimate matched
-# leisure exactly while working 29.6 hrs/wk against 34.4 in data and doing 23.2
-# hrs of childcare against 18.2 -- two errors that cancel inside l_p and are
-# invisible to it. Targeting h_p and t_p is strictly more information, and l_p
-# comes along for free as the residual.
+# THE ANALYTIC BINOMIAL (memo 18 section 3.1, decision D4). A simulated child of latent skill
+# k has raw score LW ~ Binomial(57, p(k)), p(k) = logistic(L0 + ln k). The model never draws
+# LW: every moment uses pi = 57 p(k) and v = 57 p (1 - p), the conditional mean and variance,
+# which is the "R draws per observation" estimator with R -> infinity. Test noise enters only
+# where a variance does -- SDs, correlations' denominators, the m_eps regression.
 #
-# t_p IS MATCHED ON ACTIVE PARENTAL TIME, `par_time_act` (= `parent_Act`), since 2026-09-27
-# (Ali). Before, it was `par_time_tot` (instruction 2026-08-28), the child-side union of
-# active AND nearby/supervisory presence: nearby time overlaps leisure and work (per parent,
-# leisure + work + par_time_tot = 133 hrs against the 112-hr week), so h_p and t_p implied
-# ~33 hrs/wk of leisure against the 59.2 the data measure, and phi_2_0 absorbed the ~26-hour
-# difference. par_time_act removes the nearby time (38.5 / 18.4 hrs/wk at ages 1-9 / 10-17,
-# against 52.3 / 36.2). CAVEAT that remains: it is still a CHILD-side union (time the child
-# spent with at least one parent), not one parent's own time, so leisure + work + t_p is
-# about 117 hrs per parent, not 112; the per-parent measure (Mom_Total_Act + Dad_Total_Act)/2
-# closes the identity exactly. tools/make_smm_targets.py carries the accounting.
+# THE DATA'S COMPOSITION. A pooled moment in the data mixes ages (and, for pairs, base and end
+# ages) in the data's proportions. The model counterpart uses the SAME proportions, read from
+# the [composition] tables of the target file. Those tables are NOT YET EXPORTED by Stata
+# (decision 2026-10-01: export them, and refuse to run without them); load_targets stops
+# with the exact list. docs/SMM_COMPOSITION.md specifies them.
 #
-# They are not independent -- the budget ties them together (see BUDGET below) --
-# but each has a clear first-order channel, which is what identification needs.
-#
-# WHY INVESTMENT IS SPLIT BY AGE
-# ------------------------------
-# sigma_2_t = exp(sigma_2_0 + sigma_2_1*(t-1)), so sigma_2_1 is an age SLOPE. A
-# single pooled mean of e_p cannot separate a slope from a level: many
-# (sigma_2_0, sigma_2_1) pairs reproduce the same average, and the search would
-# slide along that ridge and return whichever point its Sobol seed sat nearest.
-# Adding sigma_2_1 to a 3-moment design would have been under-identified -- an
-# answer, but an arbitrary one. Splitting investment at child age 9 supplies the
-# second investment moment that pins the slope down. Data: 0.3532 early against
-# 0.4414 late, a 1.25x rise.
-#
-# The profile behind those two numbers is U-SHAPED, though -- 0.353 at age 1,
-# down to 0.241 at 12, then up to 0.650 by 17 -- while exp(sigma_2_0 +
-# sigma_2_1*(t-1)) is monotone. Two group means are therefore the most this
-# functional form can honestly be asked to match, and a good fit on them is NOT
-# the model reproducing the age profile of investment.
-#
-# BUDGET: THE MOMENTS ARE NOT FREE OF EACH OTHER
-# ----------------------------------------------
-# Every period,  c_p + e_p + saving = (1+r)a + after-tax income + y.
-# So the three targets jointly imply a saving rate. At the current wage process
-# (mean after-tax household income 5.2264, y = 0.6) the targets c = 3.158 and
-# e = 0.394 leave  5.826 - 3.158 - 0.394 = 2.27  per period of saving, i.e. 39%
-# of resources. That is high, and over 17 periods at r = 3% it accumulates to far
-# more than the ~25 (i.e. $250k) terminal-asset figure discussed earlier. The
-# report prints the implied saving rate and terminal assets on every run so this
-# tension stays visible instead of hiding inside a converged objective.
-#
-# WHY THIS IS CHEAP
-# -----------------
-# The estimated parameters are ALL parent-block parameters. The child lifecycle,
-# its transfer stage and the terminal value spline depend on NONE of them, so
-# they are solved ONCE at startup and reused for every evaluation. This is exact,
-# not an approximation. Each objective evaluation is then just: build the parent,
-# backward-induct, simulate -- a few seconds rather than a full pipeline.
+# OPEN, FLAGGED FOR REVIEW: kth_lw17_gap and m_eps use the analytic expectation of LW at 17
+# rather than a literal binomial draw (decision 2026-10-01, "use analytical but flag this").
 #
 # PARALLELISM
 # -----------
-# Worker PROCESSES (Distributed.jl), never threads. NLopt.jl is not thread-safe
-# in this project: with `parallel = true` and 8 threads the objective killed the
-# process with exit 0 and no error. Each worker process has its own NLopt state,
-# so the hazard cannot arise. See the header of tiktak.jl.
+# Worker PROCESSES (Distributed.jl), never threads. NLopt.jl is not thread-safe in this
+# project: with `parallel = true` and 8 threads the objective killed the process with exit 0
+# and no error. Each worker process has its own NLopt state. See the header of tiktak.jl.
 # =============================================================================
 
-using TOML, Printf, Statistics
+using TOML, Printf, Statistics, LinearAlgebra
 
 # -----------------------------------------------------------------------------
 # Scale constants -- see the selected run folder's targets.toml for the derivation
@@ -119,152 +56,93 @@ using TOML, Printf, Statistics
 const DOLLARS_PER_MODEL_UNIT = 10_000.0
 const HOURS_PER_WEEK         = 112.0
 const SMM_AGE_LO, SMM_AGE_HI = 1, 17
-
-# Child age at which investment splits into early/late. MUST match AGE_SPLIT in
-# tools/make_smm_targets.py -- load_targets checks this against the generated file
-# and refuses to run if they have drifted, because a mismatch would compare the
-# model's ages 1..9 against the data's ages 1..8 and quietly report a bad fit as a
-# model failure.
-const SMM_AGE_SPLIT = 9
-
-# The HC moments start at child age 3, not 1. The Woodcock-Johnson composite is not
-# administered before age 3, so `x_gach` has 0 observations at age 1 and 1 at age 2 --
-# the data's "early" HC group is really ages 3-9. The model was averaging log(sim_hc)
-# over 1..9 against it. MEASURED at the incumbent: ages 1-9 gives 6.5492 and ages 3-9
-# gives 6.6588, so the coverage mismatch alone was worth 0.110 log points, i.e. 23% of
-# the entire HC gap the estimation is trying to close. It has to match on both sides.
-const SMM_AGE_HC_LO = 3
-const SMM_AGE_HC_LATE_LO = 12
 const SMM_CHILD_TIME_SPEC = "own_study_fixed_school_v1"
 
-# The moments actually targeted, in report order. `mean_e_p` (the pooled
-# investment mean) is still computed and printed, but it is NOT in this tuple: it
-# is the sum of the two age groups and would add no information while making the
-# system over-identified. To go back to the 3-moment design, put `mean_e_p` here
-# in place of the two `_early`/`_late` entries and drop sigma_2_1 from SMM_PARAMS.
-# 2026-09-27 (Ali): `mean_a_p_late` -- PRE-transfer parental net worth (excl. home) at child
-# ages 16-17 (PSID panel, winsorised at its own p99), the wealth LEVEL at the transfer date --
-# REPLACES the TAS `kterm_x_strict_w99` as the level target for kappa_terminal. That row is
-# net worth at a median child age of ~29, ~11 years after the model's object, the same timing
-# flaw for which kse_w_gap was dropped; it is still computed and printed, untargeted. Ported
-# from apps/Structural-estimation-v2 (its level target since 2026-09-11).
-const SMM_AGE_ASSETS_LO, SMM_AGE_ASSETS_HI = 16, 17
-const SMM_PARENT_MOMENTS = ("mean_c_p", "mean_h_p",
-                            "mean_t_p_early", "mean_t_p_late",
-                            "mean_e_p_early", "mean_e_p_late",
-                            "mean_i_c_early", "mean_i_c_late",
-                            "mean_hc_early",  "mean_hc_late",
-                            "mean_a_p_late")
+# Letter-Word (WJ-R) has 57 items; DFVW app. C.1.5, footnote 11. L1 = 1 and L0 comes from the
+# target file (-4.5951 = logit(0.01)), the same at every age (DFVW, Agostinelli-Wiswall).
+const NQ_LW = 57
 
-# =============================================================================
-# THE TAS BLOCK -- seven child-level moments, for the four kappa parameters
-# =============================================================================
-# These are NOT more parent moments. They are measured on a different file, a different
-# unit of observation and a different frame: one row per TAS-linked child (4,248 children,
-# 1,481 family clusters) against the parent block's one row per child-YEAR. They are
-# unweighted, per Input/CODEBOOK.md, and they are produced by the SAME pipeline run -- the
-# child block is resimulated from the simulated parents' terminal states before any of
-# them is computed.
-#
-# WHAT EACH ONE IS FOR. These are joint identifying relationships, not a one-parameter-
-# one-moment assignment; every kappa moves every one of them:
-#
-#   k0_complete          overall four-year completion   ->  kappa_0    (the level)
-#   kth_ga17_t{1,2,3}_c  completion by ability tertile  ->  kappa_theta (the gradient)
-#   kpe_g{0,1}_c         completion by parental ed      ->  kappa_ParEd
-#   kterm_x_strict_w99   parental net worth retained    ->  kappa_terminal  (UNTARGETED since 2026-09-27; mean_a_p_late)
-#
-# COMPLETION, NOT ENTRY. The model's college path is binary and has no dropout: enrol,
-# study t_college = 4 years, then earn the graduate wage E = 1. Nobody enrols without
-# finishing, so the path IS a completed four-year degree, and matching it to entry (0.616)
-# would compare a mechanism that always pays the college premium against a population
-# where 30 percentage points of it never does. Decision 2026-09-10; the codebook makes the
-# same call independently ("COMPLETION IS THE PRIMARY OUTCOME").
-# SEVEN TAS TARGETS since 2026-09-11 (docs/SMM.md, "The seven TAS moments"). The three
-# rank tertiles are REPLACED by `kth_ga17_gap`, the mean log-ability gap between
-# completers and non-completers in ABSOLUTE units -- rank moments could not see the
-# model's fourfold dispersion miss (docs/ERRORS.md P13). `sd_ga17` (sample SD of log HC at
-# 17) identifies sigma_eta. Order = the generator's TAS_MOMENTS.
-#
-# `kse_w_gap` IS DROPPED FROM THE SMM (2026-09-27, Ali) BECAUSE THE MOMENT IS WRONG. It is the
-# completer-minus-non-completer gap in RETAINED parental wealth, but the data measure that
-# wealth at a median child age of ~29, about 11 years after the transfer the model's object
-# sits at (child age 18). Parents keep accumulating over that decade, differently by the
-# child's path, so the data gap is not the model gap and no parameter can close the
-# difference; it was meant to identify sigma_eps, which it could only do by fitting the
-# timing error. apps/Structural-estimation-v2 dropped it for the same reason on 2026-09-18
-# (it took 43% of Q there). It is still computed and written to the target file, and
-# printed as UNTARGETED; sigma_eps, which it identified, is FIXED at 2.0 (CHILD_DEFAULTS,
-# the v2 value).
-# `kterm_x_strict_w99` LEFT the targeted set on the same date and for the same reason (wealth
-# measured ~11 years after the transfer); kappa_terminal's level target is now the parent-block
-# `mean_a_p_late` above.
-const SMM_TAS_MOMENTS = ("k0_complete",
-                         "kth_ga17_gap",
-                         "kpe_g0_c", "kpe_g1_c",
-                         "sd_ga17")
+# The terminal skill is measured at AGE 17 (memo 19 decision 3). Column t of sim_hc IS child
+# age t, so this is the last family-stage column, one before the age-18 handoff the college
+# decision is taken on -- the assessment precedes the decision, as in the data.
+const SMM_LW17_AGE = 17
 
-# SIXTEEN moments (11 parent + 5 TAS), FIFTEEN parameters since 2026-09-27. The order here must match TARGETED in
-# tools/make_smm_targets.py -- it is the row/column order of the covariance matrix, and
-# load_targets refuses to run if the two have drifted.
-const SMM_MOMENTS = (SMM_PARENT_MOMENTS..., SMM_TAS_MOMENTS...)
+# The moments actually targeted, in [moment_cov].names order. load_targets refuses a file
+# whose order differs: these index the covariance matrix.
+const SMM_P_MOMENTS = ("mean_c_p", "mean_h_p")
+const SMM_S1_MOMENTS = Tuple("S1_mean_LW_age$a" for a in 3:17)
 
-# The model's ability tertiles are cut on the child's HC at THIS age, matching the data's
-# `ach_age == 17` (the child's last CDS wave). Column t of the parent's sim_hc IS child
-# age t, so this is literally column 17 -- the last family-stage column, one before the
-# age-18 handoff that the enrolment decision is taken on. That ordering mirrors the data,
-# where the assessment precedes the college decision.
-const SMM_TAS_ACH_AGE = 17
+# Every pooled S moment: (kind, composition frame, input, lo, hi). `lo:hi` is the age bin --
+# completed age at assessment for level sets, BASE age for pair sets. Kinds follow memo 18
+# section 3: :sd_lw (S3), :mean_dlw (S4), :corr_lw (S5), :corr_x_lw (S6), :corr_x_dlw (S7),
+# :mean_x / :sd_x (S8), :mean_ratio (S9).
+const SMM_S_SPEC = (
+    S3_sd_LW_3_17              = (:sd_lw,      :O_LW,   :none, 3, 17),
+    S3_sd_LW_3_7               = (:sd_lw,      :O_LW,   :none, 3, 7),
+    S3_sd_LW_8_11              = (:sd_lw,      :O_LW,   :none, 8, 11),
+    S3_sd_LW_12_17             = (:sd_lw,      :O_LW,   :none, 12, 17),
+    S4_mean_dLW_base3_7        = (:mean_dlw,   :P_LW,   :none, 3, 7),
+    S4_mean_dLW_base8_12       = (:mean_dlw,   :P_LW,   :none, 8, 12),
+    S5_corr_LW_LWt5_base3_12   = (:corr_lw,    :P_LW,   :none, 3, 12),
+    S5_corr_LW_LWt5_base3_7    = (:corr_lw,    :P_LW,   :none, 3, 7),
+    S5_corr_LW_LWt5_base8_12   = (:corr_lw,    :P_LW,   :none, 8, 12),
+    S6_corr_taup_LW_3_17       = (:corr_x_lw,  :O_taup, :taup, 3, 17),
+    S6_corr_tauc_LW_6_17       = (:corr_x_lw,  :O_tauc, :tauc, 6, 17),
+    S6_corr_ep_LW_3_17         = (:corr_x_lw,  :O_ep,   :ep,   3, 17),
+    S7_corr_taup_dLW_base3_12  = (:corr_x_dlw, :P_taup, :taup, 3, 12),
+    S7_corr_taup_dLW_base3_7   = (:corr_x_dlw, :P_taup, :taup, 3, 7),
+    S7_corr_taup_dLW_base8_12  = (:corr_x_dlw, :P_taup, :taup, 8, 12),
+    S7_corr_tauc_dLW_base6_12  = (:corr_x_dlw, :P_tauc, :tauc, 6, 12),
+    S7_corr_tauc_dLW_base6_7   = (:corr_x_dlw, :P_tauc, :tauc, 6, 7),
+    S7_corr_tauc_dLW_base8_12  = (:corr_x_dlw, :P_tauc, :tauc, 8, 12),
+    S7_corr_ep_dLW_base3_12    = (:corr_x_dlw, :P_ep,   :ep,   3, 12),
+    S7_corr_ep_dLW_base3_7     = (:corr_x_dlw, :P_ep,   :ep,   3, 7),
+    S7_corr_ep_dLW_base8_12    = (:corr_x_dlw, :P_ep,   :ep,   8, 12),
+    S8_mean_taup_3_5   = (:mean_x, :D_taup, :taup, 3, 5),   S8_sd_taup_3_5   = (:sd_x, :D_taup, :taup, 3, 5),
+    S8_mean_taup_6_8   = (:mean_x, :D_taup, :taup, 6, 8),   S8_sd_taup_6_8   = (:sd_x, :D_taup, :taup, 6, 8),
+    S8_mean_taup_9_12  = (:mean_x, :D_taup, :taup, 9, 12),  S8_sd_taup_9_12  = (:sd_x, :D_taup, :taup, 9, 12),
+    S8_mean_taup_13_17 = (:mean_x, :D_taup, :taup, 13, 17), S8_sd_taup_13_17 = (:sd_x, :D_taup, :taup, 13, 17),
+    S8_mean_ep_3_5     = (:mean_x, :E_ep,   :ep,   3, 5),   S8_sd_ep_3_5     = (:sd_x, :E_ep,   :ep,   3, 5),
+    S8_mean_ep_6_8     = (:mean_x, :E_ep,   :ep,   6, 8),   S8_sd_ep_6_8     = (:sd_x, :E_ep,   :ep,   6, 8),
+    S8_mean_ep_9_12    = (:mean_x, :E_ep,   :ep,   9, 12),  S8_sd_ep_9_12    = (:sd_x, :E_ep,   :ep,   9, 12),
+    S8_mean_ep_13_17   = (:mean_x, :E_ep,   :ep,   13, 17), S8_sd_ep_13_17   = (:sd_x, :E_ep,   :ep,   13, 17),
+    S8_mean_tauc_6_8   = (:mean_x, :D_tauc, :tauc, 6, 8),   S8_sd_tauc_6_8   = (:sd_x, :D_tauc, :tauc, 6, 8),
+    S8_mean_tauc_9_12  = (:mean_x, :D_tauc, :tauc, 9, 12),  S8_sd_tauc_9_12  = (:sd_x, :D_tauc, :tauc, 9, 12),
+    S8_mean_tauc_13_17 = (:mean_x, :D_tauc, :tauc, 13, 17), S8_sd_tauc_13_17 = (:sd_x, :D_tauc, :tauc, 13, 17),
+    S9_mean_ep_over_Y_3_17     = (:mean_ratio, :E_epY,  :ep,   3, 17),
+)
+# The order of the 59 S rows in the target file: S1, then the pooled rows in SMM_S_SPEC order.
+const SMM_S_MOMENTS = (SMM_S1_MOMENTS..., String.(keys(SMM_S_SPEC))...)
+const SMM_T_MOMENTS = ("k0_complete", "kpe_bc0_c", "kpe_bc1_c", "kth_lw17_gap", "m_eps")
+const SMM_W_MOMENTS = ("kterm_med22",)
+const SMM_MOMENTS = (SMM_P_MOMENTS..., SMM_S_MOMENTS..., SMM_T_MOMENTS..., SMM_W_MOMENTS...)
+length(SMM_MOMENTS) == 67 || error("SMM_MOMENTS has $(length(SMM_MOMENTS)) entries; memo 19 targets 67")
 
-# RANK-BASED tertiles (decision 2026-09-10), not the data's absolute W-score cut points.
-# The model's HC level is already targeted by mean_hc_late; cutting the simulation at the
-# data's cut points would make these three moments absorb any level or dispersion miss
-# into kappa_theta and confound the gradient with the level. Cutting the simulation at its
-# OWN terciles asks only what these moments exist to ask: how much does completion rise
-# with rank in ability. Ties are broken by stable rank, so an exact tie cannot put the
-# same HC in two different tertiles.
-const SMM_TAS_TERTILE_RULE = "model-internal rank tertiles of sim_hc at child age 17"
+# UNTARGETED diagnostics with a model counterpart (report only): the m_eps regression's
+# coefficients and fit, the LW-at-17 means by college status, and corr(BothCollege, LW) by
+# age bin -- the untargeted check of m_BC (memo 18 section 3.6).
+const SMM_BC_LW_BINS = (bc_lw_corr_3_5 = (3, 5), bc_lw_corr_6_8 = (6, 8),
+                        bc_lw_corr_9_12 = (9, 12), bc_lw_corr_13_17 = (13, 17))
 
-# Ten parameters and ten moments. HC separates valuation from technology;
-# freeing sigma_4_1 requires a fresh Jacobian check under this specification.
-# Own study moments cover 6-9 and 10-17; HC covers 3-9 and 12-17.
-# School time is exogenous and deducted from leisure, not included in sim_i.
-
-# Moments that are MEANS OF LOGS. Their residual is already a proportional error -- a
-# log difference of 0.05 IS a 5% error in the level -- so it must NOT be divided by the
-# target the way a level moment is.
-#
-# WHY THIS MATTERS. Dividing by the target puts level moments on a proportional footing,
-# which is right for them. For a log moment it divides by the arbitrary level of the log:
-# `x_gach` is a log W-score, so the target is ~6.1, and the residual gets shrunk 6.1x
-# before squaring. MEASURED at the incumbent: the model's human capital was +60.2% in
-# LEVELS and the objective scored it as a 7.7% miss. The HC moments carried 13.9% of
-# R_0's identifying leverage -- and R_0 is in the estimated set precisely to fix the HC
-# level. On the units-free scale below that becomes 86.1%, the residual Jacobian's
-# condition number falls 162 -> 49, and its smallest singular value is 3.4x stronger.
-#
-# The scaling was also arbitrary in the literal sense: index HC to 1 instead of W-scores
-# and log HC ~ 0, the 0.05 floor binds, and these two moments get ~150x MORE weight than
-# they had. A moment's weight must not depend on the units its log happens to be in.
-const SMM_LOG_MOMENTS = ("mean_hc_early", "mean_hc_late")
-
-"""
-    moment_scale(k, mhat) -> Float64
-
-LEGACY as of 2026-09-10. The objective no longer uses this: with seventeen moments against
-fourteen parameters the system is over-identified and the weights decide the answer, so
-`moment_weights` (diagonal inverse-variance on the joint clustered covariance) replaced it.
-
-It is kept because `tools/test_smm_baseline.jl` pins a frozen Q computed with it, and that
-regression is the only frozen reference to the parent solve that exists. Re-pinning the
-number to the new objective would have thrown it away. Do not use this in new code.
-
-
-Denominator of moment `k`'s residual. Level moments are scaled by their own target so
-every moment is measured in proportional error; log moments are already proportional and
-are scaled by 1. The 0.05 floor stops a near-zero level target from exploding the ratio.
-"""
-moment_scale(k, mhat) = k in SMM_LOG_MOMENTS ? 1.0 : max(abs(mhat), 0.05)
+# THE COMPOSITION FRAMES the pooled S moments are mixed over. `kind`: :level frames are
+# counted by age, :pair frames by (base age a, end age a2); `odd` frames also carry n_odd,
+# the rows observed at an ODD CDS wave (1997, 2007), where money is the mean of the two
+# adjacent even PSID years (memo 18 D10) and the model mirrors that. Specified for the Stata
+# export in docs/SMM_COMPOSITION.md.
+const SMM_COMPOSITION_FRAMES = (
+    O_LW   = (kind = :level, odd = false, uses = "S3; equals the S1 per-age N"),
+    O_taup = (kind = :level, odd = false, uses = "S6 taup"),
+    O_tauc = (kind = :level, odd = false, uses = "S6 tauc"),
+    O_ep   = (kind = :level, odd = true,  uses = "S6 ep"),
+    P_LW   = (kind = :pair,  odd = false, uses = "S4, S5"),
+    P_taup = (kind = :pair,  odd = false, uses = "S7 taup"),
+    P_tauc = (kind = :pair,  odd = false, uses = "S7 tauc"),
+    P_ep   = (kind = :pair,  odd = true,  uses = "S7 ep"),
+    D_taup = (kind = :level, odd = false, uses = "S8 taup"),
+    D_tauc = (kind = :level, odd = false, uses = "S8 tauc"),
+    E_ep   = (kind = :level, odd = false, uses = "S8 money"),
+    E_epY  = (kind = :level, odd = false, uses = "S9"),
+)
 
 # A failed solve must return a large FINITE value, never Inf or an exception:
 # a derivative-free local search needs to be able to form a descent direction
@@ -398,187 +276,238 @@ end
 
 Is this parameter draw economically admissible, before any solving happens?
 
-Only one restriction so far: the money share in the HC technology,
-`sigma_2_t = exp(sigma_2_0 + sigma_2_1*(t-1))`, must stay below 1 for every
-`t = 1..17`. At or above 1 the Cobb-Douglas technology is explosive in `e_p`, and
-the parent's SLSQP solve diverges to a NaN iterate rather than failing cleanly.
-
-The maximum is at one end or the other since the exponent is monotone in `t`, so
-checking both endpoints is exact, not a sample.
+Every elasticity s_jt = exp(a_j0 + a_j1 t) must stay below one at every age it is used
+(t = 1..17; own study from T_CHILD_VOICE). For persistence this is memo 18's restriction
+(a_30 + a_31 t < 0): s_3 >= 1 makes ln k explosive and the parent solve diverges rather than
+failing cleanly. For the inputs an elasticity of one or more is an explosive Cobb-Douglas
+in that input. The exponent is linear in t, so the maximum is at an end and checking both
+ends is exact, not a sample.
 """
 function smm_feasible(kw)
-    return smm_infeasible_which(kw) === :none
-end
-
-"Which HC-technology share restriction fails first: :sigma_1 (parental time), :sigma_2 (money), or :none."
-function smm_infeasible_which(kw)
-    lo, hi = SMM_AGE_LO - 1, SMM_AGE_HI - 1          # the (t-1) actually used
-    _max_share(a, b) = max(exp(a + b * lo), exp(a + b * hi))
-    for (tag, n0, n1) in ((:sigma_1, :sigma_1_0, :sigma_1_1), (:sigma_2, :sigma_2_0, :sigma_2_1))
-        a = hasproperty(kw, n0) ? getproperty(kw, n0) : getfield(PARENT_DEFAULTS, n0)
-        b = hasproperty(kw, n1) ? getproperty(kw, n1) : getfield(PARENT_DEFAULTS, n1)
-        _max_share(a, b) < 1.0 || return tag
+    get_(n) = hasproperty(kw, n) ? getproperty(kw, n) : getfield(PARENT_DEFAULTS, n)
+    for (n0, n1, lo) in ((:a_1_0, :a_1_1, SMM_AGE_LO), (:a_2_0, :a_2_1, SMM_AGE_LO),
+                         (:a_3_0, :a_3_1, SMM_AGE_LO), (:a_4_0, :a_4_1, T_CHILD_VOICE))
+        a0, a1 = get_(n0), get_(n1)
+        max(a0 + a1 * lo, a0 + a1 * SMM_AGE_HI) < 0.0 || return false
     end
-    return :none
+    return get_(:d_0) > 0.0 && get_(:d_1) > 0.0
 end
 
 # -----------------------------------------------------------------------------
 # Targets
 # -----------------------------------------------------------------------------
-"""
-    load_targets(path) -> Dict{String,NamedTuple}
+_req(raw, k, path) = haskey(raw, k) ? raw[k] :
+    error("target file $path has no `$k`; it predates memo 19. Regenerate it with tools/make_smm_targets.py")
 
-Read the generated target file. Each entry carries the data mean plus the source
-variable and units, so a run can print exactly what it matched against.
 """
-function load_targets(path::AbstractString)
-    raw = TOML.parsefile(path)
+    parse_composition(c, path) -> NamedTuple of frames
 
-    # The age split lives in two files and must agree in both. If the generator's
-    # AGE_SPLIT is changed without changing SMM_AGE_SPLIT, the model's early group
-    # and the data's early group cover different ages and every fit silently
-    # compares the wrong things -- so fail here rather than produce a number.
-    if haskey(raw, "age_split")
-        got = Int(raw["age_split"])
-        got == SMM_AGE_SPLIT || error("""
-            age split mismatch: $path was generated with age_split = $got, but
-            moments.jl has SMM_AGE_SPLIT = $SMM_AGE_SPLIT. Make them equal --
-            they must describe the same child ages.""")
+Read and validate the [composition] tables (docs/SMM_COMPOSITION.md). Each frame becomes
+`(a, a2, n, n_odd)` with `a2 = nothing` for a level frame and `n_odd = nothing` where the
+frame has no odd-wave rows.
+"""
+function parse_composition(c::AbstractDict, path::AbstractString)
+    frames = Pair{Symbol,Any}[]
+    for (name, spec) in pairs(SMM_COMPOSITION_FRAMES)
+        haskey(c, String(name)) || error("[composition.$name] is missing from $path " *
+                                         "($(spec.uses)); see docs/SMM_COMPOSITION.md")
+        f = c[String(name)]
+        a  = Int.(f[spec.kind === :pair ? "a" : "age"])
+        a2 = spec.kind === :pair ? Int.(f["a2"]) : nothing
+        n  = Int.(f["n"])
+        n_odd = spec.odd ? Int.(f["n_odd"]) : nothing
+        m = length(n)
+        (length(a) == m && (a2 === nothing || length(a2) == m) &&
+         (n_odd === nothing || length(n_odd) == m)) ||
+            error("[composition.$name] in $path: columns have different lengths")
+        all(>=(0), n) && sum(n) > 0 || error("[composition.$name]: counts must be >= 0 and not all zero")
+        all(x -> 3 <= x <= SMM_AGE_HI, a) || error("[composition.$name]: ages must lie in 3..$SMM_AGE_HI")
+        if a2 !== nothing
+            all(a2 .> a) && all(<=(SMM_AGE_HI), a2) ||
+                error("[composition.$name]: pair end ages must exceed the base age and be <= $SMM_AGE_HI")
+        end
+        n_odd === nothing || (all(0 .<= n_odd .<= n) ||
+                              error("[composition.$name]: n_odd must lie in 0..n"))
+        push!(frames, name => (a = a, a2 = a2, n = n, n_odd = n_odd))
     end
+    return (; frames...)
+end
+
+# Rows of a frame inside an age bin (base age for pairs).
+_bin_count(fr, lo, hi) = sum(fr.n[i] for i in eachindex(fr.n) if lo <= fr.a[i] <= hi; init = 0)
+
+"""
+    check_composition(comp, out, path)
+
+The composition must DESCRIBE the moments it weights: the S1 per-age N must equal O_LW age by
+age, and every pooled S moment's N must equal its frame's count over the moment's bin. A
+mismatch means the export and the moment file come from different samples.
+"""
+function check_composition(comp, out, path)
+    O = comp.O_LW
+    for a in 3:17
+        na = sum(O.n[i] for i in eachindex(O.n) if O.a[i] == a; init = 0)
+        na == out["S1_mean_LW_age$a"].n ||
+            error("[composition.O_LW] has $na rows at age $a but S1_mean_LW_age$a has N = " *
+                  "$(out["S1_mean_LW_age$a"].n): $path")
+    end
+    for (k, (kind, frame, _, lo, hi)) in pairs(SMM_S_SPEC)
+        nb = _bin_count(getfield(comp, frame), lo, hi)
+        nb == out[String(k)].n || error("[composition.$frame] counts $nb rows over $lo..$hi " *
+                                        "but $k has N = $(out[String(k)].n): $path")
+    end
+    return nothing
+end
+
+"""
+    load_targets(path; require_composition = true) -> Dict{String,NamedTuple}
+
+Read the memo-19 target file. Each moment entry carries its mean, SE, N and description;
+`"_spec"` carries the calibrated constants, the joint covariance and the composition.
+
+`require_composition = false` loads a file without [composition] tables and leaves
+`_spec.composition === nothing`; any S-block evaluation then refuses. It exists for the
+parameter-recovery test, which attaches a synthetic composition of its own.
+"""
+function load_targets(path::AbstractString; require_composition::Bool = true)
+    raw = TOML.parsefile(path)
 
     get(raw, "child_time_spec", "") == SMM_CHILD_TIME_SPEC || error(
         "Target specification mismatch: regenerate targets for own study plus fixed school time; " * path)
-    get(raw, "age_hc_early", []) == [SMM_AGE_HC_LO, SMM_AGE_SPLIT] ||
-        error("Early HC age window mismatch: regenerate targets; " * path)
-    get(raw, "age_hc_late", []) == [SMM_AGE_HC_LATE_LO, SMM_AGE_HI] ||
-        error("Late HC age window mismatch: expected ages 12-17; " * path)
+    Int(_req(raw, "n_targeted", path)) == length(SMM_MOMENTS) ||
+        error("$path declares n_targeted = $(raw["n_targeted"]); moments.jl targets $(length(SMM_MOMENTS))")
     school = Float64.(get(raw, "school_time", []))
     length(school) == SMM_AGE_HI || error("Missing school_time schedule: " * path)
     all(x -> isfinite(x) && 0 <= x < 1 - 2TIME_FLOOR, school) ||
         error("Invalid school_time schedule: " * path)
     all(iszero, school[1:T_CHILD_VOICE-1]) || error("School must be zero below age 6: " * path)
 
-    # ---- the psychic-cost centring constant ---------------------------------
-    # kappa_0 + kappa_theta*(log theta - m_psychic). FROZEN in the target file, not
-    # recomputed from the simulation: a centring that moved with the parameter vector
-    # would be a new nonlinearity rather than a reparameterisation, and the estimate would
-    # then depend on the simulation draw. Required, not defaulted -- silently falling back
-    # to 0.0 would leave kappa_0 on the old uncentred scale while its BOX is on the new
-    # one, which is a factor-180 error and would look like a bad fit.
-    haskey(raw, "m_psychic") || error("""
-        target file $path has no m_psychic. It predates the centred psychic cost
-        (2026-09-10). Regenerate it:
-          uv run --with pandas --with numpy python tools/make_smm_targets.py""")
-    m_psychic = Float64(raw["m_psychic"])
-    isfinite(m_psychic) && 0 < m_psychic < 20 ||
-        error("m_psychic = $m_psychic is not a plausible mean log W-score: " * path)
+    # ---- the psychic-cost centring constant, now in DFVW ln k units --------
+    # kappa_0 + kappa_theta*(log theta - m_psychic). FROZEN in the target file, not recomputed
+    # from the simulation: a centring that moved with the parameter vector would be a new
+    # nonlinearity rather than a reparameterisation. Required, not defaulted.
+    m_psychic = Float64(_req(raw, "m_psychic", path))
+    isfinite(m_psychic) && 3 < m_psychic < 10 ||
+        error("m_psychic = $m_psychic is not a plausible latent mean ln k at 17 (DFVW units): " * path)
+
+    # ---- the measurement normalisation and the calibrated starting distribution ----
+    L0 = Float64(_req(raw, "L0", path))
+    abs(L0 - log(0.01 / 0.99)) < 1e-2 ||
+        error("L0 = $L0 is not DFVW's normalisation logit(0.01) = -4.595: " * path)
+    sd_lnk17 = Float64(_req(raw, "sd_lnk17", path))
+    isfinite(sd_lnk17) && sd_lnk17 > 0 || error("sd_lnk17 must be positive: " * path)
+    init = (m0 = Float64(_req(raw, "init_m0", path)), mBC = Float64(_req(raw, "init_mBC", path)),
+            s0 = Float64(_req(raw, "init_s0", path)))
+    all(isfinite, values(init)) && init.s0 >= 0 || error("invalid init_* constants: " * path)
+
+    # ---- the child's bargaining weight ---------------------------------------
+    Int.(_req(raw, "mu_ages", path)) == collect(T_CHILD_VOICE:SMM_AGE_HI) ||
+        error("mu_ages must be $(T_CHILD_VOICE):$(SMM_AGE_HI): " * path)
+    mu_by_age = Float64.(_req(raw, "mu_by_age", path))
+    mu_half = Float64(_req(raw, "mu_half", path))
+    all(x -> 0 <= x <= 1, mu_by_age) && 0 <= mu_half <= 1 ||
+        error("child weights must lie in [0, 1]: " * path)
 
     # ---- the moment covariance ----------------------------------------------
-    # The weighting matrix and every standard error come from here. Its row order MUST be
-    # SMM_MOMENTS: a silent permutation would weight each residual by another moment's
-    # precision and there would be no symptom except a wrong answer.
-    haskey(raw, "moment_cov") || error("target file $path has no [moment_cov] block: " * path)
-    mc = raw["moment_cov"]
+    # Its row order MUST be SMM_MOMENTS: a silent permutation would weight each residual by
+    # another moment's precision and there would be no symptom except a wrong answer.
+    mc = _req(raw, "moment_cov", path)
     cov_names = String.(mc["names"])
     cov_names == collect(SMM_MOMENTS) || error("""
         [moment_cov] in $path is ordered
             $(join(cov_names, ", "))
         but moments.jl expects
             $(join(SMM_MOMENTS, ", "))
-        These index the same vector, so they must be identical and in the same order.
-        Regenerate the targets.""")
+        These index the same vector, so they must be identical and in the same order.""")
     se = Float64.(mc["se"])
     length(se) == length(SMM_MOMENTS) || error("[moment_cov].se has the wrong length: " * path)
     all(x -> isfinite(x) && x > 0, se) ||
         error("[moment_cov].se has a non-positive or non-finite entry: " * path)
-    cov = [Float64.(row) for row in mc["cov"]]
-    Sigma = reduce(vcat, (reshape(r, 1, :) for r in cov))
+    Sigma = reduce(vcat, (reshape(Float64.(r), 1, :) for r in mc["cov"]))
     size(Sigma) == (length(SMM_MOMENTS), length(SMM_MOMENTS)) ||
         error("[moment_cov].cov is not $(length(SMM_MOMENTS))x$(length(SMM_MOMENTS)): " * path)
 
-    haskey(raw, "tas_wealth_winsor_cut") || error(
-        "target file has no tas_wealth_winsor_cut; regenerate the targets: " * path)
-    wcut = Float64(raw["tas_wealth_winsor_cut"])
-    isfinite(wcut) && wcut > 0 || error("tas_wealth_winsor_cut is not positive: " * path)
-    # mean_a_p_late (2026-09-27): the model applies the data's own p99 cut, E[min(a, cut)].
-    haskey(raw, "assets_winsor_cut") || error("target file has no assets_winsor_cut; regenerate: " * path)
-    acut = Float64(raw["assets_winsor_cut"])
-    isfinite(acut) && acut > 0 || error("assets_winsor_cut is not positive: " * path)
-    get(raw, "age_assets", []) == [SMM_AGE_ASSETS_LO, SMM_AGE_ASSETS_HI] ||
-        error("age_assets window mismatch: expected ages $(SMM_AGE_ASSETS_LO)-$(SMM_AGE_ASSETS_HI); " * path)
-
-    out = Dict{String,NamedTuple}("_spec" => (school_time = school,
-                                              m_psychic  = m_psychic,
-                                              wealth_cut = wcut,
-                                              assets_cut = acut,
-                                              se         = se,
-                                              Sigma      = Sigma,
-                                              cov_names  = cov_names,
-                                              n_clusters = Int(mc["n_clusters"])))
-    for k in SMM_MOMENTS
-        haskey(raw, k) || error("""
-            target file $path is missing [$k].
-            Regenerate it:  uv run --with pandas --with numpy python tools/make_smm_targets.py""")
+    out = Dict{String,NamedTuple}()
+    for (j, k) in enumerate(SMM_MOMENTS)
+        haskey(raw, k) || error("target file $path is missing [$k]")
         e = raw[k]
-        out[k] = (mean = Float64(e["mean"]), sd = Float64(e["sd"]),
-                  n = Int(e["n"]), source = String(e["source"]),
-                  units = String(e["units"]), targeted = true)
+        get(e, "targeted", false) == true || error("[$k] is in SMM_MOMENTS but not flagged targeted in $path")
+        isapprox(Float64(e["se"]), se[j]; rtol = 1e-8) ||
+            error("[$k].se = $(e["se"]) differs from [moment_cov].se = $(se[j]): $path")
+        out[k] = (mean = Float64(e["mean"]), se = Float64(e["se"]), n = Int(e["n"]),
+                  block = String(e["block"]), source = String(get(e, "measure", "")),
+                  units = String(get(e, "units", "")), targeted = true)
     end
-    # UNTARGETED tables travel too (2026-09-11): the ability and wealth tertiles, the two
-    # halves of the ability gap, the CDS SD-by-age rows. They enter no objective and no
-    # covariance -- `moment_weights` and `target_se` read only `_spec` -- but the fit
-    # report prints them beside their model counterparts, and a diagnostic that has to
-    # re-parse the TOML to find them is a diagnostic nobody runs.
+    # UNTARGETED rows travel too: the fit report prints them beside their model counterparts.
     for (k, e) in raw
         (e isa Dict && haskey(e, "mean") && !haskey(out, k)) || continue
         get(e, "targeted", false) == false || error("$k is flagged targeted in $path but is not in SMM_MOMENTS")
-        out[k] = (mean = Float64(e["mean"]), sd = Float64(get(e, "sd", NaN)),
-                  n = Int(get(e, "n", 0)), source = String(get(e, "source", "")),
+        out[k] = (mean = Float64(e["mean"]), se = Float64(get(e, "se", NaN)), n = Int(get(e, "n", 0)),
+                  block = String(get(e, "block", "")), source = String(get(e, "measure", "")),
                   units = String(get(e, "units", "")), targeted = false)
     end
+
+    # ---- the data's composition (decision 2026-10-01: required) -------------
+    comp = nothing
+    if haskey(raw, "composition")
+        comp = parse_composition(raw["composition"], path)
+        check_composition(comp, out, path)
+    elseif require_composition
+        error("""
+            target file $path has no [composition] tables. The pooled S moments are mixtures
+            over the DATA's age composition (memo 18 section 3), and the model counterpart needs
+            the same proportions. NOT PROVIDED by 28_smm_moments.do yet; the frames needed are
+                $(join(keys(SMM_COMPOSITION_FRAMES), ", "))
+            specified in docs/SMM_COMPOSITION.md. Refusing rather than approximating
+            (decision 2026-10-01).""")
+    end
+
+    out["_spec"] = (school_time = school, m_psychic = m_psychic, L0 = L0, sd_lnk17 = sd_lnk17,
+                    init = init, mu_by_age = mu_by_age, mu_half = mu_half,
+                    se = se, Sigma = Sigma, cov_names = cov_names,
+                    n_clusters = Int.(get(mc, "n_clusters_by_moment", zeros(Int, length(se)))),
+                    composition = comp)
+    return out
+end
+
+"""
+    with_composition(targets, comp) -> Dict
+
+A copy of `targets` carrying the composition `comp` (a NamedTuple of frames, as
+`parse_composition` returns). For the parameter-recovery test, whose synthetic data need a
+composition before Stata exports the real one. Checked exactly as a file's would be.
+"""
+function with_composition(targets, comp)
+    out = copy(targets)
+    check_composition(comp, out, "<with_composition>")
+    out["_spec"] = merge(targets["_spec"], (composition = comp,))
     return out
 end
 
 # Metadata travels with the frozen targets to every solve, including diagnostics.
-# Fail on a missing schedule rather than silently reverting to the legacy model.
 target_school_time(targets) = targets["_spec"].school_time
 target_m_psychic(targets)   = targets["_spec"].m_psychic
-target_wealth_cut(targets)  = targets["_spec"].wealth_cut
-target_assets_cut(targets)  = targets["_spec"].assets_cut          # mean_a_p_late, 2026-09-27
+target_L0(targets)          = targets["_spec"].L0
+target_init(targets)        = targets["_spec"].init
+target_mu_by_age(targets)   = targets["_spec"].mu_by_age
+target_mu_half(targets)     = targets["_spec"].mu_half
 target_se(targets)          = targets["_spec"].se
 target_Sigma(targets)       = targets["_spec"].Sigma
+target_composition(targets) = (c = targets["_spec"].composition;
+    c === nothing ? error("no [composition] attached to these targets: the S block cannot be " *
+                          "computed. See docs/SMM_COMPOSITION.md") : c)
 
 """
     moment_weights(targets) -> Vector{Float64}
 
-Diagonal inverse-variance weights, in `SMM_MOMENTS` order (decision 2026-09-10).
+Diagonal inverse-variance weights, in `SMM_MOMENTS` order:
 
     Q = sum_j w_j * (m_j - mhat_j)^2 ,      w_j = 1 / se_j^2
 
-so each residual is measured in STANDARD ERRORS of its own moment. This replaces the
-proportional-error scaling that the square ten-moment system used: with seventeen moments
-against fourteen parameters the system is over-identified, Q cannot reach zero, and the
-relative weights therefore decide the answer rather than merely the path to it.
-
-WHY THE DIAGONAL AND NOT THE FULL INVERSE. `target_Sigma` carries the full joint 17x17
-covariance and it IS used -- for standard errors, sensitivity, and the identification
-diagnostics. It is not used as the first-stage weight, because its cross-block terms rest
-on the 488 family clusters the two samples share out of 2,629, and a noisily-estimated
-optimal weight can move an estimate further than the efficiency it buys.
-
-DO NOT READ THE CROSS-BLOCK CORRELATIONS AS A JUSTIFICATION. They are small -- -0.0350 to
-+0.0453 across all 70 parent-by-TAS pairs -- but the correlations a diagonal weight actually
-discards are the WITHIN-block ones, and the largest of those is +0.676. Whether the diagonal
-costs much efficiency here is an open question for a second-stage comparison; it is not
-settled by the cross-block figure, and an earlier version of this comment claimed it was.
-
-READ THE WEIGHT CONCENTRATION IN THE REPORT BEFORE TRUSTING A FIT. Inverse-variance
-weighting is efficient when the model can fit the moments to within sampling error. This
-model cannot: `mean_hc_late` has an SE of 0.0014 against a current miss of ~0.19 log
-points, i.e. ~137 standard errors, so it alone can claim most of Q and turn a seventeen-
-moment estimation into a one-moment one. `report_fit` prints each moment's share of Q for
-exactly this reason. If one moment dominates, the answer is a scale decision to be taken
-deliberately -- not a wider box.
+so each residual is measured in standard errors of its own moment. The full 67x67 bootstrap
+covariance (`target_Sigma`) is used for standard errors and diagnostics, not as the
+first-stage weight. READ THE Q SHARES IN THE REPORT: where the model cannot fit a precisely
+measured moment, that moment can claim most of Q.
 """
 moment_weights(targets) = 1.0 ./ (target_se(targets) .^ 2)
 
@@ -586,207 +515,257 @@ moment_weights(targets) = 1.0 ./ (target_se(targets) .^ 2)
 # Model moments
 # -----------------------------------------------------------------------------
 """
-    model_moments(p) -> NamedTuple
+    lw_pi_v(p, L0) -> (Pi, V, n_bad)
 
-The three simulated moments, on exactly the definitions the target file uses.
+The analytic binomial building blocks of memo 18 section 3.1, for every simulated child
+(rows) and age 1..17 (columns; column t of sim_hc IS age t):
 
-`sim_*` columns 1..17 are the family stage; column 18 is the terminal state and
-is NOT a flow, so it is excluded. Means skip non-finite entries rather than
-propagating them -- a single NaN would otherwise turn a moment into NaN and the
-objective into a penalty, hiding a merely-partial simulation as a total failure.
+    Pi = 57 p(k),   V = 57 p(k) (1 - p(k)),   p(k) = logistic(L0 + ln k)
+
+the conditional mean and variance of the raw Letter-Word score. A non-positive or
+non-finite k is COUNTED in `n_bad` and its cells set to NaN, never floored away.
 """
-function model_moments(p::Parent_child_interaction_age_specific_AR1; assets_cut::Float64 = Inf)
-    cols  = SMM_AGE_LO:SMM_AGE_HI
-    # Column t IS child age t, so the model's age groups are literally these
-    # columns -- the same ages the generator selects on Child_Age in the data.
-    early = SMM_AGE_LO:SMM_AGE_SPLIT
-    late  = (SMM_AGE_SPLIT + 1):SMM_AGE_HI
-    # The child only chooses its time input from T_CHILD_VOICE; before that sim_i is not
-    # a decision. Match the generator, which selects Child_Age >= 6 for the early group.
-    early_i = T_CHILD_VOICE:SMM_AGE_SPLIT
-    # HC is observed from age 3 only -- see SMM_AGE_HC_LO.
-    early_hc = SMM_AGE_HC_LO:SMM_AGE_SPLIT
+function lw_pi_v(p::Parent_child_interaction_age_specific_AR1, L0::Float64)
+    K = p.sim_hc[:, 1:SMM_AGE_HI]
+    n_bad = count(x -> !(isfinite(x) && x > 0), K)
+    Pr = map(k -> (isfinite(k) && k > 0) ? 1 / (1 + exp(-(L0 + log(k)))) : NaN, K)
+    return NQ_LW .* Pr, NQ_LW .* Pr .* (1 .- Pr), n_bad
+end
 
-    # Non-finite entries are COUNTED, not silently dropped. Filtering them was the more
-    # dangerous half of a NaN: a single bad cell used to vanish into a perfectly finite
-    # mean, so a simulation that had partly failed reported an ordinary-looking fit.
-    # VERIFIED: injecting one NaN into sim_c still returned mean_c_p = 3.703901. The
-    # count travels with the moments and smm_objective refuses the draw if it is non-zero.
-    n_bad = Ref(0)
-    function nanmean(v)
-        w = filter(isfinite, v)
-        n_bad[] += length(v) - length(w)
-        isempty(w) ? NaN : mean(w)
+# Population covariance across simulated children (memo 18 uses 1/N throughout).
+function _popcov(y::AbstractVector, z::AbstractVector)
+    my, mz = mean(y), mean(z)
+    s = 0.0
+    @inbounds for i in eachindex(y, z)
+        s += (y[i] - my) * (z[i] - mz)
     end
-    # log HC, and the mean of the agent-level LOGS -- the data's x_gach is a mean of logs,
-    # and log(mean) differs from mean(log) by a Jensen term that moves with age.
-    # Non-positive HC is a failure, not something to floor away, so it is counted here too.
-    function loghc(rng)
-        v = vec(p.sim_hc[:, rng])
-        n_bad[] += count(x -> !(isfinite(x) && x > 0), v)
-        w = filter(x -> isfinite(x) && x > 0, v)
-        isempty(w) ? NaN : mean(log.(w))
-    end
+    return s / length(y)
+end
 
-    c = nanmean(vec(p.sim_c[:, cols]))
-    e = nanmean(vec(p.sim_e[:, cols]))            # pooled: reported, not targeted
-    # Leisure is a residual of the time budget, exactly as the data builds it:
-    # 112 - work - active childcare, per parent.
-    l = nanmean(vec(1.0 .- p.sim_h[:, cols] .- p.sim_t[:, cols]))
-
-    return (mean_c_p = c, mean_l_p = l, mean_e_p = e,
-            mean_h_p = nanmean(vec(p.sim_h[:, cols])),
-            mean_t_p_early = nanmean(vec(p.sim_t[:, early])),
-            mean_t_p_late  = nanmean(vec(p.sim_t[:, late])),
-            mean_e_p_early = nanmean(vec(p.sim_e[:, early])),
-            mean_e_p_late  = nanmean(vec(p.sim_e[:, late])),
-            mean_i_c_early = nanmean(vec(p.sim_i[:, early_i])),
-            mean_i_c_late  = nanmean(vec(p.sim_i[:, late])),
-            mean_hc_early  = loghc(early_hc),
-            mean_hc_late   = loghc(SMM_AGE_HC_LATE_LO:SMM_AGE_HI),
-            # 2026-09-27: PRE-transfer assets at child ages 16-17, winsorised at the data's
-            # cut (model units). Column t of sim_a is the asset state at the start of age t.
-            mean_a_p_late  = nanmean(min.(vec(p.sim_a[:, SMM_AGE_ASSETS_LO:SMM_AGE_ASSETS_HI]), assets_cut)),
-            n_nonfinite    = n_bad[])
+# MIXTURE MOMENTS over composition cells c with weights w (memo 18 section 3.1):
+#     mu(y)    = sum_c w_c ybar_c
+#     Cov(y,z) = sum_c w_c [cov_c(y,z) + (ybar_c - mu(y)) (zbar_c - mu(z))]
+# which is the model analogue of pooling the data's observations across ages.
+_mmean(w, Y) = sum(w[c] * mean(Y[c]) for c in eachindex(w)) / sum(w)
+function _mcov(w, Y, Z)
+    my, mz = _mmean(w, Y), _mmean(w, Z)
+    return sum(w[c] * (_popcov(Y[c], Z[c]) + (mean(Y[c]) - my) * (mean(Z[c]) - mz))
+               for c in eachindex(w)) / sum(w)
 end
 
 """
-    rank_tertiles(x) -> Vector{Int}
+    _cells(frame, lo, hi) -> Vector{(w, a, a2, odd)}
 
-Assign each element to a within-sample tertile 1..3 BY RANK.
-
-Rank-based rather than at the data's absolute W-score cut points (decision 2026-09-10):
-the model's HC level is already targeted by `mean_hc_late`, and cutting the simulation at
-the data's cut points would fold any level or dispersion miss into these three moments and
-so into `kappa_theta`. Cutting at the simulation's own terciles asks only what they exist
-to ask -- how steeply completion rises with rank in ability.
-
-`MergeSort` is passed explicitly because ties must break the same way on every evaluation.
-With an unstable sort two draws that differ only in simulation noise could shuffle tied
-households between tertiles and move the moment without any parameter having changed,
-which turns the objective into a step function and defeats common random numbers.
+The composition cells of a frame inside the bin `lo:hi` (base age for pairs). A frame with
+odd-wave rows splits each row into its even-wave and odd-wave parts, because the model's
+money input differs between them (see `_input`).
 """
-function rank_tertiles(x::AbstractVector{<:Real})
-    n = length(x)
-    ord = sortperm(x; alg = MergeSort)     # stable: equal values keep their index order
-    t = Vector{Int}(undef, n)
-    @inbounds for (rank, i) in enumerate(ord)
-        t[i] = min(3, 1 + div(3 * (rank - 1), n))
+function _cells(fr, lo::Int, hi::Int)
+    out = Tuple{Float64,Int,Int,Bool}[]
+    for i in eachindex(fr.n)
+        lo <= fr.a[i] <= hi || continue
+        a2 = fr.a2 === nothing ? 0 : fr.a2[i]
+        no = fr.n_odd === nothing ? 0 : fr.n_odd[i]
+        fr.n[i] - no > 0 && push!(out, (Float64(fr.n[i] - no), fr.a[i], a2, false))
+        no > 0 && push!(out, (Float64(no), fr.a[i], a2, true))
     end
-    return t
+    isempty(out) && error("composition bin $lo..$hi has no observations")
+    return out
 end
 
 """
-    tas_moments(r, targets) -> NamedTuple
+    _input(p, x, a, odd) -> Vector
 
-The seven TAS moments, computed from the RESIMULATED child block.
-
-Each one is the model counterpart of a ratio of means over the TAS frame, so each is a
-plain subgroup mean here -- the data's denominator indicator is the subgroup membership,
-and the model has no missing outcomes to condition on.
+The simulated input `x` at age `a`, in the units the data moments use (time / 112, money in
+10k USD/yr). At an ODD CDS wave the data's money is the mean of the two adjacent even PSID
+years (memo 18 D10), so the model's is the mean of ages a-1 and a+1. At age 17 the model has
+no age-18 money, so age 16 alone stands in -- the data's "single observed year" fallback.
+`:bc` is the household's BothCollege type (constant in t), for the untargeted m_BC check.
 """
-function tas_moments(r, targets)
+function _input(p, x::Symbol, a::Int, odd::Bool)
+    x === :bc && return p.sim_k[:, 1]
+    odd && x !== :ep && error("odd-wave averaging applies to money only, not $x")
+    x === :taup && return p.sim_t[:, a]
+    x === :tauc && return p.sim_i[:, a]
+    if x === :ep
+        odd || return p.sim_e[:, a]
+        return a + 1 <= SMM_AGE_HI ? 0.5 .* (p.sim_e[:, a-1] .+ p.sim_e[:, a+1]) : p.sim_e[:, a-1]
+    end
+    error("unknown input $x")
+end
+
+# Parents' pre-tax LABOUR income, the denominator of S9 (memo 18 section 3.5): wage times
+# hours, before the HSV tax. sim_wage stores wage / WAGE_SCALING_FACTOR, so this is exactly
+# the `labor_pre` the budget uses.
+_pretax_labour(p, a::Int) = p.sim_wage[:, a] .* WAGE_SCALING_FACTOR .* p.sim_h[:, a]
+
+"""
+    s_pooled(kind, cells, x, p, Pi, V) -> Float64
+
+One pooled S moment, by the memo-18 section-3 formula for its kind. `cells` carry the
+data's composition; test noise (V) enters only the variances it belongs in.
+"""
+function s_pooled(kind::Symbol, cells, x::Symbol, p, Pi, V)
+    w = [c[1] for c in cells]
+    col(M, j) = M[:, j]
+    if kind === :sd_lw                                      # S3
+        Y = [col(Pi, c[2]) for c in cells]
+        return sqrt(_mcov(w, Y, Y) + _mmean(w, [col(V, c[2]) for c in cells]))
+    elseif kind === :mean_dlw                               # S4
+        return _mmean(w, [col(Pi, c[3]) .- col(Pi, c[2]) for c in cells])
+    elseif kind === :corr_lw                                # S5: noise in the denominator only
+        Y1 = [col(Pi, c[2]) for c in cells]; Y2 = [col(Pi, c[3]) for c in cells]
+        v1 = _mmean(w, [col(V, c[2]) for c in cells]); v2 = _mmean(w, [col(V, c[3]) for c in cells])
+        return _mcov(w, Y1, Y2) / sqrt((_mcov(w, Y1, Y1) + v1) * (_mcov(w, Y2, Y2) + v2))
+    elseif kind === :corr_x_lw                              # S6 (and the BC check)
+        X = [_input(p, x, c[2], c[4]) for c in cells]; Y = [col(Pi, c[2]) for c in cells]
+        v = _mmean(w, [col(V, c[2]) for c in cells])
+        return _mcov(w, X, Y) / sqrt(_mcov(w, X, X) * (_mcov(w, Y, Y) + v))
+    elseif kind === :corr_x_dlw                             # S7: both waves' noise in Var(dLW)
+        X = [_input(p, x, c[2], c[4]) for c in cells]
+        D = [col(Pi, c[3]) .- col(Pi, c[2]) for c in cells]
+        v = _mmean(w, [col(V, c[2]) .+ col(V, c[3]) for c in cells])
+        return _mcov(w, X, D) / sqrt(_mcov(w, X, X) * (_mcov(w, D, D) + v))
+    elseif kind === :mean_x                                 # S8
+        return _mmean(w, [_input(p, x, c[2], c[4]) for c in cells])
+    elseif kind === :sd_x
+        X = [_input(p, x, c[2], c[4]) for c in cells]
+        return sqrt(_mcov(w, X, X))
+    elseif kind === :mean_ratio                             # S9
+        return _mmean(w, [p.sim_e[:, c[2]] ./ _pretax_labour(p, c[2]) for c in cells])
+    end
+    error("unknown S-moment kind $kind")
+end
+
+"""
+    s_block_moments(p, targets) -> (Dict, n_bad, Pi, V)
+
+The 59 S moments (memo 18 section 3) plus the untargeted corr(BothCollege, LW) checks.
+S1 is the plain per-age mean of Pi; every pooled row is mixed over the data's composition.
+"""
+function s_block_moments(p::Parent_child_interaction_age_specific_AR1, targets)
+    comp = target_composition(targets)
+    Pi, V, n_bad = lw_pi_v(p, target_L0(targets))
+    out = Dict{String,Float64}()
+    for a in 3:SMM_AGE_HI
+        out["S1_mean_LW_age$a"] = mean(view(Pi, :, a))
+    end
+    for (k, (kind, frame, x, lo, hi)) in pairs(SMM_S_SPEC)
+        out[String(k)] = s_pooled(kind, _cells(getfield(comp, frame), lo, hi), x, p, Pi, V)
+    end
+    for (k, (lo, hi)) in pairs(SMM_BC_LW_BINS)
+        out[String(k)] = s_pooled(:corr_x_lw, _cells(comp.O_LW, lo, hi), :bc, p, Pi, V)
+    end
+    return out, n_bad, Pi, V
+end
+
+"""
+    t_block_moments(r, Pi, V) -> NamedTuple
+
+The five college moments, from the RESIMULATED child block (memo 19 section 3):
+
+  k0_complete            share choosing college (the model's college path is a completed BA)
+  kpe_bc0_c / kpe_bc1_c  the same by the household's BothCollege type
+  kth_lw17_gap           mean LW at 17, college minus not
+  m_eps                  residual variance of the OLS of college on [1, BothCollege, LW17]
+
+LW AT 17 IS ANALYTIC (decision 2026-10-01, FLAGGED for review): the test draw is independent
+of the college decision given k -- college depends on k at 18, assets, BothCollege and the
+taste shock, never on the score -- so the gap needs only the means Pi. The regression uses
+the population second moments of (college, BC, LW17), with the binomial variance V in
+E[LW17^2]; that is the literal OLS with infinitely many draws per child. Its RSS/N is the
+population residual variance, which the data's RSS/(N-3) estimates without bias.
+
+An EMPTY group (nobody or everybody in college, or a single BothCollege type) leaves a
+moment undefined: NaN, counted in `n_bad`, penalised by the objective -- never a zero that
+would reward a draw at which the college margin has collapsed.
+"""
+function t_block_moments(r, Pi, V)
     p, ch = r.parent, r.child
     col = ch.sim_college
-    n_bad = 0
+    bc  = p.sim_k[:, 1]
+    n_bad = count(!isfinite, col)
+    share(mask) = any(mask) ? mean(col[mask]) : (n_bad += 1; NaN)
 
-    function share(mask)
-        v = col[mask]
-        w = filter(isfinite, v)
-        n_bad += length(v) - length(w)
-        isempty(w) ? NaN : mean(w)
-    end
-
-    # --- kappa_0: the overall completion rate ---
-    all_i = trues(length(col))
-    k0 = share(all_i)
-
-    # --- kappa_theta: completion by ability tertile ---
-    # Column t of sim_hc IS child age t, so this is the child's HC at age 17 -- the last
-    # family-stage column, matching the data's `ach_age == 17` assessment, and one period
-    # before the age-18 handoff the enrolment decision is actually taken on.
-    hc17 = p.sim_hc[:, SMM_TAS_ACH_AGE]
-    n_bad += count(x -> !(isfinite(x) && x > 0), hc17)
-    tert = rank_tertiles(hc17)
-    kth = ntuple(k -> share(tert .== k), 3)          # diagnostics since 2026-09-11
-
-    # THE TARGETED ABILITY MOMENT: mean log HC at 17 among completers minus non-completers,
-    # on the same linked outcome. An EMPTY group -- nobody or everybody goes to college --
-    # leaves the gap undefined; that is a controlled invalid evaluation (NaN, counted in
-    # `tas_nonfinite`, penalised by the objective), NOT a zero gap that would reward a
-    # parameter draw at which the college margin has collapsed.
-    lhc = log.(max.(hc17, 1e-300))
-    isc = col .>= 0.5
-    isw = col .< 0.5
-    function cond_mean(v, mask)
-        w = filter(isfinite, v[mask])
-        isempty(w) ? (n_bad += 1; NaN) : mean(w)
-    end
-    kth_mean_c = cond_mean(lhc, isc)
-    kth_mean_n = cond_mean(lhc, isw)
-    kth_gap    = kth_mean_c - kth_mean_n
-
-    # THE DISPERSION MOMENT: sample SD (Julia's `std` is the n-1 form, as the data's).
-    sd_ga17 = length(hc17) > 1 ? std(lhc) : (n_bad += 1; NaN)
-
-    # --- kappa_ParEd: completion by parental education ---
-    # The model's BothCollege against the data's EITHER-parent group. Open mismatch, by
-    # instruction; docs/ERRORS.md P7c has the measured size of it.
-    bc = p.sim_k[:, 1]
+    k0   = mean(col)
     kpe0 = share(bc .< 0.5)
     kpe1 = share(bc .>= 0.5)
 
-    # --- kappa_terminal: parental assets RETAINED after the transfer ---
-    # `retained = sim_a_init - sim_tr_init`, i.e. the parent's terminal assets less what it
-    # handed over. NOT the pre-transfer age-18 assets: those are a different object and are
-    # ~30% larger at the incumbent.
-    #
-    # The SAME winsorisation as the data, so the two sides are the same functional. It is
-    # expected to bind on nobody -- the cut is $4.45m and the child's asset grid stops at
-    # a_max = 100 model units = $1m -- and `n_winsorised` reports whether that held.
-    cut = target_wealth_cut(targets)
-    ret = r.retained
-    n_bad += count(!isfinite, ret)
-    fin_ret = filter(isfinite, ret)
-    n_wins = count(>(cut), fin_ret)
-    kterm = isempty(fin_ret) ? NaN : mean(min.(fin_ret, cut))
+    pi17, v17 = Pi[:, SMM_LW17_AGE], V[:, SMM_LW17_AGE]
+    isc = col .>= 0.5
+    m_c = any(isc)    ? mean(pi17[isc])    : (n_bad += 1; NaN)
+    m_n = any(.!isc)  ? mean(pi17[.!isc])  : (n_bad += 1; NaN)
 
-    # THE WEALTH-GRADIENT MOMENT (UNTARGETED since 2026-09-27 -- the data are ~11 years after
-    # the transfer; see SMM_TAS_MOMENTS): retained parental wealth, winsorised at the
-    # SAME cut as kterm, among completers minus non-completers. Empty group -> invalid.
-    retw = min.(ret, cut)
-    kse_gap = cond_mean(retw, isc) - cond_mean(retw, isw)
-    wtert = rank_tertiles(ret)
-    kse_t = ntuple(k -> share(wtert .== k), 3)         # diagnostics
-
-    return (k0_complete = k0,
-            kth_ga17_gap = kth_gap,
-            kpe_g0_c = kpe0, kpe_g1_c = kpe1,
-            kterm_x_strict_w99 = kterm,
-            kse_w_gap = kse_gap,
-            sd_ga17 = sd_ga17,
+    Sxx = [1.0         mean(bc)          mean(pi17);
+           mean(bc)    mean(bc .^ 2)     mean(bc .* pi17);
+           mean(pi17)  mean(bc .* pi17)  mean(pi17 .^ 2 .+ v17)]
+    Sxy = [mean(col), mean(bc .* col), mean(pi17 .* col)]
+    if all(isfinite, Sxx) && cond(Sxx) < 1e12
+        b  = Sxx \ Sxy
+        rv = mean(col .^ 2) - dot(b, Sxy)
+        r2 = 1 - rv / var(col; corrected = false)
+    else
+        b, rv, r2 = fill(NaN, 3), NaN, NaN
+        n_bad += 1
+    end
+    return (k0_complete = k0, kpe_bc0_c = kpe0, kpe_bc1_c = kpe1,
+            kth_lw17_gap = m_c - m_n, m_eps = rv,
             # diagnostics, not targeted
-            kth_ga17_t1_c = kth[1], kth_ga17_t2_c = kth[2], kth_ga17_t3_c = kth[3],
-            kth_ga17_mean_c = kth_mean_c, kth_ga17_mean_n = kth_mean_n,
-            kse_w_t1_c = kse_t[1], kse_w_t2_c = kse_t[2], kse_w_t3_c = kse_t[3],
-            sd_hc_by_age = Tuple(std(log.(max.(p.sim_hc[:, a], 1e-300))) for a in 1:SMM_TAS_ACH_AGE),
-            n_college = count(isequal(1.0), col),
-            n_bothcollege = count(>=(0.5), bc),
-            mean_transfer = (v = filter(isfinite, r.transfers); isempty(v) ? NaN : mean(v)),
-            retained_negative = count(x -> isfinite(x) && x < 0, ret),
-            n_winsorised = n_wins,
-            tas_nonfinite = n_bad)
+            kth_lw17_mean_c = m_c, kth_lw17_mean_n = m_n,
+            lpm_b_bc = b[2], lpm_b_lw = b[3], lpm_r2 = r2,
+            n_college = count(isequal(1.0), col), n_bothcollege = count(>=(0.5), bc),
+            t_nonfinite = n_bad)
 end
 
 """
     model_moments(r, targets) -> NamedTuple
 
-All seventeen targeted moments plus the diagnostics, from one pipeline result.
+All 67 targeted moments, in SMM_MOMENTS order, followed by the diagnostics, from one
+pipeline result. `n_nonfinite` counts every cell that could not be used; the objective
+refuses a draw with any.
+
+  P  equal-age means of c_p and h_p over t = 1..17 (memo 19: "equal-age mean 1-17"); the
+     simulated panel is balanced, so each age carries the same weight, as in the data.
+  W  kterm_med22 = MEDIAN retained assets a - tr at the age-18 half period (decision
+     2026-10-01: no adjustment for the data's first-child ages 21-22; documented gap).
 """
 function model_moments(r::NamedTuple, targets)
-    pm = model_moments(r.parent; assets_cut = target_assets_cut(targets))
-    tm = tas_moments(r, targets)
-    return merge(pm, tm, (n_nonfinite = pm.n_nonfinite + tm.tas_nonfinite,))
+    p = r.parent
+    n_bad = Ref(0)
+    function eqage(M)
+        ms = [(v = filter(isfinite, view(M, :, t)); n_bad[] += size(M, 1) - length(v);
+               isempty(v) ? NaN : mean(v)) for t in SMM_AGE_LO:SMM_AGE_HI]
+        return mean(ms)
+    end
+    pm = (mean_c_p = eqage(p.sim_c), mean_h_p = eqage(p.sim_h))
+
+    s, s_bad, Pi, V = s_block_moments(p, targets)
+    n_bad[] += s_bad + count(x -> !isfinite(x), values(s))
+    tm = t_block_moments(r, Pi, V)
+
+    ret = r.retained
+    n_bad[] += count(!isfinite, ret)
+    fin = filter(isfinite, ret)
+    kterm = isempty(fin) ? NaN : median(fin)
+
+    vals = Dict{String,Float64}("mean_c_p" => pm.mean_c_p, "mean_h_p" => pm.mean_h_p)
+    merge!(vals, s)
+    for k in SMM_T_MOMENTS
+        vals[k] = getfield(tm, Symbol(k))
+    end
+    vals["kterm_med22"] = kterm
+
+    names_ = (Symbol.(SMM_MOMENTS)..., Symbol.(keys(SMM_BC_LW_BINS))...)
+    targeted = NamedTuple{names_}(Tuple(vals[String(k)] for k in names_))
+    diag = (kth_lw17_mean_c = tm.kth_lw17_mean_c, kth_lw17_mean_n = tm.kth_lw17_mean_n,
+            lpm_b_bc = tm.lpm_b_bc, lpm_b_lw = tm.lpm_b_lw, lpm_r2 = tm.lpm_r2,
+            n_college = tm.n_college, n_bothcollege = tm.n_bothcollege,
+            mean_transfer = (v = filter(isfinite, r.transfers); isempty(v) ? NaN : mean(v)),
+            retained_negative = count(x -> isfinite(x) && x < 0, ret),
+            mean_lnk_by_age = Tuple(mean(log.(max.(p.sim_hc[:, a], 1e-300))) for a in 1:SMM_AGE_HI),
+            sd_lnk_by_age   = Tuple(std(log.(max.(p.sim_hc[:, a], 1e-300))) for a in 1:SMM_AGE_HI),
+            n_nonfinite = n_bad[] + tm.t_nonfinite)
+    return merge(targeted, diag)
 end
 
 # Tolerance for the domain checks below. The optimizer's own floors are 1e-4 (goods) and
@@ -1030,263 +1009,71 @@ remains the value a partial point is completed with.
 """
 smm_start(name::Symbol) = hasproperty(SMM_START, name) ? getfield(SMM_START, name) : param_default(name)
 
-# The nine-parameter run 2026-09-06_183119 is frozen with its ORIGINAL bounds.
-# Exploration bounds for the school-plus-study target pilot (2026-09-07).
-# Keep the expanded parental-time/money limits. sigma_4_0 returns to [-6,-1]:
-# retain the old incumbent while covering the higher child-time region near -3,
-# without spending Sobol points on the old homework-only extension to -8.
-# These are pilot choices, not confidence intervals; reassess after a joint fit.
-# See docs/BASELINE_9PARAM.md and docs/REVIEW_TRIAGE.md.
+# THE ESTIMATED SET (2026-10-02): the memo-18 technology (12), three preference weights and
+# the five child parameters -- 15 parent + 5 child = 20, against 67 moments.
+#
+# Dropped from the exp16b set: R_0 (TFP is now the logistic d_0..d_3), sigma_*_0/1 (now
+# a_*_0/1 on AGE, not t-1), and sigma_eta (zero by memo 18). The memo-18 starts are DFVW Table
+# 7 (see PARENT_DEFAULTS); the boxes below are SEARCH REGIONS around them, not confidence
+# intervals. memo 18 fixes only the TFP box -- (d_0, d_1) in (0, 10), d_2 in (-4, 4), d_3 in
+# (-20, 20). The a_j boxes are NOT PROVIDED by memo 18 and are set here: each contains the
+# DFVW value with room on both sides, and smm_feasible keeps every elasticity below one.
 const SMM_PARAMS = [
     SMMParam(:phi_2,     0.01, 20.0, :log),
     SMMParam(:phi_3,     0.05, 20.0, :log),
-    # UPPER LIMIT RAISED 20 -> 100 (2026-09-08). lambda_2 has climbed across three runs
-    # under the school-time targets -- 8.68, then 16.80, then EXACTLY 20.0 -- so the
-    # ceiling is now what determines it, not the data.
-    #
-    # WHY IT CLIMBS, AND WHY THAT IS A SPECIFICATION QUESTION AND NOT ONLY A BOX ONE.
-    # `mean_i_c` became `c_time_hrs` (school + own study) and jumped from ~0.039 to ~0.365,
-    # i.e. from 4.4 to 41 hrs/wk. In this model the child CHOOSES i_c, trading it against
-    # its own leisure, so the only way to make a child voluntarily spend 41 hrs/wk is to
-    # make it value skill enormously relative to leisure -- which is what lambda_2 does.
-    # But school attendance is COMPULSORY, not chosen. Reproducing a mandate through a
-    # taste parameter fits the moment while attributing it to the wrong mechanism, and
-    # every counterfactual that moves the return to skill inherits that.
-    #
-    # So the box is raised to let the estimate come to rest and reveal where it actually
-    # wants to be -- but if it lands near 100, or the fit only holds at implausible values,
-    # the answer is a modelling change (a compulsory-schooling floor on i_c below age 16,
-    # say) rather than a wider box. Flag for Sahber either way: lambda_1 is normalised to
-    # 1, so lambda_2 = 20 already means the child weights skill twenty times its leisure.
     SMMParam(:lambda_2,  0.05, 100.0, :log),
-    SMMParam(:R_0,       0.5, 100.0, :log),
-    SMMParam(:sigma_1_0, -4.0, -0.1,  :level), # upper limit was -0.2
-    SMMParam(:sigma_1_1, -0.20, 0.05, :level),
-    SMMParam(:sigma_2_0, -5.0, -0.5,  :level),
-    # PROVISIONAL lower limit -0.15 (was -0.10, before that -0.05). sigma_2_1 has now
-    # been pinned at BOTH previous lower bounds -- -0.049981 against -0.05, then
-    # -0.099999 against -0.10 -- so widening has not yet freed it, it has only moved the
-    # wall. Widened once more to find out which of two things is true, and the answer is
-    # NOT decided by where this run lands:
-    #
-    #   (a) the box was genuinely binding, in which case Q keeps falling as sigma_2_1
-    #       goes more negative and the estimate eventually comes to rest interior;
-    #   (b) the objective is flat in this direction -- a ridge with sigma_2_0, whose
-    #       scaled Jacobian cosine is 0.869 -- in which case the optimizer simply slides
-    #       to whatever wall it is given and -0.15 will pin too.
-    #
-    # `code/smm/profile_param.jl` is what distinguishes them: it fixes sigma_2_1 at a
-    # ladder of values and JOINTLY re-optimizes the other eight at each, so the question
-    # is answered by the shape of Q, not by one more boundary hit.
-    #
-    # For scale: sigma_2_t = exp(sigma_2_0 + sigma_2_1*(t-1)), so -0.10 already means the
-    # money elasticity falls 80% over ages 1-17 and -0.15 means 91%. Note also that the
-    # e_p profile is already slightly OVER-steep (model 1.19x against data 1.14x), so the
-    # pressure is not coming from the moment this slope exists to fit.
-    # LOWER LIMIT -0.30 (was -0.15, before that -0.10, before that -0.05).
-    #
-    # FOURTH BOX, THIRD BOUNDARY HIT. The record:
-    #     box [-0.05, 0.05]   ->  -0.049981   pinned
-    #     box [-0.10, 0.05]   ->  -0.099999   pinned
-    #     box [-0.15, 0.05]   ->  -0.120616   INTERIOR (run 2026-09-07_205033)
-    #     box [-0.15, 0.05]   ->  -0.149997   pinned   (run 2026-09-08_100413)
-    #
-    # The one interior landing came before the baseline was promoted and the off-grid
-    # initial assets were resampled; with the new starting point and draw it went back to
-    # the wall. So a wider box has never yet produced a STABLE interior estimate, and each
-    # widening moves the rest of the vector with it -- sigma_1_0 -0.685 -> -1.246,
-    # sigma_2_0 -3.696 -> -4.274, lambda_2 20 -> 54 between the last two runs. Parameters
-    # sliding together like that is the signature of a ridge, not of nine separately
-    # determined numbers.
-    #
-    # The step is DELIBERATELY LARGE this time (0.05 -> 0.15 of extra room rather than
-    # another 0.05). Three small steps have each cost a full estimation and returned the
-    # same answer; a big step either finds an interior optimum or shows that none exists in
-    # any reasonable range, and either outcome is worth more than a fifth wall.
-    #
-    # WHAT IT ALREADY MEANS AT -0.15. sigma_2_t = exp(sigma_2_0 + sigma_2_1*(t-1)), so at
-    # the fitted sigma_2_0 = -4.274 the money elasticity runs
-    #     t=1  0.0139   t=9  0.0042   t=17  0.0013
-    # i.e. it falls 90.9% over the family stage and money is very nearly irrelevant to
-    # human capital by adolescence. At -0.30 it would fall 99.2%. Before widening again,
-    # ask whether that is a finding or a symptom: `code/smm/profile_param.jl` fixes
-    # sigma_2_1 at a ladder of values and jointly re-optimizes the other eight, which is
-    # what distinguishes a genuinely binding box from an optimizer sliding along a flat
-    # direction. It costs ~3 h against ~13 h for another blind estimation.
-    SMMParam(:sigma_2_1, -0.30, 0.05, :level),
-    # LOWER LIMIT -10.0 (was -6.0, which was a leftover from the school-plus-study pilot).
-    #
-    # THE FLOOR BOUND UNDER THE OWN-STUDY SPECIFICATION. 3636d43 recorded this as open and
-    # estimated the requirement at about -6.3. MEASURED here at grid 30, simN 2000, every
-    # other parameter held at PARENT_DEFAULTS and sigma_4_1 at 0.02, that estimate is well
-    # short -- at -6.3 the model still produces nearly three times the study target:
-    #
-    #     sigma_4_0   i_c early   gap     i_c late   gap        Q
-    #        -6.000     0.1421   +262%      0.1157  +133%    6.04
-    #        -6.300     0.1153   +193%      0.0907   +83%    3.06
-    #        -6.500     0.0994   +153%      0.0766   +54%    1.81
-    #        -7.000     0.0666    +70%      0.0492    -1%    0.38
-    #        -7.500     0.0432    +10%      0.0310   -38%    0.23   <- univariate minimum
-    #        -8.000     0.0274    -30%      0.0192   -61%    0.51
-    #
-    # So the univariate optimum is near -7.5, not -6.3, and Q is U-shaped around it. The
-    # model solves cleanly with zero violations all the way to -12, so the floor is a
-    # modelling choice rather than a numerical limit.
-    #
-    # -10.0 IS DELIBERATELY GENEROUS, and the reason is sigma_2_1: it was widened three
-    # times in 0.05 steps, pinned each time, and cost a full estimation on each occasion
-    # before a large step finally let it settle at -0.155. A floor 2.5 below the univariate
-    # optimum should not need revisiting.
-    #
-    # The joint optimum will differ from the sweep above. The other nine parameters move,
-    # and sigma_4_1 is now ESTIMATED, so the early/late tilt that the sweep cannot resolve
-    # -- early wants about -7.5 while late wants about -7.0 -- is exactly what the slope is
-    # there to absorb.
-    SMMParam(:sigma_4_0, -10.0, -1.0,  :level),
-    # Same candidate interval already used by jacobian.jl. This is a search box,
-    # not an identification result. TOP RAISED 0.15 -> 0.30 (2026-09-12): exp16b landed
-    # at 0.1301 (90.1% of the way up) after 0.1327 (91.4%) in the ten-parameter fit --
-    # two fits sitting just under the same ceiling. At the exp16b sigma_4_0 = -6.10 the
-    # top gives sigma_4 = exp(-6.10 + 0.30*16) = 0.27 at age 17, nowhere near explosive.
-    SMMParam(:sigma_4_1, -0.05, 0.30, :level),
-    # mu_1 remains fixed at PARENT_DEFAULTS.
+    # parental time: DFVW mother + father, exp(-0.631 - 0.115 t) at the start
+    SMMParam(:a_1_0, -4.0,  1.0,  :level),
+    SMMParam(:a_1_1, -0.40, 0.10, :level),
+    # money: DFVW d4 = exp(-7.154 + 0.072 t)
+    SMMParam(:a_2_0, -12.0, -1.0, :level),
+    SMMParam(:a_2_1, -0.30,  0.30, :level),
+    # persistence: DFVW d5 = exp(-0.254 + 0.005 t), 0.79 -> 0.84; must stay below one
+    SMMParam(:a_3_0, -3.0,  0.0,  :level),
+    SMMParam(:a_3_1, -0.10, 0.10, :level),
+    # own study, from age 6: DFVW d3 = exp(-6.598 + 0.271 t)
+    SMMParam(:a_4_0, -12.0, -1.0, :level),
+    SMMParam(:a_4_1, -0.20,  0.60, :level),
+    # TFP, memo 18's box. d_0, d_1 strictly positive so R_t is a convex combination of two
+    # positive levels.
+    SMMParam(:d_0,  0.01, 10.0, :level),
+    SMMParam(:d_1,  0.01, 10.0, :level),
+    SMMParam(:d_2, -4.0,   4.0, :level),
+    SMMParam(:d_3, -20.0, 20.0, :level),
 
-    # =========================================================================
-    # THE FOUR CHILD PARAMETERS -- added 2026-09-10
-    # =========================================================================
-    # PILOT BOXES, exactly as the sigma bounds above are: they are search regions chosen
-    # to contain the answer, not confidence intervals, and they should be reassessed after
-    # the first joint fit rather than defended.
-    #
-    # kappa_0 -- the LEVEL of the psychic cost of college, AT MEAN ABILITY.
-    #
-    # On the centred scale, so it is no longer the 0.2728 of the uncentred form. The
-    # incumbent is 0.0587. The box has to let the college share fall a long way: the model
-    # currently produces ~50.8% against a completion target of 32.3%, and the psychic cost
-    # is the only parameter that moves that margin directly. Negative values are admitted
-    # -- college can be intrinsically attractive -- because nothing rules them out a priori
-    # and excluding them would impose the sign the moment is there to measure.
-    #
-    # MEASURED AFTER THE BOX WAS SET (2026-09-10), AND IT ARGUES FOR A NARROWER ONE.
-    # The college margin is close to a STEP in kappa_0. At grid 20 / simN 500, holding the
-    # rest at their defaults:
-    #
-    #     kappa_0    0.059   -0.50   -1.00   -1.50   -2.00
-    #     completion 0.000    0.612   1.000   1.000   1.000
-    #
-    # So the whole transition sits in roughly [-1.0, 0.0] and everything above ~0 is a FLAT
-    # ZERO. Two consequences, both confirmed:
-    #
-    #   * the Jacobian at the incumbent (kappa_0 = 0.0587, share 0) has rank 11/14 at a 2%
-    #     step and 12/14 at 5% -- the model is LOCALLY UNIDENTIFIED there, because none of
-    #     the six completion moments moves. At an interior-college point it is rank 14/14 at
-    #     every step size tested. `tools/check_jacobian_rank.jl` reproduces both.
-    #   * an 8-point Sobol smoke test walked kappa_0 UP to 1.87, further into the dead
-    #     region, and improved Q on the other moments while all six completion moments
-    #     stayed pinned at zero.
-    #
-    # About 71% of [-2, 5] was that dead region. APPLIED 2026-09-12: [-3, 1]. Both joint
-    # fits so far landed inside the transition (-0.357 in exp16b, -0.476 in v2's first
-    # run), and exp16b's 1,000 Sobol points found nothing that beat the seeded incumbent
-    # -- the box was spending its budget where every completion moment is identically
-    # zero. [-3, 1] covers the transition with margin on both sides. A numerical (box)
-    # change, not a specification one.
+    # ---- the five child parameters ----
+    # kappa_0 -- the level of the psychic cost at mean ability (ln k = m_psychic). The college
+    # margin is close to a STEP in kappa_0 and everything above ~0 was a flat zero under
+    # exp16b, so the box covers the transition with margin: [-3, 1] (unchanged).
     SMMParam(:kappa_0, -3.0, 1.0, :level, :child),
-
-    # kappa_theta -- the ABILITY GRADIENT. NEGATIVE: ability lowers the cost.
-    #
-    # THE BOX IS ~300x THE INCUMBENT, AND DELIBERATELY SO. The incumbent -0.0342 comes
-    # from Colas Table 2's RATIO kappa_ParEd/kappa_theta = 0.205, with the levels set to
-    # reproduce the old kappa/(HC+1)^4 cost -- it was never fitted to a gradient. What the
-    # tertile moments demand is far larger, and the arithmetic is worth keeping:
-    #
-    #   the T1->T3 gap in completion is 0.629 - 0.113 = 0.516;
-    #   the T1->T3 gap in log ability is about 0.076 (g_ACH ~508 against ~548);
-    #   the psychic cost is paid for t_college = 4 years, an annuity of ~3.77 at beta=0.97;
-    #   the taste shock has sigma_eps = 0.5, which sets the scale a value difference has
-    #   to reach before it moves an enrolment decision.
-    #
-    # So |kappa_theta| * 0.076 * 3.77 has to be of order 1, i.e. |kappa_theta| ~ 3-4. At
-    # the incumbent -0.0342 the psychic cost differs by 0.0026 across the whole ability
-    # range and the model cannot produce an ability gradient in completion AT ALL. A box of
-    # [-0.2, 0] would have looked generous and been hopeless.
-    SMMParam(:kappa_theta, -10.0, 0.0, :level, :child),
-
-    # kappa_ParEd -- the PARENTAL-EDUCATION shift. NEGATIVE, per Colas.
-    #
-    # Same scale argument: the targeted gap is 0.601 - 0.211 = 0.390 over the same 4-year
-    # annuity, so |kappa_ParEd| of order 0.3-1.0 is what is being asked for, against an
-    # incumbent of -0.0070. NOTE what this parameter is actually estimating here: the data
-    # groups are EITHER-parent college and the model's state is BothCollege, so it absorbs
-    # a definitional mismatch as well as an effect. Open by instruction -- docs/ERRORS.md
-    # P7c has the measured size of the mismatch.
-    #
-    # MEASURED: THIS PARAMETER SATURATES, and the box is much wider than the region that
-    # carries information. At grid 20 / simN 500 with kappa_0 = -0.5:
-    #
-    #     kappa_ParEd  -0.007   -0.30   -1.00   -2.00
-    #     g1 - g0      +0.294   +0.480  +0.480  +0.480
-    #
-    # g1 reaches 1.000 at -0.30 and cannot rise further, so Q is FLAT in kappa_ParEd below
-    # about -0.3 and the optimizer will slide to whatever wall it is given -- the same
-    # signature already documented for sigma_2_1. It is also the weakest column of the
-    # Jacobian at every step size tested (44.6-51.9 against 120+ for the next weakest), and
-    # it is half of the least-identified direction, trading off against kappa_theta.
-    #
-    # BOX [-1.0, 0.5] (2026-09-12). exp16b landed at -0.108, 3.6% from the wall at 0 --
-    # the parental-education gap in completion is mostly produced by the BothCollege
-    # wage premium -> wealth -> transfer channel, and the psychic-cost shift the data
-    # asks for is small. The floor follows the earlier recommendation (the saturation
-    # region below -0.3 is unreachable from here); the top now admits a small POSITIVE
-    # value so the estimate can come to rest interior instead of on a sign restriction.
-    # If it settles at ~0, FIX it at 0 and drop a parameter rather than widen further.
-    # Under the either-parent targets it still absorbs the P7c definitional mismatch.
+    # kappa_theta -- the ability gradient, per unit of ln k. NEW UNITS: ln k has SD 0.65 at 17
+    # against 0.033 for the old log g_ACH, so the old box [-10, 0] is a 20x wider economic
+    # range. [-3, 0] admits up to -2 per SD of skill; the start (-0.18) is the exp16b value
+    # converted per SD.
+    SMMParam(:kappa_theta, -3.0, 0.0, :level, :child),
+    # kappa_ParEd -- the BothCollege shift. The data split is now BothCollege itself (memo 19
+    # decision 2), so the either-parent mismatch it used to absorb is gone. Box unchanged.
     SMMParam(:kappa_ParEd, -1.0, 0.5, :level, :child),
-
-    # kappa_terminal -- the parent's taste for the assets it RETAINS after the transfer.
-    #
-    # Box and link from the previous fourteen-parameter specification
-    # (archive/smm_14param_legacy.jl: `Par("kappa_terminal", 0.5, 40.0, 5.00, :log)`),
-    # which is the one piece of this design that has been searched before. Log link: it is
-    # a strictly positive weight, and a step that made it negative would inverte the sign
-    # of log(a_terminal) in the transfer objective.
+    # kappa_terminal -- the parent's taste for retained assets; strictly positive weight.
     SMMParam(:kappa_terminal, 0.5, 40.0, :log, :child),
-
-    # ---------------------------------------------------------------------------
-    # THE TWO 2026-09-11 PARAMETERS (docs/ERRORS.md P13, docs/SMM.md appendix)
-    # ---------------------------------------------------------------------------
-    # sigma_eta -- SD of the i.i.d. log shock in the HC technology, a PARENT parameter
-    # (it lives in the family-stage transition). LEVEL link and a box that INCLUDES ZERO:
-    # the deterministic technology is a legitimate point of the search, and a log link
-    # would have put it at -Inf. Top 0.08: the data's SD of log g_ACH at 17 is 0.033 and
-    # the AR(1) arithmetic (sigma_3 = 0.41) reaches it at about 0.03; 0.08 is the SD the
-    # CDS panel shows at age 3, before any of the mean reversion. Identified by sd_ga17.
-    # Fitted at 0.0315 in exp16b, now the block default (PARENT_DEFAULTS).
-    SMMParam(:sigma_eta, 0.0, 0.08, :level, :parent),
-
-    # sigma_eps -- SD of the college taste shock. NOT ESTIMATED since 2026-09-27 (Ali): it was
-    # identified by kse_w_gap, which is dropped as a wrong moment (see SMM_TAS_MOMENTS), so it
-    # is FIXED at CHILD_DEFAULTS.sigma_eps = 2.0 (the value apps/Structural-estimation-v2
-    # fixes). It stays in CHILD_ESTIMATED below, which is what puts the fixed value into the
-    # child's cache key. The old entry, to restore it with the moment:
-    #     SMMParam(:sigma_eps, 0.1, 2.0, :log, :child),
+    # sigma_eps -- SD of the college taste shock, identified by m_eps; strictly positive.
+    SMMParam(:sigma_eps, 0.1, 2.0, :log, :child),
 ]
 
-# FIFTEEN parameters since 2026-09-27: eleven parent, four child (sigma_eps fixed). Asserted,
-# because a stray entry in either default set would be routed silently.
+# FIFTEEN parent + FIVE child. Asserted, because a stray entry in either default set would be
+# routed silently.
 let np = count(q -> q.owner === :parent, SMM_PARAMS), nc = count(q -> q.owner === :child, SMM_PARAMS)
-    (np, nc) == (11, 4) || error("SMM_PARAMS has $np parent + $nc child parameters; the " *
-                                 "2026-09-27 specification is 11 + 4 = 15 (sigma_eps fixed)")
+    (np, nc) == (15, 5) || error("SMM_PARAMS has $np parent + $nc child parameters; the " *
+                                 "memo-18 set is 15 + 5 = 20")
 end
-# R_1, the age slope of the HC productivity term, is FIXED AT ZERO and never estimated.
-any(q -> q.name === :R_1, SMM_PARAMS) && error("R_1 must not be estimated; it is fixed at 0")
-PARENT_DEFAULTS.R_1 == 0.0 || error("PARENT_DEFAULTS.R_1 = $(PARENT_DEFAULTS.R_1); the experiment fixes it at 0")
+# The HC shock is zero by memo 18 and must not be estimated.
+any(q -> q.name === :sigma_eta, SMM_PARAMS) && error("sigma_eta must not be estimated; memo 18 sets it to 0")
+PARENT_DEFAULTS.sigma_eta == 0.0 || error("PARENT_DEFAULTS.sigma_eta = $(PARENT_DEFAULTS.sigma_eta); memo 18 sets it to 0")
 
 # A moment-count check is necessary but does not establish local identification.
 length(SMM_MOMENTS) >= length(SMM_PARAMS) || error("""
     SMM is UNDER-identified: $(length(SMM_PARAMS)) parameters against \
-    $(length(SMM_MOMENTS)) moments. Add moments or drop parameters -- the search would
-    otherwise wander along a flat direction and return whichever point it started at.""")
+    $(length(SMM_MOMENTS)) moments.""")
 
 # =============================================================================
 # PARAMETER ROUTING -- what replaced the parent-only invariant
@@ -1392,10 +1179,12 @@ function evaluate_at(vals::AbstractDict{Symbol,<:Real}, targets;
                      parent_extra::NamedTuple = (;),
                      child_extra::NamedTuple = (;),
                      weights::Union{Nothing,Vector{Float64}} = nothing,
-                     demo_sim::Bool = false)
+                     demo_sim::Bool = false,
+                     child_wage::NamedTuple = child_wage_config())
     r = run_pipeline(named_point(vals), targets; Na = Na, Nk = Nk, Nhc = Nhc,
                      simN = simN, seed = seed, child_grid = child_grid,
-                     parent_extra = parent_extra, child_extra = child_extra, demo_sim = demo_sim)
+                     parent_extra = parent_extra, child_extra = child_extra, demo_sim = demo_sim,
+                     child_wage = child_wage)
     m = model_moments(r, targets)
     v = simulation_violations(r.parent)
     return (r = residuals_from(m, targets; weights = weights),
@@ -1461,7 +1250,45 @@ incumbent() = [to_search(smm_start(q.name), q) for q in SMM_PARAMS]
 # object to simulate.
 
 """
-    child_config(targets; Na, Nk, Nt, simN, seed) -> NamedTuple
+    child_wage_config(; sd_log_afqt = CHILD_DEFAULTS.sd_log_afqt) -> NamedTuple
+
+The child's wage loading on skill, anchored per SD to Daruich & Fernandez Table B4
+(`anchored_alpha`, decision 2026-10-01), with m_theta = m_psychic (both the latent mean ln k
+at 17). REFUSES while sd(log AFQT) is NaN -- it is NOT PROVIDED yet -- so no estimation can
+run on a wage loading nobody chose. Tests that need a running model pass an explicit
+`child_wage` NamedTuple instead, labelled as a placeholder.
+
+lnw0 is the constructor's normalisation for now. Once alpha_theta is fixed it is re-set to
+keep the mean child wage at BASELINE_MEAN_CHILD_WAGE (`lnw0_for_mean_wage`), and the value
+belongs here.
+"""
+function child_wage_config(; sd_log_afqt::Real = CHILD_DEFAULTS.sd_log_afqt)
+    isfinite(sd_log_afqt) && sd_log_afqt > 0 || error("""
+        child_wage_config: sd(log AFQT raw score) is NOT PROVIDED (CHILD_DEFAULTS.sd_log_afqt =
+        $(sd_log_afqt)). alpha_theta = 0.654 * sd(log AFQT) / $(SD_LNK17) cannot be set without it.
+        Supply it in CHILD_DEFAULTS, or pass `child_wage = (alpha_theta = ..., alpha_thetaE = ...,
+        m_theta = ..., lnw0 = ...)` explicitly for a test.""")
+    a, aE = anchored_alpha(sd_log_afqt)
+    return (alpha_theta = a, alpha_thetaE = aE, m_theta = CHILD_DEFAULTS.m_psychic,
+            lnw0 = log(CHILD_DEFAULTS.w) - 0.4144)
+end
+
+"""
+    check_half_period_weight(mu_half)
+
+The target file's mu_half (the CHILD's weight at 18) must be the one CHILD_DEFAULTS was set
+from: the child module's `mu` is the PARENT's weight, 1 - mu_half. Same role as
+check_psychic_centring -- a different file would silently make a different model.
+"""
+function check_half_period_weight(mu_half::Float64)
+    isapprox(1 - mu_half, CHILD_DEFAULTS.mu; atol = 1e-9) || error("""
+        the target file's mu_half = $mu_half implies a parent weight of $(1 - mu_half) at the
+        half period, but CHILD_DEFAULTS.mu = $(CHILD_DEFAULTS.mu). Update one or the other.""")
+    return nothing
+end
+
+"""
+    child_config(targets; Na, Nk, Nt, simN, seed, child_wage) -> NamedTuple
 
 The child's complete NON-ESTIMATED configuration, and therefore the cache key.
 
@@ -1469,21 +1296,27 @@ Everything the reusable stages depend on is in here and every estimated child pa
 out of it. If a value belongs in the key and is missing, two different models share a cache
 entry and the second silently inherits the first's solution; if an estimated parameter
 leaks IN, the cache never hits and the run is merely slow. The first failure is silent, so
-the key is written out in full rather than derived.
+the key is written out in full rather than derived. The wage loading (`child_wage`) and the
+half-period weight `mu` are in it since 2026-10-02: both change the solved child.
 """
-child_config(targets; Na::Int, Nk::Int, Nt::Int, simN::Int, seed::Int) =
+child_config(targets; Na::Int, Nk::Int, Nt::Int, simN::Int, seed::Int,
+             child_wage::NamedTuple) =
     (Na = Na, Nk = Nk, Nt = Nt, simN = simN, seed = seed,
      rho          = CHILD_DEFAULTS.rho,
      psi_terminal = CHILD_DEFAULTS.psi_terminal,
      omega        = CHILD_DEFAULTS.omega,
-     # 2026-09-27: mu and y in CHILD_DEFAULTS (0.8, 0.144); before, the constructor's own
-     # defaults (0.5, 0.6) were used because child_config did not pass them.
-     mu           = CHILD_DEFAULTS.mu,
+     # 2026-09-27 (kept in the memo-19 merge, Ali 2026-10-02): the child's government transfer and the net
+     # tuition come from CHILD_DEFAULTS (0.144, 0.6); without these two lines the constructor's 0.6 and 1.2 apply.
      y            = CHILD_DEFAULTS.y,
-     college_cost = CHILD_DEFAULTS.college_cost,   # 2026-09-27: 0.6 net tuition (was the 1.2 default)
+     college_cost = CHILD_DEFAULTS.college_cost,
      a_max        = CHILD_DEFAULTS.a_max,
      w            = CHILD_DEFAULTS.w,
-     m_psychic    = target_m_psychic(targets))
+     m_psychic    = target_m_psychic(targets),
+     mu           = 1 - target_mu_half(targets),
+     alpha_theta  = Float64(child_wage.alpha_theta),
+     alpha_thetaE = Float64(child_wage.alpha_thetaE),
+     m_theta      = Float64(child_wage.m_theta),
+     lnw0         = Float64(child_wage.lnw0))
 
 """
     child_solve_key(cfg) -> NamedTuple
@@ -1571,16 +1404,16 @@ reads `sol_tr_v_college` and `sol_tr_v_work` -- not from any simulation.
 # which only the study years (stage 2) and the transfer stage read -- the cached work and
 # graduate blocks are eps-free (their arrays carry no Nt dimension), verified by
 # tools/test_smm_tas.jl "cache parity" at a non-default sigma_eps.
-# 2026-09-27: sigma_eps is no longer SEARCHED (it left SMM_PARAMS) but stays in this tuple, so
-# every evaluation completes it from CHILD_DEFAULTS (2.0) and it remains part of the cache key.
 const CHILD_ESTIMATED = (:kappa_0, :kappa_theta, :kappa_ParEd, :kappa_terminal, :sigma_eps)
 const CHILD_ESTIMATED_DEFAULTS =
     NamedTuple{CHILD_ESTIMATED}(map(n -> getfield(CHILD_DEFAULTS, n), CHILD_ESTIMATED))
 
 function build_child_solution(ckw::NamedTuple, targets;
                               Na::Int, Nk::Int, Nt::Int, simN::Int, seed::Int,
+                              child_wage::NamedTuple = child_wage_config(),
                               child_extra::NamedTuple = (;))
-    cfg = child_config(targets; Na = Na, Nk = Nk, Nt = Nt, simN = simN, seed = seed)
+    cfg = child_config(targets; Na = Na, Nk = Nk, Nt = Nt, simN = simN, seed = seed,
+                       child_wage = child_wage)
     # `child_extra` carries NON-ESTIMATED child constructor settings a diagnostic or a re-optimization needs to
     # vary (e.g. a fixed omega; ported from apps/Structural-estimation-v2 on 2026-10-02 with the TikTak tools). It is
     # merged into `cfg`, so it is part of BOTH cache keys; an estimated name here is an error. The default (;)
@@ -1680,14 +1513,16 @@ function run_pipeline(kw::NamedTuple, targets;
                       child_grid = (Na = 30, Nk = 30, Nt = 5),
                       parent_extra::NamedTuple = (;),
                       child_extra::NamedTuple = (;),
-                      demo_sim::Bool = true)
+                      demo_sim::Bool = true,
+                      child_wage::NamedTuple = child_wage_config())
     pk, ck = split_params(kw)
+    check_half_period_weight(target_mu_half(targets))
 
     # ---- 1. child lifecycle and transfer problems ---------------------------
     child, V_child = build_child_solution(ck, targets;
                                           Na = child_grid.Na, Nk = child_grid.Nk,
                                           Nt = child_grid.Nt, simN = simN, seed = seed,
-                                          child_extra = child_extra)
+                                          child_wage = child_wage, child_extra = child_extra)
 
     # ---- 2. initial (demonstration) child simulation ------------------------
     if demo_sim
@@ -1716,9 +1551,15 @@ function run_pipeline(kw::NamedTuple, targets;
         parent_extra would override estimated parameter(s): $(join(clash, ", ")).
         An estimated parameter must come from the search vector, never from a caller's
         side channel.""")
+    # The calibrated constants come from the TARGET FILE, not from the compiled defaults:
+    # the age-1 skill draw (memo 18 section 7) and the child's weight at ages 6..17.
+    ini = target_init(targets)
     parent = Parent_child_interaction_age_specific_AR1(; Na = Na, Nk = Nk, Nhc = Nhc,
                                                          simN = simN, seed = seed,
                                                          school_time = target_school_time(targets),
+                                                         init_m0 = ini.m0, init_mBC = ini.mBC,
+                                                         init_s0 = ini.s0,
+                                                         mu_child_by_age = target_mu_by_age(targets),
                                                          pk..., parent_extra...)   # no `w` -- see smm_objective
     parent.V_child_interp = V_child
     redirect_stdout(devnull) do
@@ -1754,8 +1595,8 @@ function run_pipeline(kw::NamedTuple, targets;
     return (parent = parent, child = child, V_child = V_child,
             path_choice = path_choice,
             transfers = copy(child.sim_tr_init),
-            # Parental assets RETAINED after the transfer: the model's kappa_terminal
-            # object, and what kterm_x_strict_w99 is matched against.
+            # Parental assets RETAINED after the transfer, a_term = a - tr at the half
+            # period: the model's kappa_terminal object, whose MEDIAN is kterm_med22.
             retained = child.sim_a_init .- child.sim_tr_init,
             parent_kw = pk, child_kw = ck)
 end
@@ -1764,21 +1605,14 @@ end
 # Objective
 # -----------------------------------------------------------------------------
 """
-    smm_objective(z, targets, V_child; grids...) -> Float64
+    smm_objective(z, targets; grids..., child_wage) -> Float64
 
-Weighted relative distance between simulated and data means:
+The SMM criterion, diagonal inverse-variance weighted (see `moment_weights`):
 
-    Q = sum_j ((m_j - mhat_j) / s_j)^2,     s_j = moment_scale(j, mhat_j)
+    Q = sum_j w_j (m_j - mhat_j)^2,     w_j = 1 / se_j^2,   j over the 67 SMM_MOMENTS
 
-`s_j` is the target for a LEVEL moment and 1 for a LOG moment, so every residual is a
-proportional error in the underlying quantity -- see moment_scale. Without the level
-scaling, consumption (~3) would dominate leisure (~0.5) purely because of its size;
-without the log exception, the two HC moments were shrunk 6.1x by the arbitrary level
-of a log W-score.
-
-Weights are otherwise EQUAL. Ten moments and ten parameters do not guarantee
-an exact fit; if residuals remain, their relative weights still affect the answer.
-A covariance-based weighting matrix is not implemented.
+A draw outside the admissible region (`smm_feasible`), an invalid simulation, a non-finite
+moment or an expected model failure scores SMM_PENALTY; a programming error is re-thrown.
 
 Common random numbers: every model is built with the same `seed`, so the initial
 draws and shock paths are identical across evaluations. Without this the
@@ -1791,6 +1625,7 @@ function smm_objective(z::AbstractVector{Float64}, targets;
                        child_grid = (Na = 30, Nk = 30, Nt = 5),
                        weights::Union{Nothing,Vector{Float64}} = nothing,
                        demo_sim::Bool = true,
+                       child_wage::NamedTuple = child_wage_config(),
                        # HOOKS (ported from apps/Structural-estimation-v2 on 2026-10-02, with the TikTak re-optimization
                        # tool). Non-estimated constructor settings passed through to `run_pipeline` (a fixed `omega`;
                        # grid / numerical overrides of a run), and extra targeted rows `(name, target, weight)` appended
@@ -1801,18 +1636,15 @@ function smm_objective(z::AbstractVector{Float64}, targets;
     w  = weights === nothing ? moment_weights(targets) : weights
 
     # ---- reject the infeasible region BEFORE paying for a solve --------------
-    # (named by the restriction that fails: the parental-TIME share sigma_1 or the MONEY
-    # share sigma_2 in the HC technology reaching 1 at some age -- ported 2026-09-27 from v2;
-    # v1 labelled both :infeasible_sigma_2)
     if !smm_feasible(kw)
-        _penalize!(Symbol("infeasible_", smm_infeasible_which(kw)))
+        _penalize!(:infeasible_elasticity)
         return SMM_PENALTY
     end
 
     try
         r = run_pipeline(kw, targets; Na = Na, Nk = Nk, Nhc = Nhc, simN = simN,
                          seed = seed, child_grid = child_grid, demo_sim = demo_sim,
-                         child_extra = child_extra, parent_extra = parent_extra)
+                         child_wage = child_wage, child_extra = child_extra, parent_extra = parent_extra)
         m = model_moments(r, targets)
 
         # A simulation that leaves the model's domain is not a bad parameter draw, it is
@@ -1884,15 +1716,17 @@ smm_objective(::AbstractVector{Float64}, targets, V_child; kwargs...) = error(""
 # Reporting
 # -----------------------------------------------------------------------------
 """
-    report_fit(z, targets, V_child; kwargs...)
+    report_fit(z, targets; grids..., child_wage, out = stdout)
 
-Re-solve at `z` and print the moment table plus the untargeted diagnostics.
+Re-solve at `z` and print every targeted moment against the data, the Q shares, and the
+untargeted checks that decide whether a fit is believable.
 """
 function report_fit(z::AbstractVector{Float64}, targets;
                     Na::Int = 30, Nk::Int = 2, Nhc::Int = 30,
                     simN::Int = 2000, seed::Int = 1234,
                     child_grid = (Na = 30, Nk = 30, Nt = 5),
                     weights::Union{Nothing,Vector{Float64}} = nothing,
+                    child_wage::NamedTuple = child_wage_config(),
                     out::IO = stdout,
                     # grid / numerical overrides of the run (run_smm.jl --parent-extra/--child-extra; ported from
                     # apps/Structural-estimation-v2 on 2026-10-02); the defaults leave the report exactly as before
@@ -1900,208 +1734,91 @@ function report_fit(z::AbstractVector{Float64}, targets;
     kw = unpack(z)
     w  = weights === nothing ? moment_weights(targets) : weights
     r  = run_pipeline(kw, targets; Na = Na, Nk = Nk, Nhc = Nhc, simN = simN,
-                      seed = seed, child_grid = child_grid, child_extra = child_extra, parent_extra = parent_extra)
+                      seed = seed, child_grid = child_grid, child_wage = child_wage,
+                      child_extra = child_extra, parent_extra = parent_extra)
     p  = r.parent
     m  = model_moments(r, targets)
     d  = moment_diagnostics(p)
+    se = target_se(targets)
 
     println(out, "\nParameters")
     println(out, "-"^62)
-    for (i, q) in enumerate(SMM_PARAMS)
-        @printf(out, "  %-12s %10.4f   (was %.4f)\n", q.name, getfield(kw, q.name),
-                smm_start(q.name))
+    for q in SMM_PARAMS
+        @printf(out, "  %-14s %10.4f   (start %.4f)\n", q.name, getfield(kw, q.name), smm_start(q.name))
     end
 
-    se = target_se(targets)
-
-    @printf(out, "\nTargeted moments -- %d moments, %d parameters (%s)\n",
-            length(SMM_MOMENTS), length(SMM_PARAMS),
-            length(SMM_MOMENTS) > length(SMM_PARAMS) ? "over-identified" : "just identified")
-    println(out, "-"^104)
-    @printf(out, "  %-20s %11s %11s %9s %9s %8s   %s\n",
-            "moment", "model", "data", "gap %", "t", "Q share", "source")
-    q_tot = 0.0
-    qk = Float64[]
-    for (jj, k) in enumerate(SMM_MOMENTS)
-        mj, mhat = getfield(m, Symbol(k)), targets[k].mean
-        qj = w[jj] * (mj - mhat)^2
-        push!(qk, qj); q_tot += qj
-    end
-    for (jj, k) in enumerate(SMM_MOMENTS)
-        mj, mhat = getfield(m, Symbol(k)), targets[k].mean
-        # For a log moment the "gap %" is the LEVEL gap, exp(dlog) - 1, not the gap in the
-        # log -- reporting the latter is what made a 60% error in human capital look like
-        # a 7.7% miss.
-        gap = k in SMM_LOG_MOMENTS ? 100*(exp(mj - mhat) - 1) : 100*(mj - mhat)/abs(mhat)
-        # t is the miss in STANDARD ERRORS of the data moment, which is the scale the
-        # weighting actually uses. A |t| of 100 is not a near miss expressed in small
-        # units; it is a moment the model cannot reach.
-        tstat = (mj - mhat) / se[jj]
-        if jj == length(SMM_PARENT_MOMENTS) + 1
-            println(out, "  " * "-"^40 * " TAS block " * "-"^40)
+    @printf(out, "\nTargeted moments -- %d moments, %d parameters\n", length(SMM_MOMENTS), length(SMM_PARAMS))
+    println(out, "-"^100)
+    @printf(out, "  %-28s %11s %11s %9s %8s   %s\n", "moment", "model", "data", "t", "Q share", "measure")
+    qk = [w[j] * (getfield(m, Symbol(k)) - targets[k].mean)^2 for (j, k) in enumerate(SMM_MOMENTS)]
+    q_tot = sum(qk)
+    block = ""
+    for (j, k) in enumerate(SMM_MOMENTS)
+        if targets[k].block != block
+            block = targets[k].block
+            println(out, "  " * "-"^30 * " block " * block * " " * "-"^30)
         end
-        @printf(out, "  %-20s %11.4f %11.4f %8.1f%% %9.1f %7.1f%%   %s\n",
-                k, mj, mhat, gap, tstat, 100*qk[jj]/max(q_tot, eps()), targets[k].source)
+        mj, mhat = getfield(m, Symbol(k)), targets[k].mean
+        # t is the miss in STANDARD ERRORS of the data moment -- the scale the weighting uses.
+        @printf(out, "  %-28s %11.4f %11.4f %9.1f %7.1f%%   %s\n", k, mj, mhat, (mj - mhat) / se[j],
+                100 * qk[j] / max(q_tot, eps()), first(targets[k].source, 46))
     end
-    @printf(out, "  %-20s %11s %11s %30.4f\n", "Q", "", "", q_tot)
-
-    # WEIGHT CONCENTRATION. Inverse-variance weighting is efficient only if the model can
-    # fit the moments to within sampling error. Where it cannot, Q is dominated by whichever
-    # moment happens to be most precisely measured, and a seventeen-moment estimation
-    # quietly becomes a one-moment one. This line is how that becomes visible instead of
-    # being discovered from an implausible estimate.
+    @printf(out, "  %-28s %11s %11s %18.4f\n", "Q", "", "", q_tot)
+    for b in ("P", "S", "T", "W")
+        @printf(out, "  Q share of block %s: %.1f%%\n", b,
+                100 * sum(qk[j] for (j, k) in enumerate(SMM_MOMENTS) if targets[k].block == b) / max(q_tot, eps()))
+    end
+    # WEIGHT CONCENTRATION: where the model cannot fit a precisely measured moment, that
+    # moment can claim most of Q, and a 67-moment estimation quietly becomes a few-moment one.
     ord = sortperm(qk; rev = true)
-    top = ord[1:min(3, length(ord))]
-    @printf(out, "\n  Q concentration: top 3 moments carry %.1f%% of Q  (%s)\n",
-            100*sum(qk[top])/max(q_tot, eps()),
-            join((@sprintf("%s %.0f%%", SMM_MOMENTS[t], 100*qk[t]/max(q_tot, eps())) for t in top), ", "))
-    if 100*qk[ord[1]]/max(q_tot, eps()) > 60
-        @printf(out, "  WARNING: %s alone carries %.0f%% of Q. The other 16 moments are\n",
-                SMM_MOMENTS[ord[1]], 100*qk[ord[1]]/max(q_tot, eps()))
-        println(out, "           barely influencing the estimate. Treat this as a scaling decision")
-        println(out, "           to be taken deliberately, NOT as a converged seventeen-moment fit.")
-    end
+    top = ord[1:min(5, length(ord))]
+    @printf(out, "\n  Q concentration: top 5 moments carry %.1f%% of Q  (%s)\n",
+            100 * sum(qk[top]) / max(q_tot, eps()),
+            join((@sprintf("%s %.0f%%", SMM_MOMENTS[t], 100 * qk[t] / max(q_tot, eps())) for t in top), ", "))
 
-    # ---- the TAS block in its own units ------------------------------------
-    println(out, "\nTAS block -- college completion and terminal wealth")
+    println(out, "\nUntargeted -- the college regression, the skill gradient, the handoff")
     println(out, "-"^76)
-    @printf(out, "  college completion    %8.4f  vs data %.4f   (%d of %d simulated children)\n",
-            m.k0_complete, targets["k0_complete"].mean, m.n_college, size(r.child.sim_college, 1))
-    @printf(out, "  ability gap (log HC)  %+.4f  vs data %+.4f   (completers %.4f / non %.4f; data %.4f / %.4f)\n",
-            m.kth_ga17_gap, targets["kth_ga17_gap"].mean, m.kth_ga17_mean_c, m.kth_ga17_mean_n,
-            targets["kth_ga17_mean_c"].mean, targets["kth_ga17_mean_n"].mean)
-    @printf(out, "  SD log HC at 17       %.4f  vs data %.4f   (sample SD; the sigma_eta moment)\n",
-            m.sd_ga17, targets["sd_ga17"].mean)
-    @printf(out, "  ability tertiles      T1 %.3f  T2 %.3f  T3 %.3f   (model, DIAGNOSTIC since 2026-09-11)\n",
-            m.kth_ga17_t1_c, m.kth_ga17_t2_c, m.kth_ga17_t3_c)
-    @printf(out, "                        T1 %.3f  T2 %.3f  T3 %.3f   (data)\n",
-            targets["kth_ga17_t1_c"].mean, targets["kth_ga17_t2_c"].mean, targets["kth_ga17_t3_c"].mean)
-    @printf(out, "  wealth gap (retained) %+.3f  vs data %+.3f   (10k USD, completers minus non; UNTARGETED since 2026-09-27: measured ~11 years after the transfer)\n",
-            m.kse_w_gap, targets["kse_w_gap"].mean)
-    @printf(out, "  wealth tertiles       T1 %.3f  T2 %.3f  T3 %.3f   (model, diagnostic)\n",
-            m.kse_w_t1_c, m.kse_w_t2_c, m.kse_w_t3_c)
-    @printf(out, "                        T1 %.3f  T2 %.3f  T3 %.3f   (data; completion on the wealth frame %.3f -- data-only)\n",
-            targets["kse_w_t1_c"].mean, targets["kse_w_t2_c"].mean, targets["kse_w_t3_c"].mean,
-            targets["k0_w_c"].mean)
-    print(out, "  SD log HC by age      model ")
-    for a in 3:SMM_TAS_ACH_AGE; @printf(out, "%d:%.3f ", a, m.sd_hc_by_age[a]); end
-    print(out, "\n                        data  ")
-    for a in 3:SMM_TAS_ACH_AGE
-        k = "sd_ga_age$a"
-        haskey(targets, k) ? @printf(out, "%d:%.3f ", a, targets[k].mean) : print(out, "$a:-- ")
+    _t(k) = haskey(targets, k) ? targets[k].mean : NaN
+    @printf(out, "  LW at 17: college %.2f / not %.2f   (data %.2f / %.2f)   [analytic LW17, FLAGGED]\n",
+            m.kth_lw17_mean_c, m.kth_lw17_mean_n, _t("kth_lw17_mean_c"), _t("kth_lw17_mean_n"))
+    @printf(out, "  m_eps regression: b_BC %.3f  b_LW %.4f  R2 %.3f   (data %.3f / %.4f / %.3f)\n",
+            m.lpm_b_bc, m.lpm_b_lw, m.lpm_r2, _t("lpm_b_bc"), _t("lpm_b_lw"), _t("lpm_r2"))
+    for k in keys(SMM_BC_LW_BINS)
+        @printf(out, "  %-18s model %.3f  data %.3f\n", k, getfield(m, k), _t(String(k)))
     end
-    println(out, "  (CDS panel, data-only diagnostic)")
-    @printf(out, "  parental education    g0 %.3f  g1 %.3f   (model; %d of %d are BothCollege)\n",
-            m.kpe_g0_c, m.kpe_g1_c, m.n_bothcollege, size(r.child.sim_college, 1))
-    @printf(out, "                        g0 %.3f  g1 %.3f   (data -- EITHER-parent, see ERRORS.md P7c)\n",
-            targets["kpe_g0_c"].mean, targets["kpe_g1_c"].mean)
-    @printf(out, "  mean transfer         %8.4f  (%.0f USD)\n",
-            m.mean_transfer, m.mean_transfer*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  retained assets       %8.4f  (%.0f USD)  vs data %.0f USD\n",
-            m.kterm_x_strict_w99, m.kterm_x_strict_w99*DOLLARS_PER_MODEL_UNIT,
-            targets["kterm_x_strict_w99"].mean*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  pre-transfer assets   %8.4f  (%.0f USD)  -- NOT the target; the target is post-transfer\n",
-            d.terminal_assets, d.terminal_assets*DOLLARS_PER_MODEL_UNIT)
-    if m.n_winsorised > 0
-        @printf(out, "  NOTE %d simulated households exceed the data's p99 winsorisation cut\n", m.n_winsorised)
-    end
-    if m.retained_negative > 0
-        @printf(out, "  NOTE %d simulated households retain NEGATIVE assets (delta_P should prevent this)\n",
-                m.retained_negative)
-    end
-    println(out, "  LIMITATION: the data is measured at a median child age of ~29, a median 4 years")
-    println(out, "  after independence; the model's object is assets at the transfer, child age 18.")
+    @printf(out, "  college %d of %d simulated children; %d BothCollege\n",
+            m.n_college, size(r.child.sim_college, 1), m.n_bothcollege)
+    @printf(out, "  mean transfer %.4f (%.0f USD); median retained %.4f (%.0f USD) vs data %.0f USD\n",
+            m.mean_transfer, m.mean_transfer * DOLLARS_PER_MODEL_UNIT,
+            m.kterm_med22, m.kterm_med22 * DOLLARS_PER_MODEL_UNIT,
+            targets["kterm_med22"].mean * DOLLARS_PER_MODEL_UNIT)
+    println(out, "  LIMITATION: the data are at first-child ages 21-22; the model's a_term is at 18.")
+    m.retained_negative > 0 && @printf(out, "  NOTE %d households retain NEGATIVE assets\n", m.retained_negative)
+    print(out, "  mean ln k by age   ")
+    for a in 1:SMM_AGE_HI; @printf(out, "%d:%.2f ", a, m.mean_lnk_by_age[a]); end
+    print(out, "\n  sd ln k by age     ")
+    for a in 1:SMM_AGE_HI; @printf(out, "%d:%.2f ", a, m.sd_lnk_by_age[a]); end
+    @printf(out, "\n  (data: latent mean ln k at 17 = %.3f, SD %.3f)\n", target_m_psychic(targets),
+            targets["_spec"].sd_lnk17)
 
-    # Same numbers in the units the data was collected in, because "0.53" is
-    # hard to sanity-check and "59 hours a week" is not.
-    @printf(out, "\n  c_p        %8.0f USD/yr  vs data %.0f\n",
-            m.mean_c_p*DOLLARS_PER_MODEL_UNIT, targets["mean_c_p"].mean*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  h_p        %8.1f hrs/wk  vs data %.1f\n",
-            m.mean_h_p*HOURS_PER_WEEK, targets["mean_h_p"].mean*HOURS_PER_WEEK)
-    @printf(out, "  t_p  1-%-2d  %8.1f hrs/wk  vs data %.1f\n", SMM_AGE_SPLIT,
-            m.mean_t_p_early*HOURS_PER_WEEK, targets["mean_t_p_early"].mean*HOURS_PER_WEEK)
-    @printf(out, "  t_p %2d-%-2d  %8.1f hrs/wk  vs data %.1f\n", SMM_AGE_SPLIT+1, SMM_AGE_HI,
-            m.mean_t_p_late*HOURS_PER_WEEK, targets["mean_t_p_late"].mean*HOURS_PER_WEEK)
-    @printf(out, "  e_p  1-%-2d  %8.0f USD/yr  vs data %.0f\n", SMM_AGE_SPLIT,
-            m.mean_e_p_early*DOLLARS_PER_MODEL_UNIT, targets["mean_e_p_early"].mean*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  e_p %2d-%-2d  %8.0f USD/yr  vs data %.0f\n", SMM_AGE_SPLIT+1, SMM_AGE_HI,
-            m.mean_e_p_late*DOLLARS_PER_MODEL_UNIT, targets["mean_e_p_late"].mean*DOLLARS_PER_MODEL_UNIT)
-    # The two age slopes the split moments exist to identify.
-    @printf(out, "\n  t_p late/early  model %.2fx  vs data %.2fx\n",
-            m.mean_t_p_late/m.mean_t_p_early,
-            targets["mean_t_p_late"].mean/targets["mean_t_p_early"].mean)
-    @printf(out, "  e_p late/early  model %.2fx  vs data %.2fx\n",
-            m.mean_e_p_late/m.mean_e_p_early,
-            targets["mean_e_p_late"].mean/targets["mean_e_p_early"].mean)
-    # l_p is not targeted, but l = 1 - h - t identically, so the h_p and t_p
-    # targets IMPLY a leisure level. Compare against THAT, not against measured
-    # leisure: t_p is matched on par_time_act (since 2026-09-27; par_time_tot before),
-    # a child-side union that still overlaps a single parent's leisure and work by
-    # ~5 hrs/wk (it was ~21 with par_time_tot), so the implied figure sits below the 59.2
-    # the data measures. That gap is a property of the target choice, not a failure of
-    # the fit -- see the header of tools/make_smm_targets.py.
-    n_e, n_l = SMM_AGE_SPLIT - SMM_AGE_LO + 1, SMM_AGE_HI - SMM_AGE_SPLIT
-    t_implied = (n_e*targets["mean_t_p_early"].mean + n_l*targets["mean_t_p_late"].mean) / (n_e + n_l)
-    l_implied = 1 - targets["mean_h_p"].mean - t_implied
-    @printf(out, "  l_p (residual)  model %.1f hrs/wk  vs %.1f implied by the h_p/t_p targets\n",
-            m.mean_l_p*HOURS_PER_WEEK, l_implied*HOURS_PER_WEEK)
-    @printf(out, "                  (measured leisure is %.1f hrs/wk -- par_time_act overlaps it)\n",
-            0.5286*HOURS_PER_WEEK)
-
-    println(out, "\nUntargeted -- does the fit stay believable?")
-    println(out, "-"^62)
-    @printf(out, "  after-tax income      %8.4f  (%.0f USD/yr)\n", d.income, d.income*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  implied saving rate   %8.1f%%\n", 100*d.saving_rate)
-    @printf(out, "  terminal assets       %8.4f  (%.0f USD)\n", d.terminal_assets,
-            d.terminal_assets*DOLLARS_PER_MODEL_UNIT)
-    @printf(out, "  leisure l_p           %8.4f  (%.1f hrs/wk)\n",
-            1 - d.h_p - d.t_p, (1 - d.h_p - d.t_p)*HOURS_PER_WEEK)
+    @printf(out, "\n  c_p  %8.0f USD/yr  vs data %.0f\n", m.mean_c_p * DOLLARS_PER_MODEL_UNIT,
+            targets["mean_c_p"].mean * DOLLARS_PER_MODEL_UNIT)
+    @printf(out, "  h_p  %8.1f hrs/wk  vs data %.1f\n", m.mean_h_p * HOURS_PER_WEEK,
+            targets["mean_h_p"].mean * HOURS_PER_WEEK)
+    @printf(out, "  after-tax income %.4f (%.0f USD/yr); implied saving rate %.1f%%\n",
+            d.income, d.income * DOLLARS_PER_MODEL_UNIT, 100 * d.saving_rate)
     viol = simulation_violations(p)
-    v = viol
-    @printf(out, "  invalid sim cells     %8d\n", v.total)
-    if v.total > 0
-        for (k, n) in pairs(v)
+    @printf(out, "  invalid sim cells %d\n", viol.total)
+    if viol.total > 0
+        for (k, n) in pairs(viol)
             k === :total || n == 0 || @printf(out, "     %-22s %8d\n", k, n)
         end
     end
-    # Reported, NOT clamped. sim_a_init is LogNormal(0.296, 1.402) and its upper tail runs
-    # past a_max, so clamping the draw would distort the initial wealth distribution to
-    # flatter a grid. But it is NOT only the initial draw -- see moment_diagnostics.
     n_sim = d.n_sim
-    @printf(out, "  assets above a_max=%.0f  max %.1f  (households: %d ever (%.2f%%), %d at t=1, %d at handoff)\n",
-            d.a_grid_max, d.a_max_sim, round(Int, d.a_hh_ever_above*n_sim), 100*d.a_hh_ever_above,
-            round(Int, d.a_hh_above_t1*n_sim), round(Int, d.a_hh_above_handoff*n_sim))
-    if d.a_hh_ever_above > d.a_hh_above_t1 + 1e-12
-        @printf(out, "     %d households CROSS the ceiling during t = 1..%d -- not just the initial draw\n",
-                round(Int, (d.a_hh_ever_above - d.a_hh_above_t1)*n_sim), SMM_AGE_HI)
-    end
-    @printf(out, "  HC in [%.0f, %.0f]      range %.1f - %.1f  (households: %d ever above, %d ever below, %d above at handoff)\n",
-            d.hc_grid_min, d.hc_grid_max, d.hc_min_sim, d.hc_max_sim,
-            round(Int, d.hc_hh_ever_above*n_sim), round(Int, d.hc_hh_ever_below*n_sim),
-            round(Int, d.hc_hh_above_handoff*n_sim))
-
-    # PER-PERIOD, because a pooled share cannot distinguish "two households from the start"
-    # from "everyone in the last two periods", and those call for different fixes. Column
-    # T+1 is the handoff -- the one that becomes the child's initial state.
-    if any(>(0), d.a_over_by_period) || any(>(0), d.hc_over_by_period) ||
-       any(>(0), d.hc_under_by_period)
-        println(out, "\n  off-grid states by period (n = ", n_sim, " households)")
-        @printf(out, "    %-5s %8s %10s %8s %8s %10s\n",
-                "t", "a>a_max", "max a", "hc>hi", "hc<lo", "max hc")
-        for t in 1:length(d.a_over_by_period)
-            lbl = t == length(d.a_over_by_period) ? "T+1" : string(t)
-            (d.a_over_by_period[t] == 0 && d.hc_over_by_period[t] == 0 &&
-             d.hc_under_by_period[t] == 0 && lbl != "T+1") && continue
-            @printf(out, "    %-5s %8d %10.1f %8d %8d %10.1f\n", lbl,
-                    d.a_over_by_period[t], d.a_max_by_period[t],
-                    d.hc_over_by_period[t], d.hc_under_by_period[t], d.hc_max_by_period[t])
-        end
-        println(out, "    (rows with no off-grid state are omitted; T+1 is the age-18 handoff)")
-    else
-        println(out, "  every simulated state is inside both grids")
-    end
-    return (moments = m, diagnostics = d, params = kw, violations = viol,
-            pipeline = r)
+    @printf(out, "  assets above a_max=%.0f: %d households ever; skill outside [%.3g, %.3g]: %d ever above, %d ever below\n",
+            d.a_grid_max, round(Int, d.a_hh_ever_above * n_sim), d.hc_grid_min, d.hc_grid_max,
+            round(Int, d.hc_hh_ever_above * n_sim), round(Int, d.hc_hh_ever_below * n_sim))
+    return (moments = m, diagnostics = d, params = kw, violations = viol, pipeline = r)
 end
 
 report_fit(::AbstractVector{Float64}, targets, V_child; kwargs...) = error(

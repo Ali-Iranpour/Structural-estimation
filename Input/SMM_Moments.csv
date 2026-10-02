@@ -1,0 +1,100 @@
+order,moment,block,targeted,parameter,estimate,se,n_obs,n_clusters,units,model,measure
+1,mean_c_p,P,1,phi_2 - budget,4.118554601045674,.0506722981163406,6742,1509,10k 2015 USD per year,equal-age mean of simulated c_p over t 1-17,Consumption incl. housing minus money investment - p99 cap - equal-age mean 1-17
+2,mean_h_p,P,1,phi_2,.3072916011615293,.0022077245833633,15665,1628,share of 112-hour week,equal-age mean of simulated h_p over t 1-17,Work hours per parent / 112 - equal-age mean 1-17
+3,S1_mean_LW_age3,S,1,TFP d0-d3 and all technology levels,5.090909090909091,.4942426685921024,44,44,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 3
+4,S1_mean_LW_age4,S,1,TFP d0-d3 and all technology levels,6.760330578512397,.3330234775738281,121,115,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 4
+5,S1_mean_LW_age5,S,1,TFP d0-d3 and all technology levels,10.24827586206897,.4598516842836998,145,139,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 5
+6,S1_mean_LW_age6,S,1,TFP d0-d3 and all technology levels,17.29166666666667,.5777153826828162,168,160,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 6
+7,S1_mean_LW_age7,S,1,TFP d0-d3 and all technology levels,27.73509933774834,.7065481548684757,151,144,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 7
+8,S1_mean_LW_age8,S,1,TFP d0-d3 and all technology levels,34.10674157303371,.4982458093665207,178,169,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 8
+9,S1_mean_LW_age9,S,1,TFP d0-d3 and all technology levels,38.82432432432432,.521877015007097,148,134,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 9
+10,S1_mean_LW_age10,S,1,TFP d0-d3 and all technology levels,42.44827586206897,.3916782831277852,174,167,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 10
+11,S1_mean_LW_age11,S,1,TFP d0-d3 and all technology levels,44.57211538461539,.4113716016591859,208,190,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 11
+12,S1_mean_LW_age12,S,1,TFP d0-d3 and all technology levels,45.83419689119171,.3835383372719319,193,179,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 12
+13,S1_mean_LW_age13,S,1,TFP d0-d3 and all technology levels,47.00546448087432,.4067364600197235,183,168,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 13
+14,S1_mean_LW_age14,S,1,TFP d0-d3 and all technology levels,47.99333333333333,.3926140552322684,150,140,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 14
+15,S1_mean_LW_age15,S,1,TFP d0-d3 and all technology levels,49.35882352941177,.3572757595114743,170,152,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 15
+16,S1_mean_LW_age16,S,1,TFP d0-d3 and all technology levels,49.8944099378882,.4101543568559972,161,158,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 16
+17,S1_mean_LW_age17,S,1,TFP d0-d3 and all technology levels,49.95348837209303,.3908900635912079,172,163,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean raw LW at age 17
+18,S3_sd_LW_3_17,S,1,persistence a30 a31 and dispersion,15.47344831666944,.1879626833132251,2366,883,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of raw LW at ages 3-17
+19,S3_sd_LW_3_7,S,1,persistence a30 a31 and dispersion,10.41258719006589,.3126321994341527,629,476,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of raw LW at ages 3-7
+20,S3_sd_LW_8_11,S,1,persistence a30 a31 and dispersion,7.163330203950726,.2033598901124336,708,503,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of raw LW at ages 8-11
+21,S3_sd_LW_12_17,S,1,persistence a30 a31 and dispersion,5.192746808961196,.1971533084151794,1029,621,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of raw LW at ages 12-17
+22,S4_mean_dLW_base3_7,S,1,TFP and persistence,28.04691358024691,.4549505653558056,405,325,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean 5-year change in raw LW - base age 3-7
+23,S4_mean_dLW_base8_12,S,1,TFP and persistence,8.073873873873874,.2176210860170452,555,396,raw LW points (0-57),memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean 5-year change in raw LW - base age 8-12
+24,S5_corr_LW_LWt5_base3_12,S,1,persistence a30 a31 and dispersion,.6490033060004444,.017328953595714,960,531,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of LW now and 5 years later - base age 3-12
+25,S5_corr_LW_LWt5_base3_7,S,1,persistence a30 a31 and dispersion,.4733430431395999,.033158271905327,405,325,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of LW now and 5 years later - base age 3-7
+26,S5_corr_LW_LWt5_base8_12,S,1,persistence a30 a31 and dispersion,.7167620839025868,.0203623165710751,555,396,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of LW now and 5 years later - base age 8-12
+27,S6_corr_taup_LW_3_17,S,1,input elasticities - levels,-.3708592922348461,.0220385488087629,2366,883,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of active parental time and LW - ages 3-17
+28,S6_corr_tauc_LW_6_17,S,1,input elasticities - levels,.2215600319386091,.0178757551697828,2028,819,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of own study time and LW - ages 6-17
+29,S6_corr_ep_LW_3_17,S,1,input elasticities - levels,.1013392632797498,.036922280270559,610,422,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of money and LW - ages 3-17 - one-child families
+30,S7_corr_taup_dLW_base3_12,S,1,a10 a11 - parental time,.3371665944752404,.0312737150714793,960,531,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of parental time and 5-year LW change - base age 3-12
+31,S7_corr_taup_dLW_base3_7,S,1,a10 a11 - parental time,.316816349873599,.0412269960875737,405,325,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of parental time and 5-year LW change - base age 3-7
+32,S7_corr_taup_dLW_base8_12,S,1,a10 a11 - parental time,.073249068709631,.0418272429233172,555,396,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of parental time and 5-year LW change - base age 8-12
+33,S7_corr_tauc_dLW_base6_12,S,1,a40 a41 - own study,-.2210403174964999,.0292675682381181,769,483,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of own study and 5-year LW change - base age 6-12
+34,S7_corr_tauc_dLW_base6_7,S,1,a40 a41 - own study,-.2046012659452007,.0637341154600155,225,208,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of own study and 5-year LW change - base age 6-7
+35,S7_corr_tauc_dLW_base8_12,S,1,a40 a41 - own study,-.1038703634398721,.0374412652901929,544,389,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of own study and 5-year LW change - base age 8-12
+36,S7_corr_ep_dLW_base3_12,S,1,a20 a21 - money,.1387752251639472,.0726384089888579,203,172,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of money and 5-year LW change - base age 3-12 - one-child
+37,S7_corr_ep_dLW_base3_7,S,1,a20 a21 - money,.109209961034285,.0804656168155781,95,94,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of money and 5-year LW change - base age 3-7 - one-child
+38,S7_corr_ep_dLW_base8_12,S,1,a20 a21 - money,-.0600527957871515,.0723451989407917,108,107,correlation,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,corr of money and 5-year LW change - base age 8-12 - one-child
+39,S8_mean_taup_3_5,S,1,preferences and input choices,.3419706182103329,.0064859976270435,564,450,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean active parental time / 112 - ages 3-5
+40,S8_sd_taup_3_5,S,1,preferences and input choices,.1442333449794248,.0040805763668882,564,450,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of active parental time / 112 - ages 3-5
+41,S8_mean_taup_6_8,S,1,preferences and input choices,.2397404358035006,.0041974614383728,628,502,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean active parental time / 112 - ages 6-8
+42,S8_sd_taup_6_8,S,1,preferences and input choices,.1014612670499934,.003284286121702,628,502,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of active parental time / 112 - ages 6-8
+43,S8_mean_taup_9_12,S,1,preferences and input choices,.215229544860929,.0039131417475989,905,609,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean active parental time / 112 - ages 9-12
+44,S8_sd_taup_9_12,S,1,preferences and input choices,.109394862855329,.0032511855682281,905,609,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of active parental time / 112 - ages 9-12
+45,S8_mean_taup_13_17,S,1,preferences and input choices,.1619400261502724,.004232952282632,979,630,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean active parental time / 112 - ages 13-17
+46,S8_sd_taup_13_17,S,1,preferences and input choices,.121885553264765,.0062894819772505,979,630,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of active parental time / 112 - ages 13-17
+47,S8_mean_ep_3_5,S,1,preferences and input choices,.3034606254429612,.022595025553912,478,339,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean money / 10000 - ages 3-5 - one-child - PSID years
+48,S8_sd_ep_3_5,S,1,preferences and input choices,.4258452054478598,.0304106494299777,478,339,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of money / 10000 - ages 3-5 - one-child - PSID years
+49,S8_mean_ep_6_8,S,1,preferences and input choices,.3000455379823755,.028945496336354,326,231,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean money / 10000 - ages 6-8 - one-child - PSID years
+50,S8_sd_ep_6_8,S,1,preferences and input choices,.4842406894369771,.0483991006501066,326,231,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of money / 10000 - ages 6-8 - one-child - PSID years
+51,S8_mean_ep_9_12,S,1,preferences and input choices,.2907713970071547,.0326977096157435,478,275,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean money / 10000 - ages 9-12 - one-child - PSID years
+52,S8_sd_ep_9_12,S,1,preferences and input choices,.5954971585029675,.0863561060948127,478,275,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of money / 10000 - ages 9-12 - one-child - PSID years
+53,S8_mean_ep_13_17,S,1,preferences and input choices,.4814428914245286,.0372033506935896,1304,614,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean money / 10000 - ages 13-17 - one-child - PSID years
+54,S8_sd_ep_13_17,S,1,preferences and input choices,.9587309033917949,.0766255812745425,1304,614,10k 2015 USD per year,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of money / 10000 - ages 13-17 - one-child - PSID years
+55,S8_mean_tauc_6_8,S,1,preferences and input choices,.0293599256929459,.0012272789165965,616,492,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean own study time / 112 - ages 6-8
+56,S8_sd_tauc_6_8,S,1,preferences and input choices,.0295077824636215,.0011989686228061,616,492,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of own study time / 112 - ages 6-8
+57,S8_mean_tauc_9_12,S,1,preferences and input choices,.0452629246300084,.0015601800897731,893,603,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean own study time / 112 - ages 9-12
+58,S8_sd_tauc_9_12,S,1,preferences and input choices,.0443651159351148,.0015765925296022,893,603,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of own study time / 112 - ages 9-12
+59,S8_mean_tauc_13_17,S,1,preferences and input choices,.0557459231167526,.0024418103378449,968,627,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean own study time / 112 - ages 13-17
+60,S8_sd_tauc_13_17,S,1,preferences and input choices,.0661854242747128,.0027205071420468,968,627,share of 112-hour week,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,SD of own study time / 112 - ages 13-17
+61,S9_mean_ep_over_Y_3_17,S,1,money preference - budget share,.0391110194292579,.0022682759545125,2543,822,ratio,memo 18 sec. 3 - analytic binomial counterpart at the data's ages and composition,Mean money / parents pre-tax labour income - ages 3-17 - one-child
+62,k0_complete,T,1,kappa_0,.342521464075915,.0130565084021518,2213,1111,share,share choosing college - every enrollee graduates at 22,Share with a BA at the first TAS wave at age 25 or 26
+63,kpe_bc0_c,T,1,kappa_ParEd,.2990867579908676,.0148710028163729,1314,760,share,college share among BothCollege = 0 households,BA share - BothCollege = 0 - both parents 16+ years from IND2023ER
+64,kpe_bc1_c,T,1,kappa_ParEd,.7971428571428572,.0244497320469071,350,227,share,college share among BothCollege = 1 households,BA share - BothCollege = 1
+65,kth_lw17_gap,T,1,kappa_theta,3.348392348392352,.5532204651241915,253,224,raw LW points,E[LW17 sim - college] minus E[LW17 sim - work] - LW17 sim from Bin(57 p(k17)),Mean raw LW at 17 - BA minus no BA
+66,m_eps,T,1,sigma_eps,.1921996040393631,.014938415431212,187,171,BA probability squared,same OLS on simulated college - BothCollege - LW17 sim - RSS/(N-3),Residual variance RSS/(N-3) of BA on BothCollege and raw LW at 17 - no centring
+67,kterm_med22,W,1,kappa_terminal,15.62300385713003,1.294173469907616,327,297,10k 2015 USD,median simulated a_term - assets retained at the half period,Median family net worth incl. home - first-child ages 21-22 - fathers 25-27 at first birth
+68,m_eps_df,X,0,-,.2056558306194401,.0097437970457944,253,224,,,Daruich-Fernandez version - residual variance of BA on raw LW only - RSS/(N-2)
+69,lpm_b_bc,X,0,-,.4570757966467754,.0914934248028857,187,171,,,m_eps regression - BothCollege slope
+70,lpm_b_lw,X,0,-,.028341122147851,.0066324317903026,187,171,,,m_eps regression - raw LW slope
+71,lpm_r2,X,0,-,.224894048782651,.0578284218008693,187,171,,,m_eps regression - R squared
+72,kth_lw17_mean_c,X,0,-,51.97802197802198,.3539533869803876,91,84,,,Mean raw LW at 17 - BA
+73,kth_lw17_mean_n,X,0,-,48.62962962962963,.3892465657538707,162,147,,,Mean raw LW at 17 - no BA
+74,kth_lw17_t1_c,X,0,-,.1862745098039216,.0447432066971145,102,97,,,BA share - tertile 1 of raw LW at 17
+75,kth_lw17_t2_c,X,0,-,.4069767441860465,.0579726318764004,86,80,,,BA share - tertile 2 of raw LW at 17
+76,kth_lw17_t3_c,X,0,-,.5692307692307692,.06287771453131,65,63,,,BA share - tertile 3 of raw LW at 17
+77,k0_complete_old,X,0,-,.3226272103933598,.0117643442977586,2771,1232,,,OLD target - BA by 25 on the 23-25 follow-up frame
+78,kpe_tasbc0_c,X,0,-,.2608459869848156,.0124701341904675,1844,954,,,BA share - BothCollege = 0 as reported in the TAS
+79,kpe_tasbc1_c,X,0,-,.8115015974440895,.02435325581054,313,207,,,BA share - BothCollege = 1 as reported in the TAS
+80,kpe_either0_c,X,0,-,.2296650717703349,.0148208656814595,1045,630,,,BA share - both parents observed below 16 - old split
+81,kpe_either1_c,X,0,-,.6372282608695652,.0200011976732795,736,472,,,BA share - at least one parent 16+ - old split
+82,kse_w_gap_old,X,0,-,36.84306749307408,12.74786527417823,665,448,,,OLD sigma_eps target - terminal wealth W99 - completers minus non-completers
+83,kterm_x_strict_w99_old,X,0,-,33.19765429156153,6.151885982728916,737,486,,,OLD kappa_terminal target - mean terminal wealth excl. home W99
+84,wealth2122_med_excl,X,0,-,4.999999999999998,.634975841532913,327,297,,,Median net worth excl. home - first-child ages 21-22 - fathers 25-27
+85,wealth2122_mean_incl,X,0,-,36.64629060179703,6.099614697472372,327,297,,,Mean net worth incl. home - same frame - not capped
+86,wealth2122_mean_excl,X,0,-,24.5592137749651,5.806503394510187,327,297,,,Mean net worth excl. home - same frame - not capped
+87,mean_c_p_old,X,0,-,3.115533365614569,.0347014340873561,6742,1509,,,OLD target - consumption excl. housing - money still inside
+88,mean_c_p_exh_net,X,0,-,2.74258585272489,.0271170942494435,6742,1509,,,Consumption excl. housing minus money investment
+89,ksup_mean,X,0,-,.6109923658206308,.0301833867173468,4614,1149,,,College-period support per enrolled year - zeros in - 10k 2015 USD
+90,ksup_mean_pos,X,0,-,.9919489007376461,.0418091996426464,2842,928,,,Same among recipients
+91,ksup_w18_t1,X,0,-,.4188595278474747,.0377974982538608,1010,384,,,Support per enrolled year - tertile 1 of parental wealth near 18
+92,ksup_w18_t2,X,0,-,.5540345496294444,.051000478693714,1082,402,,,Support per enrolled year - tertile 2 of parental wealth near 18
+93,ksup_w18_t3,X,0,-,1.152353687675486,.076105783486886,1177,332,,,Support per enrolled year - tertile 3 of parental wealth near 18
+94,val_sup_enr,X,0,-,.6631635197719986,.0089919600172604,5614,1247,,,Share of enrolled years with any tuition - housing - bills support
+95,val_sup_nonenr,X,0,-,.3808116097823166,.0093050216368856,3721,1045,,,Same - not enrolled - ages 18-22
+96,bc_lw_corr_3_5,X,0,-,.2641165390899488,.0525522188400834,309,276,,,corr of BothCollege and raw LW - ages 3-5 - untargeted check of m_BC
+97,bc_lw_corr_6_8,X,0,-,.168627182662717,.0396311241088922,493,411,,,corr of BothCollege and raw LW - ages 6-8 - untargeted check of m_BC
+98,bc_lw_corr_9_12,X,0,-,.2334624888121049,.0338056492767378,721,517,,,corr of BothCollege and raw LW - ages 9-12 - untargeted check of m_BC
+99,bc_lw_corr_13_17,X,0,-,.2748046825351712,.0281926853368551,835,559,,,corr of BothCollege and raw LW - ages 13-17 - untargeted check of m_BC

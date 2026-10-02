@@ -155,7 +155,7 @@ check_psychic_centring(target_m_psychic(BASE_TARGETS))
 # The objective at a PERTURBED target vector, with everything else frozen.
 @everywhere function sens_objective(z, shifted::Dict{String,Float64}; Na, Nhc, simN, seed)
     kw = unpack(z)
-    smm_feasible(kw) || return (_penalize!(Symbol("infeasible_", smm_infeasible_which(kw))); SMM_PENALTY)
+    smm_feasible(kw) || return (_penalize!(:infeasible_elasticity); SMM_PENALTY)
     try
         # The SHARED pipeline -- the same one smm_objective uses. The child block is
         # rebuilt per draw, so a perturbed target that moves a kappa moves the child
