@@ -28,6 +28,13 @@ starting a new file. Paths are relative to the repository root
 
 ## Running (each writes STATUS and DONE or FAILED; how to watch: `CLAUDE.md` "Watching a run")
 
+- tmux `v1_run_k16` (driver started 21:40; Ali's choice): waits for the integration test (passed 21:56) and
+  the pilot, then runs `--preset pilot --procs 36 --sobol 10000 --restarts 16 --local-evals 450
+  --polish-evals 300` from the better pilot arm's `estimates.toml`, local width the automatic
+  floor(sqrt(16)) = 4 (no `--local-procs`: Ali's standing rule), code frozen in
+  `temp/2026-10-02_run_k16_code` (`cf0a53a`, module 2.3.0-dev). Projected 7.2-7.8 h, timeout 9 h.
+  `output/diagnostics/2026-10-02_run_k16/` (STATUS, run.console.log); the run folder is named in STATUS.
+
 - tmux `v1_pilot` (started 19:57, about 2.5 h; the runner's own projection of ~5 h counts the
   compile time of the first evaluation): the two-arm pilot (Ali: two arms, 20 workers each, the
   ~2.6 h size). Both arms: `--preset pilot`, draws until 150 valid (cap 8,000), 20 local searches of
@@ -99,7 +106,7 @@ starting a new file. Paths are relative to the repository root
 - Tests: synthetic 479/479 (the legacy guard now compares the path bit for bit and the count exactly:
   lower by one per restart, one more for restart 1 and one for the polish, measured on all six cases
   before the guard was changed); resume 39/39 on the real objective; projection 78/78; a serial smoke.
-  Integration test with the new module: after the pilot (core budget).
+  Integration test with the new module on the real inputs: 30/30 (21:56).
 - The pilot runs the OLD module from its frozen worktree, so its logs keep the old lines.
 
 ## Open decisions and waiting items

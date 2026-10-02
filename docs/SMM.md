@@ -400,7 +400,7 @@ one), and `run_record.toml` records it. Results on stand-ins are tests, never es
 | runner on memo-19 code (stand-ins): resume, start, geometry, penalties, reopt | 39/39, 48/48, 14/14, 19/19, 20/20 |
 | runner integration (stand-ins, module 2.2.0) | 30/30 (17:47) |
 | runner tests on the REAL inputs (module 2.2.0; `temp/2026-10-02_merge_checks/real_inputs_suite/`) | resume, reopt integration, synthetic, projection, reopt identity pass; penalties 18/19, start 13/30, geometry 3/13, integration 25/27 fail from ONE cause: they start from the default point with 5-9 plain draws, all invalid on the real inputs -- to be given a valid start (§7) |
-| module 2.3.0-dev on the real objective | resume 39/39; a serial smoke shows the fallback and no repeated start evaluation; the integration test waits until the pilot ends |
+| module 2.3.0-dev on the real objective | resume 39/39; integration 30/30 (21:56, `output/diagnostics/2026-10-02_tiktak23_integration/`); a serial smoke shows the fallback and no repeated start evaluation |
 | parent calibration on the built model | 25.5% at zero assets; Rouwenhorst SD 0.36835, autocorrelation 0.97880 |
 | `selftest.jl`, `test_smm_tas.jl`, `test_smm_own_study.jl`, `test_smm_baseline.jl`, `test_hc_process_shock.jl` (check 7), `jacobian.jl`, `profile_param.jl`, `sensitivity.jl`, `grid_sensitivity.jl`, `check_jacobian_rank.jl` | **not yet rewritten for memo 19** (they pin the old specification or miss the wage loading) |
 
