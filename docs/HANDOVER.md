@@ -11,7 +11,11 @@ starting a new file. Paths are relative to the repository root
 
 - **`merge/port-memo19`**, worktree `temp/2026-10-02_memo19_merge/`: everything of 2026-10-02 is committed
   here; the main checkout's `fix/estimation-consistency` is fast-forwarded to it after each commit.
-  **Nothing is pushed.** (In the main checkout two uncommitted deletions, `docs/REVIEW_BRIEF_14PARAM.md` and
+  **Pushed (Ali, 22:55): `fix/estimation-consistency` to GitHub** after merging the remote's `9ca0273`
+  (an earlier version of the [constants] writer; both conflicts kept this branch's files, Ali; the merged
+  generator reproduces the 193217 targets exactly). `merge/port-memo19` stays local (same commits).
+  Finished run outputs are committed; the K = 16 run and the real-inputs recovery are to be committed
+  when they finish. (In the main checkout two uncommitted deletions, `docs/REVIEW_BRIEF_14PARAM.md` and
   `docs/REVIEW_TRIAGE.md`, are not from these sessions: left alone.)
 - Frozen code for runs (detached worktrees, do not edit): `temp/2026-10-02_run_k16_code` (`cf0a53a`, the
   K = 16 run), `temp/2026-10-02_pilot_code` (`9e2d760`, the pilot), `temp/2026-10-02_tiktak23_check`
