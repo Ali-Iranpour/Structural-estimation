@@ -19,7 +19,7 @@
 #
 # THINGS THAT BREAK SILENTLY IF YOU GET THEM WRONG
 #   * `k` here is the parent's BINARY BothCollege indicator -- [0.0, 1.0], drawn
-#     once from Bernoulli(p_bothcollege) (the target file's share; 0.3 before 28 block C),
+#     once from Bernoulli(p_bothcollege) (the target file's bc_share_children_skill; was 0.3),
 #     constant in t. Nk = 2 is exact, not a
 #     discretisation. `k_grid` in child_lifecycle.jl is a DIFFERENT object (the
 #     child's human capital). The child's HC in THIS file is `hc_grid`.
@@ -510,8 +510,9 @@ function Parent_child_interaction_age_specific_AR1(;
         β_age2_capital::Float64, β_age_capital::Float64,
         wage_var_0::Float64,
         init_asset_p0::Float64, init_asset_mu::Float64, init_asset_sd::Float64,
-        # the household's BothCollege share; run_pipeline passes the target file's value when it has one
-        p_bothcollege::Float64 = 0.3,
+        # the household's BothCollege share: REQUIRED, no default (Ali, 2026-10-02) -- the target file's
+        # bc_share_children_skill, through parent_calibration(targets)
+        p_bothcollege::Float64,
         )  
 
 
@@ -646,8 +647,8 @@ function Parent_child_interaction_age_specific_AR1(;
             sim_a_init[i] = x
         end
     end
-    # BothCollege share (Ali, 2026-10-02): the data's share from the target file
-    # (`bc_share_children_all`, Child_Time_Study 28 block C) once it is exported; until then 0.3.
+    # BothCollege share (Ali, 2026-10-02): `bc_share_children_skill` from the target file (Child_Time_Study 28
+    # block C: the children the skill moments and m_BC are built on); was a hard-coded 0.3.
     0.0 < p_bothcollege < 1.0 || throw(ArgumentError("p_bothcollege must lie in (0, 1), got $p_bothcollege"))
     sim_k_init = Float64.(rand(rng_k, Bernoulli(p_bothcollege), simN))
     # Initial child skill at AGE 1 (column 1), DFVW latent units (memo 18 section 7):
@@ -1517,7 +1518,7 @@ function continuation_selftest(; n::Int = 2000, seed::Int = 20260906, verbose::B
     p = Parent_child_interaction_age_specific_AR1(; Na = 10, Nk = 2, Nhc = 10, simN = 10, seed = 1234,
             p_ar1 = 0.5, sigma_p = 0.1, β0 = 2.0, β_bothcollege = 0.0, β_age = 0.0, β_age2 = 0.0,
             β_age2_capital = 0.0, β_age_capital = 0.0, wage_var_0 = 0.0,
-            init_asset_p0 = 0.0, init_asset_mu = 0.0, init_asset_sd = 1.0)
+            init_asset_p0 = 0.0, init_asset_mu = 0.0, init_asset_sd = 1.0, p_bothcollege = 0.5)
     for i in eachindex(p.sol_v); p.sol_v[i] = randn(rng); end
     interp = create_interp(p, p.sol_v, 5)
     E      = expected_interp(p, interp)

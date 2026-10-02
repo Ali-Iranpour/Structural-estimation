@@ -377,7 +377,10 @@ const PARENT_CALIB_CONSTANTS = (
     init_asset_p0 = "init_asset_p0", init_asset_mu = "init_asset_mu", init_asset_sd = "init_asset_sd",
     β0 = "wage_b0", β_bothcollege = "wage_b_bc", β_age = "wage_b_age", β_age2 = "wage_b_age2",
     β_age2_capital = "wage_b_age2_bc", β_age_capital = "wage_b_age_bc",
-    p_ar1 = "wage_rho", sigma_p = "wage_sig_p", wage_var_0 = "wage_var_0")
+    p_ar1 = "wage_rho", sigma_p = "wage_sig_p", wage_var_0 = "wage_var_0",
+    # the household's BothCollege share (Ali, 2026-10-02): the share among the children the skill moments
+    # and m_BC are built on (28 block C `bc_share_children_skill`), REQUIRED, no fallback
+    p_bothcollege = "bc_share_children_skill")
 
 """
     _parent_calibration(raw, path) -> NamedTuple
@@ -391,8 +394,8 @@ function _parent_calibration(raw::AbstractDict, path::AbstractString)
         initial assets are read from it (every row of Child_Time_Study's SMM_Constants.csv, passed
         through by tools/make_smm_targets.py); regenerate the targets.""")
     c = raw["constants"]
-    get_(k) = (haskey(c, k) || error("[constants] in $path has no `$k` (Child_Time_Study block K3: " *
-                                     "29_initial_assets.do / 30_wage_process.do); regenerate the targets");
+    get_(k) = (haskey(c, k) || error("[constants] in $path has no `$k` (Child_Time_Study 28_smm_moments.do: " *
+                                     "block K3 from 29/30, or block C for the BothCollege share); regenerate the targets");
                v = Float64(c[k]); isfinite(v) || error("[constants] $k = $v is not finite: $path"); v)
     cal = NamedTuple{keys(PARENT_CALIB_CONSTANTS)}(map(get_, values(PARENT_CALIB_CONSTANTS)))
     0 <= cal.init_asset_p0 < 1 || error("init_asset_p0 = $(cal.init_asset_p0) is not a share in [0, 1): $path")
@@ -400,6 +403,7 @@ function _parent_calibration(raw::AbstractDict, path::AbstractString)
     0 <= cal.p_ar1 < 1 || error("wage_rho = $(cal.p_ar1) must lie in [0, 1): $path")
     cal.sigma_p > 0 || error("wage_sig_p = $(cal.sigma_p) must be positive: $path")
     cal.wage_var_0 >= 0 || error("wage_var_0 = $(cal.wage_var_0) must be non-negative: $path")
+    0 < cal.p_bothcollege < 1 || error("bc_share_children_skill = $(cal.p_bothcollege) is not a share in (0, 1): $path")
     # the stationary SD the two imply must be Stata's own (sigma_p is the INNOVATION SD, not the stationary one)
     sd_z = get_("wage_sd_z")
     isapprox(cal.sigma_p / sqrt(1 - cal.p_ar1^2), sd_z; rtol = 1e-6) || error(
@@ -451,12 +455,6 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
 
     # ---- the parent's wage process and initial assets (Ali, 2026-10-02) -----------
     parent_calib = _parent_calibration(raw, path)
-    # the BothCollege share (Ali, 2026-10-02): `bc_share_children_all` from 28 block C when the target
-    # file carries a finite value; nothing (the model's 0.3) while block C is not yet exported
-    p_bc = let v = get(raw, "bc_share_children_all", NaN)
-        v isa Real && isfinite(v) ? (0 < v < 1 ? Float64(v) :
-            error("bc_share_children_all = $v is not a share in (0, 1): $path")) : nothing
-    end
 
     # ---- the child's bargaining weight ---------------------------------------
     Int.(_req(raw, "mu_ages", path)) == collect(T_CHILD_VOICE:SMM_AGE_HI) ||
@@ -521,7 +519,7 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
     end
 
     out["_spec"] = (school_time = school, m_psychic = m_psychic, L0 = L0, sd_lnk17 = sd_lnk17,
-                    init = init, mu_by_age = mu_by_age, mu_half = mu_half, parent_calib = parent_calib, p_bothcollege = p_bc,
+                    init = init, mu_by_age = mu_by_age, mu_half = mu_half, parent_calib = parent_calib,
                     se = se, Sigma = Sigma, cov_names = cov_names,
                     n_clusters = Int.(get(mc, "n_clusters_by_moment", zeros(Int, length(se)))),
                     composition = comp,
@@ -553,12 +551,10 @@ target_school_time(targets) = targets["_spec"].school_time
 """
     parent_calibration(targets) -> NamedTuple
 
-The parent constructor's REQUIRED wage-process and initial-asset keywords, from the target file's
+The parent constructor's REQUIRED wage-process, initial-asset and BothCollege-share keywords, from the target file's
 [constants] (see `_parent_calibration`). Splat it into `Parent_child_interaction_age_specific_AR1`.
 """
 parent_calibration(targets) = targets["_spec"].parent_calib
-"The BothCollege share from the target file, or `nothing` (the model's default 0.3) before 28 block C."
-target_bc_share(targets) = targets["_spec"].p_bothcollege
 target_m_psychic(targets)   = targets["_spec"].m_psychic
 target_L0(targets)          = targets["_spec"].L0
 target_init(targets)        = targets["_spec"].init
@@ -1631,9 +1627,7 @@ function run_pipeline(kw::NamedTuple, targets;
                                                          init_m0 = ini.m0, init_mBC = ini.mBC,
                                                          init_s0 = ini.s0,
                                                          mu_child_by_age = target_mu_by_age(targets),
-                                                         parent_calibration(targets)...,   # wage process, initial assets
-                                                         (target_bc_share(targets) === nothing ? (;) :
-                                                          (p_bothcollege = target_bc_share(targets),))...,
+                                                         parent_calibration(targets)...,   # wage process, initial assets, BC share
                                                          pk..., parent_extra...)   # no `w` -- see smm_objective
     parent.V_child_interp = V_child
     redirect_stdout(devnull) do

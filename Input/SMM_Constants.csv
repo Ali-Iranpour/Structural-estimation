@@ -80,3 +80,249 @@ wage_sd_z,.3683460646374045,.0073090559942592,,K3 wage shock (30): Stationary SD
 wage_v,.135678823333863,.0053745222478772,,K3 wage shock (30): Stationary variance of the AR(1) component
 wage_var_m,.0633099535352729,.0031756511375544,,K3 wage shock (30): Measurement-error variance: lag-0 autocovariance minus v
 wage_var_0,.0936636596301352,.0193416247855098,,K3 wage shock (30): Variance of the AR(1) component at t <= 2 (initial dispersion)
+comp_O_LW_3,44,,,C composition: O_LW rows at age 3
+comp_O_LW_4,121,,,C composition: O_LW rows at age 4
+comp_O_LW_5,145,,,C composition: O_LW rows at age 5
+comp_O_LW_6,168,,,C composition: O_LW rows at age 6
+comp_O_LW_7,151,,,C composition: O_LW rows at age 7
+comp_O_LW_8,178,,,C composition: O_LW rows at age 8
+comp_O_LW_9,148,,,C composition: O_LW rows at age 9
+comp_O_LW_10,174,,,C composition: O_LW rows at age 10
+comp_O_LW_11,208,,,C composition: O_LW rows at age 11
+comp_O_LW_12,193,,,C composition: O_LW rows at age 12
+comp_O_LW_13,183,,,C composition: O_LW rows at age 13
+comp_O_LW_14,150,,,C composition: O_LW rows at age 14
+comp_O_LW_15,170,,,C composition: O_LW rows at age 15
+comp_O_LW_16,161,,,C composition: O_LW rows at age 16
+comp_O_LW_17,172,,,C composition: O_LW rows at age 17
+comp_O_taup_3,44,,,C composition: O_taup rows at age 3
+comp_O_taup_4,121,,,C composition: O_taup rows at age 4
+comp_O_taup_5,145,,,C composition: O_taup rows at age 5
+comp_O_taup_6,168,,,C composition: O_taup rows at age 6
+comp_O_taup_7,151,,,C composition: O_taup rows at age 7
+comp_O_taup_8,178,,,C composition: O_taup rows at age 8
+comp_O_taup_9,148,,,C composition: O_taup rows at age 9
+comp_O_taup_10,174,,,C composition: O_taup rows at age 10
+comp_O_taup_11,208,,,C composition: O_taup rows at age 11
+comp_O_taup_12,193,,,C composition: O_taup rows at age 12
+comp_O_taup_13,183,,,C composition: O_taup rows at age 13
+comp_O_taup_14,150,,,C composition: O_taup rows at age 14
+comp_O_taup_15,170,,,C composition: O_taup rows at age 15
+comp_O_taup_16,161,,,C composition: O_taup rows at age 16
+comp_O_taup_17,172,,,C composition: O_taup rows at age 17
+comp_O_tauc_6,166,,,C composition: O_tauc rows at age 6
+comp_O_tauc_7,147,,,C composition: O_tauc rows at age 7
+comp_O_tauc_8,176,,,C composition: O_tauc rows at age 8
+comp_O_tauc_9,144,,,C composition: O_tauc rows at age 9
+comp_O_tauc_10,171,,,C composition: O_tauc rows at age 10
+comp_O_tauc_11,203,,,C composition: O_tauc rows at age 11
+comp_O_tauc_12,193,,,C composition: O_tauc rows at age 12
+comp_O_tauc_13,181,,,C composition: O_tauc rows at age 13
+comp_O_tauc_14,149,,,C composition: O_tauc rows at age 14
+comp_O_tauc_15,169,,,C composition: O_tauc rows at age 15
+comp_O_tauc_16,159,,,C composition: O_tauc rows at age 16
+comp_O_tauc_17,170,,,C composition: O_tauc rows at age 17
+comp_O_ep_3,18,,,C composition: O_ep rows at age 3
+comp_O_ep_3_odd,11,,,C composition: O_ep rows at age 3 observed at an odd CDS wave
+comp_O_ep_4,42,,,C composition: O_ep rows at age 4
+comp_O_ep_4_odd,33,,,C composition: O_ep rows at age 4 observed at an odd CDS wave
+comp_O_ep_5,40,,,C composition: O_ep rows at age 5
+comp_O_ep_5_odd,20,,,C composition: O_ep rows at age 5 observed at an odd CDS wave
+comp_O_ep_6,40,,,C composition: O_ep rows at age 6
+comp_O_ep_6_odd,11,,,C composition: O_ep rows at age 6 observed at an odd CDS wave
+comp_O_ep_7,27,,,C composition: O_ep rows at age 7
+comp_O_ep_7_odd,7,,,C composition: O_ep rows at age 7 observed at an odd CDS wave
+comp_O_ep_8,36,,,C composition: O_ep rows at age 8
+comp_O_ep_8_odd,15,,,C composition: O_ep rows at age 8 observed at an odd CDS wave
+comp_O_ep_9,30,,,C composition: O_ep rows at age 9
+comp_O_ep_9_odd,11,,,C composition: O_ep rows at age 9 observed at an odd CDS wave
+comp_O_ep_10,31,,,C composition: O_ep rows at age 10
+comp_O_ep_10_odd,16,,,C composition: O_ep rows at age 10 observed at an odd CDS wave
+comp_O_ep_11,32,,,C composition: O_ep rows at age 11
+comp_O_ep_11_odd,18,,,C composition: O_ep rows at age 11 observed at an odd CDS wave
+comp_O_ep_12,35,,,C composition: O_ep rows at age 12
+comp_O_ep_12_odd,24,,,C composition: O_ep rows at age 12 observed at an odd CDS wave
+comp_O_ep_13,39,,,C composition: O_ep rows at age 13
+comp_O_ep_13_odd,26,,,C composition: O_ep rows at age 13 observed at an odd CDS wave
+comp_O_ep_14,47,,,C composition: O_ep rows at age 14
+comp_O_ep_14_odd,22,,,C composition: O_ep rows at age 14 observed at an odd CDS wave
+comp_O_ep_15,45,,,C composition: O_ep rows at age 15
+comp_O_ep_15_odd,24,,,C composition: O_ep rows at age 15 observed at an odd CDS wave
+comp_O_ep_16,71,,,C composition: O_ep rows at age 16
+comp_O_ep_16_odd,28,,,C composition: O_ep rows at age 16 observed at an odd CDS wave
+comp_O_ep_17,77,,,C composition: O_ep rows at age 17
+comp_O_ep_17_odd,42,,,C composition: O_ep rows at age 17 observed at an odd CDS wave
+comp_P_LW_3_8,1,,,C composition: P_LW rows at age 3_8
+comp_P_LW_3_9,22,,,C composition: P_LW rows at age 3_9
+comp_P_LW_4_9,27,,,C composition: P_LW rows at age 4_9
+comp_P_LW_4_10,49,,,C composition: P_LW rows at age 4_10
+comp_P_LW_5_10,42,,,C composition: P_LW rows at age 5_10
+comp_P_LW_5_11,34,,,C composition: P_LW rows at age 5_11
+comp_P_LW_5_13,1,,,C composition: P_LW rows at age 5_13
+comp_P_LW_6_11,76,,,C composition: P_LW rows at age 6_11
+comp_P_LW_6_12,46,,,C composition: P_LW rows at age 6_12
+comp_P_LW_6_13,1,,,C composition: P_LW rows at age 6_13
+comp_P_LW_7_11,5,,,C composition: P_LW rows at age 7_11
+comp_P_LW_7_12,70,,,C composition: P_LW rows at age 7_12
+comp_P_LW_7_13,31,,,C composition: P_LW rows at age 7_13
+comp_P_LW_8_12,10,,,C composition: P_LW rows at age 8_12
+comp_P_LW_8_13,77,,,C composition: P_LW rows at age 8_13
+comp_P_LW_8_14,39,,,C composition: P_LW rows at age 8_14
+comp_P_LW_9_13,7,,,C composition: P_LW rows at age 9_13
+comp_P_LW_9_14,70,,,C composition: P_LW rows at age 9_14
+comp_P_LW_9_15,37,,,C composition: P_LW rows at age 9_15
+comp_P_LW_10_14,5,,,C composition: P_LW rows at age 10_14
+comp_P_LW_10_15,87,,,C composition: P_LW rows at age 10_15
+comp_P_LW_10_16,34,,,C composition: P_LW rows at age 10_16
+comp_P_LW_11_15,6,,,C composition: P_LW rows at age 11_15
+comp_P_LW_11_16,68,,,C composition: P_LW rows at age 11_16
+comp_P_LW_11_17,46,,,C composition: P_LW rows at age 11_17
+comp_P_LW_12_16,7,,,C composition: P_LW rows at age 12_16
+comp_P_LW_12_17,62,,,C composition: P_LW rows at age 12_17
+comp_P_taup_3_8,1,,,C composition: P_taup rows at age 3_8
+comp_P_taup_3_9,22,,,C composition: P_taup rows at age 3_9
+comp_P_taup_4_9,27,,,C composition: P_taup rows at age 4_9
+comp_P_taup_4_10,49,,,C composition: P_taup rows at age 4_10
+comp_P_taup_5_10,42,,,C composition: P_taup rows at age 5_10
+comp_P_taup_5_11,34,,,C composition: P_taup rows at age 5_11
+comp_P_taup_5_13,1,,,C composition: P_taup rows at age 5_13
+comp_P_taup_6_11,76,,,C composition: P_taup rows at age 6_11
+comp_P_taup_6_12,46,,,C composition: P_taup rows at age 6_12
+comp_P_taup_6_13,1,,,C composition: P_taup rows at age 6_13
+comp_P_taup_7_11,5,,,C composition: P_taup rows at age 7_11
+comp_P_taup_7_12,70,,,C composition: P_taup rows at age 7_12
+comp_P_taup_7_13,31,,,C composition: P_taup rows at age 7_13
+comp_P_taup_8_12,10,,,C composition: P_taup rows at age 8_12
+comp_P_taup_8_13,77,,,C composition: P_taup rows at age 8_13
+comp_P_taup_8_14,39,,,C composition: P_taup rows at age 8_14
+comp_P_taup_9_13,7,,,C composition: P_taup rows at age 9_13
+comp_P_taup_9_14,70,,,C composition: P_taup rows at age 9_14
+comp_P_taup_9_15,37,,,C composition: P_taup rows at age 9_15
+comp_P_taup_10_14,5,,,C composition: P_taup rows at age 10_14
+comp_P_taup_10_15,87,,,C composition: P_taup rows at age 10_15
+comp_P_taup_10_16,34,,,C composition: P_taup rows at age 10_16
+comp_P_taup_11_15,6,,,C composition: P_taup rows at age 11_15
+comp_P_taup_11_16,68,,,C composition: P_taup rows at age 11_16
+comp_P_taup_11_17,46,,,C composition: P_taup rows at age 11_17
+comp_P_taup_12_16,7,,,C composition: P_taup rows at age 12_16
+comp_P_taup_12_17,62,,,C composition: P_taup rows at age 12_17
+comp_P_tauc_6_11,75,,,C composition: P_tauc rows at age 6_11
+comp_P_tauc_6_12,46,,,C composition: P_tauc rows at age 6_12
+comp_P_tauc_6_13,1,,,C composition: P_tauc rows at age 6_13
+comp_P_tauc_7_11,4,,,C composition: P_tauc rows at age 7_11
+comp_P_tauc_7_12,68,,,C composition: P_tauc rows at age 7_12
+comp_P_tauc_7_13,31,,,C composition: P_tauc rows at age 7_13
+comp_P_tauc_8_12,10,,,C composition: P_tauc rows at age 8_12
+comp_P_tauc_8_13,76,,,C composition: P_tauc rows at age 8_13
+comp_P_tauc_8_14,39,,,C composition: P_tauc rows at age 8_14
+comp_P_tauc_9_13,7,,,C composition: P_tauc rows at age 9_13
+comp_P_tauc_9_14,67,,,C composition: P_tauc rows at age 9_14
+comp_P_tauc_9_15,36,,,C composition: P_tauc rows at age 9_15
+comp_P_tauc_10_14,5,,,C composition: P_tauc rows at age 10_14
+comp_P_tauc_10_15,86,,,C composition: P_tauc rows at age 10_15
+comp_P_tauc_10_16,33,,,C composition: P_tauc rows at age 10_16
+comp_P_tauc_11_15,6,,,C composition: P_tauc rows at age 11_15
+comp_P_tauc_11_16,67,,,C composition: P_tauc rows at age 11_16
+comp_P_tauc_11_17,43,,,C composition: P_tauc rows at age 11_17
+comp_P_tauc_12_16,7,,,C composition: P_tauc rows at age 12_16
+comp_P_tauc_12_17,62,,,C composition: P_tauc rows at age 12_17
+comp_P_ep_3_9,8,,,C composition: P_ep rows at age 3_9
+comp_P_ep_3_9_odd,8,,,C composition: P_ep rows at age 3_9 observed at an odd CDS wave
+comp_P_ep_4_9,12,,,C composition: P_ep rows at age 4_9
+comp_P_ep_4_9_odd,12,,,C composition: P_ep rows at age 4_9 observed at an odd CDS wave
+comp_P_ep_4_10,16,,,C composition: P_ep rows at age 4_10
+comp_P_ep_4_10_odd,16,,,C composition: P_ep rows at age 4_10 observed at an odd CDS wave
+comp_P_ep_5_10,9,,,C composition: P_ep rows at age 5_10
+comp_P_ep_5_10_odd,9,,,C composition: P_ep rows at age 5_10 observed at an odd CDS wave
+comp_P_ep_5_11,7,,,C composition: P_ep rows at age 5_11
+comp_P_ep_5_11_odd,7,,,C composition: P_ep rows at age 5_11 observed at an odd CDS wave
+comp_P_ep_6_11,18,,,C composition: P_ep rows at age 6_11
+comp_P_ep_6_11_odd,4,,,C composition: P_ep rows at age 6_11 observed at an odd CDS wave
+comp_P_ep_6_12,9,,,C composition: P_ep rows at age 6_12
+comp_P_ep_6_12_odd,5,,,C composition: P_ep rows at age 6_12 observed at an odd CDS wave
+comp_P_ep_7_11,2,,,C composition: P_ep rows at age 7_11
+comp_P_ep_7_12,10,,,C composition: P_ep rows at age 7_12
+comp_P_ep_7_12_odd,1,,,C composition: P_ep rows at age 7_12 observed at an odd CDS wave
+comp_P_ep_7_13,4,,,C composition: P_ep rows at age 7_13
+comp_P_ep_7_13_odd,4,,,C composition: P_ep rows at age 7_13 observed at an odd CDS wave
+comp_P_ep_8_13,18,,,C composition: P_ep rows at age 8_13
+comp_P_ep_8_13_odd,5,,,C composition: P_ep rows at age 8_13 observed at an odd CDS wave
+comp_P_ep_8_14,7,,,C composition: P_ep rows at age 8_14
+comp_P_ep_8_14_odd,7,,,C composition: P_ep rows at age 8_14 observed at an odd CDS wave
+comp_P_ep_9_14,18,,,C composition: P_ep rows at age 9_14
+comp_P_ep_9_14_odd,4,,,C composition: P_ep rows at age 9_14 observed at an odd CDS wave
+comp_P_ep_9_15,6,,,C composition: P_ep rows at age 9_15
+comp_P_ep_9_15_odd,6,,,C composition: P_ep rows at age 9_15 observed at an odd CDS wave
+comp_P_ep_10_14,1,,,C composition: P_ep rows at age 10_14
+comp_P_ep_10_15,17,,,C composition: P_ep rows at age 10_15
+comp_P_ep_10_15_odd,6,,,C composition: P_ep rows at age 10_15 observed at an odd CDS wave
+comp_P_ep_10_16,9,,,C composition: P_ep rows at age 10_16
+comp_P_ep_10_16_odd,9,,,C composition: P_ep rows at age 10_16 observed at an odd CDS wave
+comp_P_ep_11_16,11,,,C composition: P_ep rows at age 11_16
+comp_P_ep_11_16_odd,3,,,C composition: P_ep rows at age 11_16 observed at an odd CDS wave
+comp_P_ep_11_17,7,,,C composition: P_ep rows at age 11_17
+comp_P_ep_11_17_odd,7,,,C composition: P_ep rows at age 11_17 observed at an odd CDS wave
+comp_P_ep_12_16,2,,,C composition: P_ep rows at age 12_16
+comp_P_ep_12_17,12,,,C composition: P_ep rows at age 12_17
+comp_P_ep_12_17_odd,4,,,C composition: P_ep rows at age 12_17 observed at an odd CDS wave
+comp_D_taup_3,192,,,C composition: D_taup rows at age 3
+comp_D_taup_4,182,,,C composition: D_taup rows at age 4
+comp_D_taup_5,190,,,C composition: D_taup rows at age 5
+comp_D_taup_6,211,,,C composition: D_taup rows at age 6
+comp_D_taup_7,201,,,C composition: D_taup rows at age 7
+comp_D_taup_8,216,,,C composition: D_taup rows at age 8
+comp_D_taup_9,191,,,C composition: D_taup rows at age 9
+comp_D_taup_10,239,,,C composition: D_taup rows at age 10
+comp_D_taup_11,248,,,C composition: D_taup rows at age 11
+comp_D_taup_12,227,,,C composition: D_taup rows at age 12
+comp_D_taup_13,213,,,C composition: D_taup rows at age 13
+comp_D_taup_14,182,,,C composition: D_taup rows at age 14
+comp_D_taup_15,200,,,C composition: D_taup rows at age 15
+comp_D_taup_16,191,,,C composition: D_taup rows at age 16
+comp_D_taup_17,193,,,C composition: D_taup rows at age 17
+comp_D_tauc_6,209,,,C composition: D_tauc rows at age 6
+comp_D_tauc_7,194,,,C composition: D_tauc rows at age 7
+comp_D_tauc_8,213,,,C composition: D_tauc rows at age 8
+comp_D_tauc_9,187,,,C composition: D_tauc rows at age 9
+comp_D_tauc_10,236,,,C composition: D_tauc rows at age 10
+comp_D_tauc_11,243,,,C composition: D_tauc rows at age 11
+comp_D_tauc_12,227,,,C composition: D_tauc rows at age 12
+comp_D_tauc_13,209,,,C composition: D_tauc rows at age 13
+comp_D_tauc_14,181,,,C composition: D_tauc rows at age 14
+comp_D_tauc_15,199,,,C composition: D_tauc rows at age 15
+comp_D_tauc_16,188,,,C composition: D_tauc rows at age 16
+comp_D_tauc_17,191,,,C composition: D_tauc rows at age 17
+comp_E_ep_3,195,,,C composition: E_ep rows at age 3
+comp_E_ep_4,148,,,C composition: E_ep rows at age 4
+comp_E_ep_5,135,,,C composition: E_ep rows at age 5
+comp_E_ep_6,114,,,C composition: E_ep rows at age 6
+comp_E_ep_7,107,,,C composition: E_ep rows at age 7
+comp_E_ep_8,105,,,C composition: E_ep rows at age 8
+comp_E_ep_9,102,,,C composition: E_ep rows at age 9
+comp_E_ep_10,110,,,C composition: E_ep rows at age 10
+comp_E_ep_11,113,,,C composition: E_ep rows at age 11
+comp_E_ep_12,153,,,C composition: E_ep rows at age 12
+comp_E_ep_13,166,,,C composition: E_ep rows at age 13
+comp_E_ep_14,239,,,C composition: E_ep rows at age 14
+comp_E_ep_15,242,,,C composition: E_ep rows at age 15
+comp_E_ep_16,343,,,C composition: E_ep rows at age 16
+comp_E_ep_17,314,,,C composition: E_ep rows at age 17
+comp_E_epY_3,190,,,C composition: E_epY rows at age 3
+comp_E_epY_4,148,,,C composition: E_epY rows at age 4
+comp_E_epY_5,133,,,C composition: E_epY rows at age 5
+comp_E_epY_6,114,,,C composition: E_epY rows at age 6
+comp_E_epY_7,104,,,C composition: E_epY rows at age 7
+comp_E_epY_8,102,,,C composition: E_epY rows at age 8
+comp_E_epY_9,100,,,C composition: E_epY rows at age 9
+comp_E_epY_10,109,,,C composition: E_epY rows at age 10
+comp_E_epY_11,111,,,C composition: E_epY rows at age 11
+comp_E_epY_12,151,,,C composition: E_epY rows at age 12
+comp_E_epY_13,163,,,C composition: E_epY rows at age 13
+comp_E_epY_14,235,,,C composition: E_epY rows at age 14
+comp_E_epY_15,237,,,C composition: E_epY rows at age 15
+comp_E_epY_16,338,,,C composition: E_epY rows at age 16
+comp_E_epY_17,308,,,C composition: E_epY rows at age 17
+cap_money_p99,47003.866790484,,2586,"C p99 cap on child money per year (2015 USD), frame 3 one-child years 1998-2018; capped in S8 money, S6/S7 money and S9"
+cap_ratio_p99,.4426452784503632,,2543,"C p99 cap on money / parents' pre-tax labour income (S9), after the money cap"
+bc_share_children_all,.2125912408759124,,4384,"C BothCollege share, children of the two-parent CDS sample with BothCollege known"
+bc_share_children_skill,.2587846217445225,,2419,"C BothCollege share, children with at least one skill_sample wave (the K1 frame)"

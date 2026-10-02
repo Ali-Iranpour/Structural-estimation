@@ -31,6 +31,9 @@
 # Recovery asks whether the estimator inverts the model at SOME fixed specification; it
 # does not need those inputs to be right, only to be held fixed. Its result does not carry
 # over automatically to the real composition and wage loading -- rerun it once they exist.
+# Since 2026-10-02 the script uses each when it exists: the target file's [composition] (from
+# the 19:32 targets on) and the anchored wage loading once sd(log AFQT) is set (0.20,
+# provisional); the log and the result file name which inputs a run used.
 #
 # theta0 is a pilot point, NOT an estimate: the DFVW Table-7 starts, with TFP, persistence
 # sigma_3_0, phi_3, lambda_2 and kappa_0 moved by 315 Sobplx steps toward the real data means
@@ -57,6 +60,12 @@ include(joinpath(REPO, "tools", "smm_test_fixtures.jl"))
 length(ARGS) == 3 && ARGS[2] in ("tech", "all") ||
     error("usage: test_param_recovery.jl TARGETS.toml (tech|all) OUTDIR")
 const TARGET_PATH, MODE, OUTDIR = abspath(ARGS[1]), ARGS[2], abspath(ARGS[3])
+# the code's own wage loading once sd(log AFQT) is set (provisional 0.20 since 2026-10-02), the placeholder
+# otherwise; and the commit read at START, the code this process loaded (it used to be read at the end)
+const CHILD_WAGE, CHILD_WAGE_LABEL = isfinite(CHILD_DEFAULTS.sd_log_afqt) ?
+    (child_wage_config(), "ANCHORED (sd(log AFQT) = $(CHILD_DEFAULTS.sd_log_afqt), provisional; lnw0 = $(LNW0_ANCHORED))") :
+    (PLACEHOLDER_CHILD_WAGE, "PLACEHOLDER (alpha_theta = 0.2/sd_lnk17)")
+const GIT_AT_START = git_sha()
 mkpath(OUTDIR)
 const LOG = open(joinpath(OUTDIR, "recovery_$(MODE).log"), "w")
 logln(s...) = (println(stdout, s...); println(LOG, s...); flush(LOG); flush(stdout))
@@ -74,7 +83,9 @@ const THETA0 = Dict{Symbol,Float64}(
 const TECH = [:sigma_1_0, :sigma_1_1, :sigma_2_0, :sigma_2_1, :sigma_3_0, :sigma_3_1, :sigma_4_0, :sigma_4_1, :d_0, :d_1, :d_2, :d_3]
 
 T0 = load_targets(TARGET_PATH; require_composition = false)
-TF = with_composition(T0, fixture_composition(T0))
+# the data's composition when the target file carries it (from 2026-10-02 19:32 on), the fixture otherwise
+const COMP_LABEL = T0["_spec"].composition === nothing ? "FIXTURE (tools/smm_test_fixtures.jl)" : "DATA (target file)"
+TF = T0["_spec"].composition === nothing ? with_composition(T0, fixture_composition(T0)) : T0
 names_ = [q.name for q in SMM_PARAMS]
 z_true = [to_search(THETA0[q.name], q) for q in SMM_PARAMS]
 lb, ub = search_bounds()
@@ -82,14 +93,14 @@ free = MODE == "tech" ? [findfirst(==(n), names_) for n in TECH] : collect(1:len
 
 obj_full(z) = smm_objective(z, TP; Na = GRID.Na, Nk = GRID.Nk, Nhc = GRID.Nhc, simN = GRID.simN,
                             seed = GRID.seed, child_grid = GRID.child_grid, demo_sim = false,
-                            child_wage = PLACEHOLDER_CHILD_WAGE)
+                            child_wage = CHILD_WAGE)
 
 # ---- the pseudo-data: the model's own moments at theta0 -----------------------
 logln("recovery test ($MODE): $(length(free)) free parameters, started ", now())
-logln("targets: $TARGET_PATH  (composition: FIXTURE; wage loading: PLACEHOLDER)")
+logln("targets: $TARGET_PATH  (composition: $COMP_LABEL; wage loading: $CHILD_WAGE_LABEL; code $GIT_AT_START)")
 r0 = run_pipeline(unpack(z_true), TF; Na = GRID.Na, Nk = GRID.Nk, Nhc = GRID.Nhc, simN = GRID.simN,
                   seed = GRID.seed, child_grid = GRID.child_grid, demo_sim = false,
-                  child_wage = PLACEHOLDER_CHILD_WAGE)
+                  child_wage = CHILD_WAGE)
 m0 = model_moments(r0, TF)
 m0.n_nonfinite == 0 && simulation_violations(r0.parent).total == 0 ||
     error("theta0 does not produce a valid simulation")
@@ -167,9 +178,9 @@ logln(@sprintf("\nQ: start %.6g -> end %.6g after %d evaluations, %.1f min. Wors
 logln(pass ? "RESULT: RECOVERED (Q < 1e-2 and every parameter within 2% of its box)" :
              "RESULT: NOT RECOVERED by that criterion -- read the table above")
 open(joinpath(OUTDIR, "recovery_$(MODE).toml"), "w") do io
-    TOML.print(io, Dict("mode" => MODE, "targets" => TARGET_PATH, "git_commit" => git_sha(),
-                        "composition" => "FIXTURE (tools/smm_test_fixtures.jl)",
-                        "child_wage" => "PLACEHOLDER (alpha_theta = 0.2/sd_lnk17)",
+    TOML.print(io, Dict("mode" => MODE, "targets" => TARGET_PATH, "git_commit" => GIT_AT_START,
+                        "composition" => COMP_LABEL,
+                        "child_wage" => CHILD_WAGE_LABEL,
                         "grid" => "parent 20/2/20, child 20/20/5, simN 1000, seed 1234",
                         "q_start" => q_start, "q_end" => q_hat, "evaluations" => n_eval[],
                         "worst_error_pct_of_box" => worst, "recovered" => pass,

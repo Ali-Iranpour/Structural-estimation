@@ -34,7 +34,9 @@ const OUT = mkpath(argstr("--out", mktempdir(; prefix = "tiktak_integration_", c
 const ONLY = let o = argstr("--only", ""); isempty(o) ? nothing : Set(split(o, ',')) end
 want(n) = ONLY === nothing || n in ONLY
 const RUNNER = joinpath(REPO, "code", "smm", "run_smm.jl")
-const SMOKE = ["--quick", "--sobol", "64", "--restarts", "5", "--local-evals", "60", "--skip-polish", "--targets", TFILE]
+# memo 19 (Ali, 2026-10-02): most draws are penalised at the --quick grids (3 valid of 64), so the smoke fixture draws
+# until it has 5 VALID Sobol' points (--sobol-valid 5, at most 400 attempts) instead of 64 plain draws; checks unchanged.
+const SMOKE = ["--quick", "--sobol", "400", "--sobol-valid", "5", "--restarts", "5", "--local-evals", "60", "--skip-polish", "--targets", TFILE]
 # v1 (2026-10-02): --sobol-valid 4 (at most 200 attempts) -- most random draws are penalised at the --quick grids,
 # and 16 plain draws gave too few seeds for 4 restarts. The checks are unchanged.
 const SMALL = ["--quick", "--sobol", "200", "--sobol-valid", "4", "--restarts", "4", "--local-evals", "15", "--skip-polish", "--targets", TFILE]

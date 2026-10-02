@@ -89,7 +89,7 @@ MU_AGES = list(range(6, 18))
 # The SMM_Constants rows the parent model reads from [constants] (moments.jl PARENT_CALIB_CONSTANTS, 2026-10-02).
 PARENT_CALIB_CONSTANTS = ("init_asset_p0", "init_asset_mu", "init_asset_sd",
                           "wage_b0", "wage_b_bc", "wage_b_age", "wage_b_age2", "wage_b_age2_bc", "wage_b_age_bc",
-                          "wage_rho", "wage_sig_p", "wage_sd_z", "wage_var_0")
+                          "wage_rho", "wage_sig_p", "wage_sd_z", "wage_var_0", "bc_share_children_skill")
 
 
 def git_sha():
