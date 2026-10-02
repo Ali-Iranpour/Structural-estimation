@@ -128,12 +128,40 @@ spline is now fitted in ln k:
 - **Local identification at the test point.** The 67 × 20 scaled Jacobian (central
   differences, per full-box move) has rank 20/20 and condition number 1.35×10⁴. The weakest
   direction is σ_ε with d_2, the TFP slope.
-- **Parameter recovery.** `tools/test_param_recovery.jl`, results in
-  `output/smm_runs/2026-10-02_100135_recovery/`. RESULTS: see §6.
+- **Parameter recovery.** `tools/test_param_recovery.jl`. Not yet run to completion; see §6.
 
-## 6. Parameter recovery
+## 6. Parameter recovery: to run on the server
 
-(filled in below from the run logs)
+A first attempt on the Mac (2026-10-02) was stopped after about ten minutes so the runs could
+move to the server. Both were still descending:
+- with the 12 technology parameters free, Q fell from 19,604 to 609 after 200 evaluations;
+- with all 20 free, it fell from 20,300 to 4,568.
+
+Neither number is a result. Run both to completion, one process each and one thread each
+(NLopt is not thread-safe here), from the repository root:
+
+```bash
+T=output/smm_runs/2026-10-01_225333_185835_targets/targets.toml
+OUT=output/smm_runs/$(date +%Y-%m-%d_%H%M%S)_recovery; mkdir -p $OUT
+nohup julia --project=. --threads=1 tools/test_param_recovery.jl $T tech $OUT > $OUT/tech.console.log 2>&1 &
+nohup julia --project=. --threads=1 tools/test_param_recovery.jl $T all  $OUT > $OUT/all.console.log  2>&1 &
+```
+
+Budget: about 2.7 s per evaluation at the test grids. The technology run has at most 2,500
+evaluations (~2 h) and the full run at most 4,000 (~3 h).
+
+Each run writes `recovery_<mode>.log` with progress every 50 evaluations and
+`recovery_<mode>.toml` with the truth, start and estimate per parameter, plus a RESULT line.
+The pass criterion is Q < 1e-2 and every parameter within 2% of its box.
+
+What a failure would mean:
+- **σ_ε or d_2 not returning.** Expected to be the hardest, since they form the weakest
+  Jacobian direction.
+- **Q not reaching ~0.** A local-search problem, not identification: rerun from the
+  estimate, or with a smaller displacement.
+
+Rerun the test once the real composition and sd(log AFQT) exist. The current run uses the
+stand-ins in `tools/smm_test_fixtures.jl`.
 
 ## 7. Not updated, and why
 
