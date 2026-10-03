@@ -156,81 +156,86 @@ Parameters
   kappa_ParEd       -0.4670   (start -0.1081)
   kappa_terminal     2.6008   (start 8.7868)
   sigma_eps          1.2173   (start 1.1422)
+  [added 2026-10-03 (Ali): R_t, computed at this exact point; the run printed it without]
+  R_t (TFP by age) = d_0 + (d_1 - d_0) / (1 + exp(-d_2 (t - d_3)))
+    value  1:3.16 2:3.19 3:3.54 4:4.03 5:4.09 6:4.09 7:4.09 8:4.09 9:4.09 10:4.09 11:4.09 12:4.09 13:4.09 14:4.09 15:4.09 16:4.09 17:4.09
+  [note 2026-10-03: the 'start' column above is the code's default start, not this run's start (pilot arm A's point); see report_current_code.txt]
 
 Targeted moments -- 67 moments, 20 parameters
 ----------------------------------------------------------------------------------------------------
-  moment                             model        data         t  Q share   measure
+  moment                             model        data     gap %         t  Q share   measure
+  [added 2026-10-03 (Ali): the gap % column, 100 (model - data) / |data| at this exact point ("n/a" where |data| < 0.01); the run printed it without]
   ------------------------------ block P ------------------------------
-  mean_c_p                          3.1855      4.1186     -18.4     5.0%   Consumption incl. housing minus money investme
-  mean_h_p                          0.3146      0.3073       3.3     0.2%   Work hours per parent / 112 - equal-age mean 1
+  mean_c_p                          3.1855      4.1186    -22.7%     -18.4     5.0%   Consumption incl. housing minus money investme
+  mean_h_p                          0.3146      0.3073     +2.4%       3.3     0.2%   Work hours per parent / 112 - equal-age mean 1
   ------------------------------ block S ------------------------------
-  S1_mean_LW_age3                   4.9694      5.0909      -0.2     0.0%   Mean raw LW at age 3
-  S1_mean_LW_age4                   8.5351      6.7603       5.3     0.4%   Mean raw LW at age 4
-  S1_mean_LW_age5                  14.2925     10.2483       8.8     1.1%   Mean raw LW at age 5
-  S1_mean_LW_age6                  21.0135     17.2917       6.4     0.6%   Mean raw LW at age 6
-  S1_mean_LW_age7                  26.9636     27.7351      -1.1     0.0%   Mean raw LW at age 7
-  S1_mean_LW_age8                  32.1681     34.1067      -3.9     0.2%   Mean raw LW at age 8
-  S1_mean_LW_age9                  36.5331     38.8243      -4.4     0.3%   Mean raw LW at age 9
-  S1_mean_LW_age10                 40.1237     42.4483      -5.9     0.5%   Mean raw LW at age 10
-  S1_mean_LW_age11                 43.0600     44.5721      -3.7     0.2%   Mean raw LW at age 11
-  S1_mean_LW_age12                 45.4583     45.8342      -1.0     0.0%   Mean raw LW at age 12
-  S1_mean_LW_age13                 47.4174     47.0055       1.0     0.0%   Mean raw LW at age 13
-  S1_mean_LW_age14                 49.0183     47.9933       2.6     0.1%   Mean raw LW at age 14
-  S1_mean_LW_age15                 50.3149     49.3588       2.7     0.1%   Mean raw LW at age 15
-  S1_mean_LW_age16                 51.3426     49.8944       3.5     0.2%   Mean raw LW at age 16
-  S1_mean_LW_age17                 52.0874     49.9535       5.5     0.4%   Mean raw LW at age 17
-  S3_sd_LW_3_17                    14.1445     15.4734      -7.1     0.7%   SD of raw LW at ages 3-17
-  S3_sd_LW_3_7                      8.3285     10.4126      -6.7     0.7%   SD of raw LW at ages 3-7
-  S3_sd_LW_8_11                     5.5765      7.1633      -7.8     0.9%   SD of raw LW at ages 8-11
-  S3_sd_LW_12_17                    3.5031      5.1927      -8.6     1.1%   SD of raw LW at ages 12-17
-  S4_mean_dLW_base3_7              24.5854     28.0469      -7.6     0.9%   Mean 5-year change in raw LW - base age 3-7
-  S4_mean_dLW_base8_12             11.1911      8.0739      14.3     3.0%   Mean 5-year change in raw LW - base age 8-12
-  S5_corr_LW_LWt5_base3_12          0.7868      0.6490       8.0     0.9%   corr of LW now and 5 years later - base age 3-
-  S5_corr_LW_LWt5_base3_7           0.5870      0.4733       3.4     0.2%   corr of LW now and 5 years later - base age 3-
-  S5_corr_LW_LWt5_base8_12          0.4141      0.7168     -14.9     3.3%   corr of LW now and 5 years later - base age 8-
-  S6_corr_taup_LW_3_17             -0.6382     -0.3709     -12.1     2.2%   corr of active parental time and LW - ages 3-1
-  S6_corr_tauc_LW_6_17              0.2639      0.2216       2.4     0.1%   corr of own study time and LW - ages 6-17
-  S6_corr_ep_LW_3_17                0.2295      0.1013       3.5     0.2%   corr of money and LW - ages 3-17 - one-child f
-  S7_corr_taup_dLW_base3_12         0.3609      0.3372       0.8     0.0%   corr of parental time and 5-year LW change - b
-  S7_corr_taup_dLW_base3_7          0.2035      0.3168      -2.7     0.1%   corr of parental time and 5-year LW change - b
-  S7_corr_taup_dLW_base8_12         0.1907      0.0732       2.8     0.1%   corr of parental time and 5-year LW change - b
-  S7_corr_tauc_dLW_base6_12        -0.7310     -0.2210     -17.4     4.5%   corr of own study and 5-year LW change - base 
-  S7_corr_tauc_dLW_base6_7         -0.2810     -0.2046      -1.2     0.0%   corr of own study and 5-year LW change - base 
-  S7_corr_tauc_dLW_base8_12        -0.5481     -0.1039     -11.9     2.1%   corr of own study and 5-year LW change - base 
-  S7_corr_ep_dLW_base3_12          -0.5615      0.1388      -9.6     1.4%   corr of money and 5-year LW change - base age 
-  S7_corr_ep_dLW_base3_7           -0.3755      0.1092      -6.0     0.5%   corr of money and 5-year LW change - base age 
-  S7_corr_ep_dLW_base8_12          -0.1856     -0.0601      -1.7     0.0%   corr of money and 5-year LW change - base age 
-  S8_mean_taup_3_5                  0.2977      0.3420      -6.8     0.7%   Mean active parental time / 112 - ages 3-5
-  S8_sd_taup_3_5                    0.0517      0.1442     -22.7     7.6%   SD of active parental time / 112 - ages 3-5
-  S8_mean_taup_6_8                  0.2745      0.2397       8.3     1.0%   Mean active parental time / 112 - ages 6-8
-  S8_sd_taup_6_8                    0.0113      0.1015     -27.5    11.1%   SD of active parental time / 112 - ages 6-8
-  S8_mean_taup_9_12                 0.2708      0.2152      14.2     3.0%   Mean active parental time / 112 - ages 9-12
-  S8_sd_taup_9_12                   0.0133      0.1094     -29.6    12.9%   SD of active parental time / 112 - ages 9-12
-  S8_mean_taup_13_17                0.1603      0.1619      -0.4     0.0%   Mean active parental time / 112 - ages 13-17
-  S8_sd_taup_13_17                  0.0718      0.1219      -8.0     0.9%   SD of active parental time / 112 - ages 13-17
-  S8_mean_ep_3_5                    0.2174      0.3035      -3.8     0.2%   Mean money / 10000 - ages 3-5 - one-child - PS
-  S8_sd_ep_3_5                      0.0893      0.4258     -11.1     1.8%   SD of money / 10000 - ages 3-5 - one-child - P
-  S8_mean_ep_6_8                    0.3620      0.3000       2.1     0.1%   Mean money / 10000 - ages 6-8 - one-child - PS
-  S8_sd_ep_6_8                      0.1186      0.4842      -7.6     0.8%   SD of money / 10000 - ages 6-8 - one-child - P
-  S8_mean_ep_9_12                   0.4907      0.2908       6.1     0.6%   Mean money / 10000 - ages 9-12 - one-child - P
-  S8_sd_ep_9_12                     0.1601      0.5955      -5.0     0.4%   SD of money / 10000 - ages 9-12 - one-child - 
-  S8_mean_ep_13_17                  0.3407      0.4814      -3.8     0.2%   Mean money / 10000 - ages 13-17 - one-child - 
-  S8_sd_ep_13_17                    0.1922      0.9587     -10.0     1.5%   SD of money / 10000 - ages 13-17 - one-child -
-  S8_mean_tauc_6_8                  0.0378      0.0294       6.8     0.7%   Mean own study time / 112 - ages 6-8
-  S8_sd_tauc_6_8                    0.0032      0.0295     -22.0     7.1%   SD of own study time / 112 - ages 6-8
-  S8_mean_tauc_9_12                 0.0520      0.0453       4.3     0.3%   Mean own study time / 112 - ages 9-12
-  S8_sd_tauc_9_12                   0.0042      0.0444     -25.5     9.6%   SD of own study time / 112 - ages 9-12
-  S8_mean_tauc_13_17                0.0470      0.0557      -3.6     0.2%   Mean own study time / 112 - ages 13-17
-  S8_sd_tauc_13_17                  0.0151      0.0662     -18.8     5.2%   SD of own study time / 112 - ages 13-17
-  S9_mean_ep_over_Y_3_17            0.0439      0.0391       2.1     0.1%   Mean money / parents pre-tax labour income - a
+  S1_mean_LW_age3                   4.9694      5.0909     -2.4%      -0.2     0.0%   Mean raw LW at age 3
+  S1_mean_LW_age4                   8.5351      6.7603    +26.3%       5.3     0.4%   Mean raw LW at age 4
+  S1_mean_LW_age5                  14.2925     10.2483    +39.5%       8.8     1.1%   Mean raw LW at age 5
+  S1_mean_LW_age6                  21.0135     17.2917    +21.5%       6.4     0.6%   Mean raw LW at age 6
+  S1_mean_LW_age7                  26.9636     27.7351     -2.8%      -1.1     0.0%   Mean raw LW at age 7
+  S1_mean_LW_age8                  32.1681     34.1067     -5.7%      -3.9     0.2%   Mean raw LW at age 8
+  S1_mean_LW_age9                  36.5331     38.8243     -5.9%      -4.4     0.3%   Mean raw LW at age 9
+  S1_mean_LW_age10                 40.1237     42.4483     -5.5%      -5.9     0.5%   Mean raw LW at age 10
+  S1_mean_LW_age11                 43.0600     44.5721     -3.4%      -3.7     0.2%   Mean raw LW at age 11
+  S1_mean_LW_age12                 45.4583     45.8342     -0.8%      -1.0     0.0%   Mean raw LW at age 12
+  S1_mean_LW_age13                 47.4174     47.0055     +0.9%       1.0     0.0%   Mean raw LW at age 13
+  S1_mean_LW_age14                 49.0183     47.9933     +2.1%       2.6     0.1%   Mean raw LW at age 14
+  S1_mean_LW_age15                 50.3149     49.3588     +1.9%       2.7     0.1%   Mean raw LW at age 15
+  S1_mean_LW_age16                 51.3426     49.8944     +2.9%       3.5     0.2%   Mean raw LW at age 16
+  S1_mean_LW_age17                 52.0874     49.9535     +4.3%       5.5     0.4%   Mean raw LW at age 17
+  S3_sd_LW_3_17                    14.1445     15.4734     -8.6%      -7.1     0.7%   SD of raw LW at ages 3-17
+  S3_sd_LW_3_7                      8.3285     10.4126    -20.0%      -6.7     0.7%   SD of raw LW at ages 3-7
+  S3_sd_LW_8_11                     5.5765      7.1633    -22.2%      -7.8     0.9%   SD of raw LW at ages 8-11
+  S3_sd_LW_12_17                    3.5031      5.1927    -32.5%      -8.6     1.1%   SD of raw LW at ages 12-17
+  S4_mean_dLW_base3_7              24.5854     28.0469    -12.3%      -7.6     0.9%   Mean 5-year change in raw LW - base age 3-7
+  S4_mean_dLW_base8_12             11.1911      8.0739    +38.6%      14.3     3.0%   Mean 5-year change in raw LW - base age 8-12
+  S5_corr_LW_LWt5_base3_12          0.7868      0.6490    +21.2%       8.0     0.9%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base3_7           0.5870      0.4733    +24.0%       3.4     0.2%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base8_12          0.4141      0.7168    -42.2%     -14.9     3.3%   corr of LW now and 5 years later - base age 8-
+  S6_corr_taup_LW_3_17             -0.6382     -0.3709    -72.1%     -12.1     2.2%   corr of active parental time and LW - ages 3-1
+  S6_corr_tauc_LW_6_17              0.2639      0.2216    +19.1%       2.4     0.1%   corr of own study time and LW - ages 6-17
+  S6_corr_ep_LW_3_17                0.2295      0.1013   +126.5%       3.5     0.2%   corr of money and LW - ages 3-17 - one-child f
+  S7_corr_taup_dLW_base3_12         0.3609      0.3372     +7.0%       0.8     0.0%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base3_7          0.2035      0.3168    -35.8%      -2.7     0.1%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base8_12         0.1907      0.0732   +160.4%       2.8     0.1%   corr of parental time and 5-year LW change - b
+  S7_corr_tauc_dLW_base6_12        -0.7310     -0.2210   -230.7%     -17.4     4.5%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base6_7         -0.2810     -0.2046    -37.3%      -1.2     0.0%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base8_12        -0.5481     -0.1039   -427.7%     -11.9     2.1%   corr of own study and 5-year LW change - base 
+  S7_corr_ep_dLW_base3_12          -0.5615      0.1388   -504.6%      -9.6     1.4%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base3_7           -0.3755      0.1092   -443.8%      -6.0     0.5%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base8_12          -0.1856     -0.0601   -209.0%      -1.7     0.0%   corr of money and 5-year LW change - base age 
+  S8_mean_taup_3_5                  0.2977      0.3420    -12.9%      -6.8     0.7%   Mean active parental time / 112 - ages 3-5
+  S8_sd_taup_3_5                    0.0517      0.1442    -64.1%     -22.7     7.6%   SD of active parental time / 112 - ages 3-5
+  S8_mean_taup_6_8                  0.2745      0.2397    +14.5%       8.3     1.0%   Mean active parental time / 112 - ages 6-8
+  S8_sd_taup_6_8                    0.0113      0.1015    -88.9%     -27.5    11.1%   SD of active parental time / 112 - ages 6-8
+  S8_mean_taup_9_12                 0.2708      0.2152    +25.8%      14.2     3.0%   Mean active parental time / 112 - ages 9-12
+  S8_sd_taup_9_12                   0.0133      0.1094    -87.8%     -29.6    12.9%   SD of active parental time / 112 - ages 9-12
+  S8_mean_taup_13_17                0.1603      0.1619     -1.0%      -0.4     0.0%   Mean active parental time / 112 - ages 13-17
+  S8_sd_taup_13_17                  0.0718      0.1219    -41.1%      -8.0     0.9%   SD of active parental time / 112 - ages 13-17
+  S8_mean_ep_3_5                    0.2174      0.3035    -28.4%      -3.8     0.2%   Mean money / 10000 - ages 3-5 - one-child - PS
+  S8_sd_ep_3_5                      0.0893      0.4258    -79.0%     -11.1     1.8%   SD of money / 10000 - ages 3-5 - one-child - P
+  S8_mean_ep_6_8                    0.3620      0.3000    +20.6%       2.1     0.1%   Mean money / 10000 - ages 6-8 - one-child - PS
+  S8_sd_ep_6_8                      0.1186      0.4842    -75.5%      -7.6     0.8%   SD of money / 10000 - ages 6-8 - one-child - P
+  S8_mean_ep_9_12                   0.4907      0.2908    +68.8%       6.1     0.6%   Mean money / 10000 - ages 9-12 - one-child - P
+  S8_sd_ep_9_12                     0.1601      0.5955    -73.1%      -5.0     0.4%   SD of money / 10000 - ages 9-12 - one-child - 
+  S8_mean_ep_13_17                  0.3407      0.4814    -29.2%      -3.8     0.2%   Mean money / 10000 - ages 13-17 - one-child - 
+  S8_sd_ep_13_17                    0.1922      0.9587    -80.0%     -10.0     1.5%   SD of money / 10000 - ages 13-17 - one-child -
+  S8_mean_tauc_6_8                  0.0378      0.0294    +28.6%       6.8     0.7%   Mean own study time / 112 - ages 6-8
+  S8_sd_tauc_6_8                    0.0032      0.0295    -89.3%     -22.0     7.1%   SD of own study time / 112 - ages 6-8
+  S8_mean_tauc_9_12                 0.0520      0.0453    +14.9%       4.3     0.3%   Mean own study time / 112 - ages 9-12
+  S8_sd_tauc_9_12                   0.0042      0.0444    -90.6%     -25.5     9.6%   SD of own study time / 112 - ages 9-12
+  S8_mean_tauc_13_17                0.0470      0.0557    -15.8%      -3.6     0.2%   Mean own study time / 112 - ages 13-17
+  S8_sd_tauc_13_17                  0.0151      0.0662    -77.2%     -18.8     5.2%   SD of own study time / 112 - ages 13-17
+  S9_mean_ep_over_Y_3_17            0.0439      0.0391    +12.3%       2.1     0.1%   Mean money / parents pre-tax labour income - a
   ------------------------------ block T ------------------------------
-  k0_complete                       0.3655      0.3425       1.8     0.0%   Share with a BA at the first TAS wave at age 2
-  kpe_bc0_c                         0.2310      0.2991      -4.6     0.3%   BA share - BothCollege = 0 - both parents 16+ 
-  kpe_bc1_c                         0.7534      0.7971      -1.8     0.0%   BA share - BothCollege = 1
-  kth_lw17_gap                      0.0558      3.3484      -6.0     0.5%   Mean raw LW at 17 - BA minus no BA
-  m_eps                             0.1797      0.1922      -0.8     0.0%   Residual variance RSS/(N-3) of BA on BothColle
+  k0_complete                       0.3655      0.3425     +6.7%       1.8     0.0%   Share with a BA at the first TAS wave at age 2
+  kpe_bc0_c                         0.2310      0.2991    -22.8%      -4.6     0.3%   BA share - BothCollege = 0 - both parents 16+ 
+  kpe_bc1_c                         0.7534      0.7971     -5.5%      -1.8     0.0%   BA share - BothCollege = 1
+  kth_lw17_gap                      0.0558      3.3484    -98.3%      -6.0     0.5%   Mean raw LW at 17 - BA minus no BA
+  m_eps                             0.1797      0.1922     -6.5%      -0.8     0.0%   Residual variance RSS/(N-3) of BA on BothColle
   ------------------------------ block W ------------------------------
-  kterm_med22                       4.9392     15.6230      -8.3     1.0%   Median family net worth incl. home - first-chi
+  kterm_med22                       4.9392     15.6230    -68.4%      -8.3     1.0%   Median family net worth incl. home - first-chi
   Q                                                             6784.7947
   Q share of block P: 5.2%
   Q share of block S: 92.9%
@@ -8021,81 +8026,86 @@ Parameters
   kappa_ParEd       -0.9403   (start -0.1081)
   kappa_terminal     2.2260   (start 8.7868)
   sigma_eps          1.8823   (start 1.1422)
+  [added 2026-10-03 (Ali): R_t, computed at this exact point; the run printed it without]
+  R_t (TFP by age) = d_0 + (d_1 - d_0) / (1 + exp(-d_2 (t - d_3)))
+    value  1:3.62 2:3.63 3:3.73 4:5.55 5:9.47 6:9.96 7:9.98 8:9.99 9:9.99 10:9.99 11:9.99 12:9.99 13:9.99 14:9.99 15:9.99 16:9.99 17:9.99
+  [note 2026-10-03: the 'start' column above is the code's default start, not this run's start (pilot arm A's point); see report_current_code.txt]
 
 Targeted moments -- 67 moments, 20 parameters
 ----------------------------------------------------------------------------------------------------
-  moment                             model        data         t  Q share   measure
+  moment                             model        data     gap %         t  Q share   measure
+  [added 2026-10-03 (Ali): the gap % column, 100 (model - data) / |data| at this exact point ("n/a" where |data| < 0.01); the run printed it without]
   ------------------------------ block P ------------------------------
-  mean_c_p                          3.2532      4.1186     -17.1     5.1%   Consumption incl. housing minus money investme
-  mean_h_p                          0.3205      0.3073       6.0     0.6%   Work hours per parent / 112 - equal-age mean 1
+  mean_c_p                          3.2532      4.1186    -21.0%     -17.1     5.1%   Consumption incl. housing minus money investme
+  mean_h_p                          0.3205      0.3073     +4.3%       6.0     0.6%   Work hours per parent / 112 - equal-age mean 1
   ------------------------------ block S ------------------------------
-  S1_mean_LW_age3                   4.1108      5.0909      -2.0     0.1%   Mean raw LW at age 3
-  S1_mean_LW_age4                   5.5892      6.7603      -3.5     0.2%   Mean raw LW at age 4
-  S1_mean_LW_age5                   9.7188     10.2483      -1.2     0.0%   Mean raw LW at age 5
-  S1_mean_LW_age6                  19.7530     17.2917       4.3     0.3%   Mean raw LW at age 6
-  S1_mean_LW_age7                  28.4076     27.7351       1.0     0.0%   Mean raw LW at age 7
-  S1_mean_LW_age8                  34.2800     34.1067       0.3     0.0%   Mean raw LW at age 8
-  S1_mean_LW_age9                  38.2442     38.8243      -1.1     0.0%   Mean raw LW at age 9
-  S1_mean_LW_age10                 41.1014     42.4483      -3.4     0.2%   Mean raw LW at age 10
-  S1_mean_LW_age11                 43.3279     44.5721      -3.0     0.2%   Mean raw LW at age 11
-  S1_mean_LW_age12                 45.1779     45.8342      -1.7     0.1%   Mean raw LW at age 12
-  S1_mean_LW_age13                 46.7835     47.0055      -0.5     0.0%   Mean raw LW at age 13
-  S1_mean_LW_age14                 48.2126     47.9933       0.6     0.0%   Mean raw LW at age 14
-  S1_mean_LW_age15                 49.4967     49.3588       0.4     0.0%   Mean raw LW at age 15
-  S1_mean_LW_age16                 50.6473     49.8944       1.8     0.1%   Mean raw LW at age 16
-  S1_mean_LW_age17                 51.6572     49.9535       4.4     0.3%   Mean raw LW at age 17
-  S3_sd_LW_3_17                    14.7356     15.4734      -3.9     0.3%   SD of raw LW at ages 3-17
-  S3_sd_LW_3_7                      9.5212     10.4126      -2.9     0.1%   SD of raw LW at ages 3-7
-  S3_sd_LW_8_11                     4.9053      7.1633     -11.1     2.2%   SD of raw LW at ages 8-11
-  S3_sd_LW_12_17                    3.5009      5.1927      -8.6     1.3%   SD of raw LW at ages 12-17
-  S4_mean_dLW_base3_7              26.4375     28.0469      -3.5     0.2%   Mean 5-year change in raw LW - base age 3-7
-  S4_mean_dLW_base8_12              9.4368      8.0739       6.3     0.7%   Mean 5-year change in raw LW - base age 8-12
-  S5_corr_LW_LWt5_base3_12          0.7425      0.6490       5.4     0.5%   corr of LW now and 5 years later - base age 3-
-  S5_corr_LW_LWt5_base3_7           0.5019      0.4733       0.9     0.0%   corr of LW now and 5 years later - base age 3-
-  S5_corr_LW_LWt5_base8_12          0.3779      0.7168     -16.6     4.9%   corr of LW now and 5 years later - base age 8-
-  S6_corr_taup_LW_3_17             -0.6287     -0.3709     -11.7     2.4%   corr of active parental time and LW - ages 3-1
-  S6_corr_tauc_LW_6_17              0.3824      0.2216       9.0     1.4%   corr of own study time and LW - ages 6-17
-  S6_corr_ep_LW_3_17               -0.0147      0.1013      -3.1     0.2%   corr of money and LW - ages 3-17 - one-child f
-  S7_corr_taup_dLW_base3_12         0.3935      0.3372       1.8     0.1%   corr of parental time and 5-year LW change - b
-  S7_corr_taup_dLW_base3_7          0.1204      0.3168      -4.8     0.4%   corr of parental time and 5-year LW change - b
-  S7_corr_taup_dLW_base8_12         0.2873      0.0732       5.1     0.5%   corr of parental time and 5-year LW change - b
-  S7_corr_tauc_dLW_base6_12        -0.7139     -0.2210     -16.8     5.0%   corr of own study and 5-year LW change - base 
-  S7_corr_tauc_dLW_base6_7         -0.5338     -0.2046      -5.2     0.5%   corr of own study and 5-year LW change - base 
-  S7_corr_tauc_dLW_base8_12        -0.4378     -0.1039      -8.9     1.4%   corr of own study and 5-year LW change - base 
-  S7_corr_ep_dLW_base3_12          -0.4774      0.1388      -8.5     1.3%   corr of money and 5-year LW change - base age 
-  S7_corr_ep_dLW_base3_7           -0.4343      0.1092      -6.8     0.8%   corr of money and 5-year LW change - base age 
-  S7_corr_ep_dLW_base8_12          -0.0646     -0.0601      -0.1     0.0%   corr of money and 5-year LW change - base age 
-  S8_mean_taup_3_5                  0.2710      0.3420     -10.9     2.1%   Mean active parental time / 112 - ages 3-5
-  S8_sd_taup_3_5                    0.0917      0.1442     -12.9     2.9%   SD of active parental time / 112 - ages 3-5
-  S8_mean_taup_6_8                  0.2762      0.2397       8.7     1.3%   Mean active parental time / 112 - ages 6-8
-  S8_sd_taup_6_8                    0.0129      0.1015     -27.0    12.8%   SD of active parental time / 112 - ages 6-8
-  S8_mean_taup_9_12                 0.2519      0.2152       9.4     1.5%   Mean active parental time / 112 - ages 9-12
-  S8_sd_taup_9_12                   0.0145      0.1094     -29.2    15.0%   SD of active parental time / 112 - ages 9-12
-  S8_mean_taup_13_17                0.1341      0.1619      -6.6     0.8%   Mean active parental time / 112 - ages 13-17
-  S8_sd_taup_13_17                  0.0762      0.1219      -7.3     0.9%   SD of active parental time / 112 - ages 13-17
-  S8_mean_ep_3_5                    0.2186      0.3035      -3.8     0.2%   Mean money / 10000 - ages 3-5 - one-child - PS
-  S8_sd_ep_3_5                      0.1241      0.4258      -9.9     1.7%   SD of money / 10000 - ages 3-5 - one-child - P
-  S8_mean_ep_6_8                    0.3865      0.3000       3.0     0.2%   Mean money / 10000 - ages 6-8 - one-child - PS
-  S8_sd_ep_6_8                      0.1246      0.4842      -7.4     1.0%   SD of money / 10000 - ages 6-8 - one-child - P
-  S8_mean_ep_9_12                   0.4422      0.2908       4.6     0.4%   Mean money / 10000 - ages 9-12 - one-child - P
-  S8_sd_ep_9_12                     0.1463      0.5955      -5.2     0.5%   SD of money / 10000 - ages 9-12 - one-child - 
-  S8_mean_ep_13_17                  0.2528      0.4814      -6.1     0.7%   Mean money / 10000 - ages 13-17 - one-child - 
-  S8_sd_ep_13_17                    0.1865      0.9587     -10.1     1.8%   SD of money / 10000 - ages 13-17 - one-child -
-  S8_mean_tauc_6_8                  0.0331      0.0294       3.1     0.2%   Mean own study time / 112 - ages 6-8
-  S8_sd_tauc_6_8                    0.0040      0.0295     -21.2     7.9%   SD of own study time / 112 - ages 6-8
-  S8_mean_tauc_9_12                 0.0555      0.0453       6.6     0.8%   Mean own study time / 112 - ages 9-12
-  S8_sd_tauc_9_12                   0.0076      0.0444     -23.3     9.6%   SD of own study time / 112 - ages 9-12
-  S8_mean_tauc_13_17                0.0563      0.0557       0.2     0.0%   Mean own study time / 112 - ages 13-17
-  S8_sd_tauc_13_17                  0.0259      0.0662     -14.8     3.9%   SD of own study time / 112 - ages 13-17
-  S9_mean_ep_over_Y_3_17            0.0405      0.0391       0.6     0.0%   Mean money / parents pre-tax labour income - a
+  S1_mean_LW_age3                   4.1108      5.0909    -19.3%      -2.0     0.1%   Mean raw LW at age 3
+  S1_mean_LW_age4                   5.5892      6.7603    -17.3%      -3.5     0.2%   Mean raw LW at age 4
+  S1_mean_LW_age5                   9.7188     10.2483     -5.2%      -1.2     0.0%   Mean raw LW at age 5
+  S1_mean_LW_age6                  19.7530     17.2917    +14.2%       4.3     0.3%   Mean raw LW at age 6
+  S1_mean_LW_age7                  28.4076     27.7351     +2.4%       1.0     0.0%   Mean raw LW at age 7
+  S1_mean_LW_age8                  34.2800     34.1067     +0.5%       0.3     0.0%   Mean raw LW at age 8
+  S1_mean_LW_age9                  38.2442     38.8243     -1.5%      -1.1     0.0%   Mean raw LW at age 9
+  S1_mean_LW_age10                 41.1014     42.4483     -3.2%      -3.4     0.2%   Mean raw LW at age 10
+  S1_mean_LW_age11                 43.3279     44.5721     -2.8%      -3.0     0.2%   Mean raw LW at age 11
+  S1_mean_LW_age12                 45.1779     45.8342     -1.4%      -1.7     0.1%   Mean raw LW at age 12
+  S1_mean_LW_age13                 46.7835     47.0055     -0.5%      -0.5     0.0%   Mean raw LW at age 13
+  S1_mean_LW_age14                 48.2126     47.9933     +0.5%       0.6     0.0%   Mean raw LW at age 14
+  S1_mean_LW_age15                 49.4967     49.3588     +0.3%       0.4     0.0%   Mean raw LW at age 15
+  S1_mean_LW_age16                 50.6473     49.8944     +1.5%       1.8     0.1%   Mean raw LW at age 16
+  S1_mean_LW_age17                 51.6572     49.9535     +3.4%       4.4     0.3%   Mean raw LW at age 17
+  S3_sd_LW_3_17                    14.7356     15.4734     -4.8%      -3.9     0.3%   SD of raw LW at ages 3-17
+  S3_sd_LW_3_7                      9.5212     10.4126     -8.6%      -2.9     0.1%   SD of raw LW at ages 3-7
+  S3_sd_LW_8_11                     4.9053      7.1633    -31.5%     -11.1     2.2%   SD of raw LW at ages 8-11
+  S3_sd_LW_12_17                    3.5009      5.1927    -32.6%      -8.6     1.3%   SD of raw LW at ages 12-17
+  S4_mean_dLW_base3_7              26.4375     28.0469     -5.7%      -3.5     0.2%   Mean 5-year change in raw LW - base age 3-7
+  S4_mean_dLW_base8_12              9.4368      8.0739    +16.9%       6.3     0.7%   Mean 5-year change in raw LW - base age 8-12
+  S5_corr_LW_LWt5_base3_12          0.7425      0.6490    +14.4%       5.4     0.5%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base3_7           0.5019      0.4733     +6.0%       0.9     0.0%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base8_12          0.3779      0.7168    -47.3%     -16.6     4.9%   corr of LW now and 5 years later - base age 8-
+  S6_corr_taup_LW_3_17             -0.6287     -0.3709    -69.5%     -11.7     2.4%   corr of active parental time and LW - ages 3-1
+  S6_corr_tauc_LW_6_17              0.3824      0.2216    +72.6%       9.0     1.4%   corr of own study time and LW - ages 6-17
+  S6_corr_ep_LW_3_17               -0.0147      0.1013   -114.5%      -3.1     0.2%   corr of money and LW - ages 3-17 - one-child f
+  S7_corr_taup_dLW_base3_12         0.3935      0.3372    +16.7%       1.8     0.1%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base3_7          0.1204      0.3168    -62.0%      -4.8     0.4%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base8_12         0.2873      0.0732   +292.3%       5.1     0.5%   corr of parental time and 5-year LW change - b
+  S7_corr_tauc_dLW_base6_12        -0.7139     -0.2210   -223.0%     -16.8     5.0%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base6_7         -0.5338     -0.2046   -160.9%      -5.2     0.5%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base8_12        -0.4378     -0.1039   -321.5%      -8.9     1.4%   corr of own study and 5-year LW change - base 
+  S7_corr_ep_dLW_base3_12          -0.4774      0.1388   -444.0%      -8.5     1.3%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base3_7           -0.4343      0.1092   -497.6%      -6.8     0.8%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base8_12          -0.0646     -0.0601     -7.5%      -0.1     0.0%   corr of money and 5-year LW change - base age 
+  S8_mean_taup_3_5                  0.2710      0.3420    -20.7%     -10.9     2.1%   Mean active parental time / 112 - ages 3-5
+  S8_sd_taup_3_5                    0.0917      0.1442    -36.4%     -12.9     2.9%   SD of active parental time / 112 - ages 3-5
+  S8_mean_taup_6_8                  0.2762      0.2397    +15.2%       8.7     1.3%   Mean active parental time / 112 - ages 6-8
+  S8_sd_taup_6_8                    0.0129      0.1015    -87.3%     -27.0    12.8%   SD of active parental time / 112 - ages 6-8
+  S8_mean_taup_9_12                 0.2519      0.2152    +17.0%       9.4     1.5%   Mean active parental time / 112 - ages 9-12
+  S8_sd_taup_9_12                   0.0145      0.1094    -86.8%     -29.2    15.0%   SD of active parental time / 112 - ages 9-12
+  S8_mean_taup_13_17                0.1341      0.1619    -17.2%      -6.6     0.8%   Mean active parental time / 112 - ages 13-17
+  S8_sd_taup_13_17                  0.0762      0.1219    -37.5%      -7.3     0.9%   SD of active parental time / 112 - ages 13-17
+  S8_mean_ep_3_5                    0.2186      0.3035    -28.0%      -3.8     0.2%   Mean money / 10000 - ages 3-5 - one-child - PS
+  S8_sd_ep_3_5                      0.1241      0.4258    -70.9%      -9.9     1.7%   SD of money / 10000 - ages 3-5 - one-child - P
+  S8_mean_ep_6_8                    0.3865      0.3000    +28.8%       3.0     0.2%   Mean money / 10000 - ages 6-8 - one-child - PS
+  S8_sd_ep_6_8                      0.1246      0.4842    -74.3%      -7.4     1.0%   SD of money / 10000 - ages 6-8 - one-child - P
+  S8_mean_ep_9_12                   0.4422      0.2908    +52.1%       4.6     0.4%   Mean money / 10000 - ages 9-12 - one-child - P
+  S8_sd_ep_9_12                     0.1463      0.5955    -75.4%      -5.2     0.5%   SD of money / 10000 - ages 9-12 - one-child - 
+  S8_mean_ep_13_17                  0.2528      0.4814    -47.5%      -6.1     0.7%   Mean money / 10000 - ages 13-17 - one-child - 
+  S8_sd_ep_13_17                    0.1865      0.9587    -80.5%     -10.1     1.8%   SD of money / 10000 - ages 13-17 - one-child -
+  S8_mean_tauc_6_8                  0.0331      0.0294    +12.8%       3.1     0.2%   Mean own study time / 112 - ages 6-8
+  S8_sd_tauc_6_8                    0.0040      0.0295    -86.3%     -21.2     7.9%   SD of own study time / 112 - ages 6-8
+  S8_mean_tauc_9_12                 0.0555      0.0453    +22.7%       6.6     0.8%   Mean own study time / 112 - ages 9-12
+  S8_sd_tauc_9_12                   0.0076      0.0444    -82.9%     -23.3     9.6%   SD of own study time / 112 - ages 9-12
+  S8_mean_tauc_13_17                0.0563      0.0557     +1.0%       0.2     0.0%   Mean own study time / 112 - ages 13-17
+  S8_sd_tauc_13_17                  0.0259      0.0662    -60.8%     -14.8     3.9%   SD of own study time / 112 - ages 13-17
+  S9_mean_ep_over_Y_3_17            0.0405      0.0391     +3.6%       0.6     0.0%   Mean money / parents pre-tax labour income - a
   ------------------------------ block T ------------------------------
-  k0_complete                       0.3710      0.3425       2.2     0.1%   Share with a BA at the first TAS wave at age 2
-  kpe_bc0_c                         0.2168      0.2991      -5.5     0.5%   BA share - BothCollege = 0 - both parents 16+ 
-  kpe_bc1_c                         0.8155      0.7971       0.8     0.0%   BA share - BothCollege = 1
-  kth_lw17_gap                      0.0031      3.3484      -6.0     0.6%   Mean raw LW at 17 - BA minus no BA
-  m_eps                             0.1648      0.1922      -1.8     0.1%   Residual variance RSS/(N-3) of BA on BothColle
+  k0_complete                       0.3710      0.3425     +8.3%       2.2     0.1%   Share with a BA at the first TAS wave at age 2
+  kpe_bc0_c                         0.2168      0.2991    -27.5%      -5.5     0.5%   BA share - BothCollege = 0 - both parents 16+ 
+  kpe_bc1_c                         0.8155      0.7971     +2.3%       0.8     0.0%   BA share - BothCollege = 1
+  kth_lw17_gap                      0.0031      3.3484    -99.9%      -6.0     0.6%   Mean raw LW at 17 - BA minus no BA
+  m_eps                             0.1648      0.1922    -14.2%      -1.8     0.1%   Residual variance RSS/(N-3) of BA on BothColle
   ------------------------------ block W ------------------------------
-  kterm_med22                       4.3125     15.6230      -8.7     1.3%   Median family net worth incl. home - first-chi
+  kterm_med22                       4.3125     15.6230    -72.4%      -8.7     1.3%   Median family net worth incl. home - first-chi
   Q                                                             5687.2833
   Q share of block P: 5.8%
   Q share of block S: 91.6%

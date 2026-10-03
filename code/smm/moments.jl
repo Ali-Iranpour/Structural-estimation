@@ -1828,6 +1828,17 @@ function report_fit(z::AbstractVector{Float64}, targets;
         @printf(out, "  %-14s %11.4f %11.4f   [%9.4g, %9.4g]   %6.1f%%%s\n",
                 q.name, getfield(kw, q.name), st, q.lo, q.hi, 100 * pos, flag)
     end
+    # R_t, the TFP of the skill technology by age (2026-10-03, Ali), as parent_family.jl builds R_vector:
+    # d_0 = the level at young ages, d_1 = the level at older ages, d_2 = the slope, d_3 = the midpoint age.
+    tfp(d0, d1, d2, d3) = [d0 + (d1 - d0) / (1 + exp(-d2 * (t - d3))) for t in SMM_AGE_LO:SMM_AGE_HI]
+    sd_(n) = start === nothing ? smm_start(n) : Float64(start[n])
+    println(out, "  R_t (TFP by age) = d_0 + (d_1 - d_0) / (1 + exp(-d_2 (t - d_3)))")
+    for (lab, R) in (("value", tfp(kw.d_0, kw.d_1, kw.d_2, kw.d_3)),
+                     ("start", tfp(sd_(:d_0), sd_(:d_1), sd_(:d_2), sd_(:d_3))))
+        @printf(out, "    %-6s", lab)
+        for (i, v) in enumerate(R); @printf(out, " %d:%.2f", SMM_AGE_LO + i - 1, v); end
+        println(out)
+    end
 
     @printf(out, "\nTargeted moments -- %d moments, %d parameters\n", length(SMM_MOMENTS), length(SMM_PARAMS))
     println(out, "-"^100)
