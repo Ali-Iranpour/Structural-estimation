@@ -53,8 +53,9 @@ both theoretical masks. **One caveat remains — see P5.**
 | P12 | `σ₂₁ × 1.5` counterfactual no longer solves under the new HC block | parent_family | 🟡 |
 | P10 | Leisure restored (`φ₂` 20.0 → 0.8); `τ_p` level now targeted — see P11 | parent_family | 🟡 |
 | P5 | Linear continuation moves policies — **child solver only; parent fixed** | child_lifecycle | 🟡 |
-| F1 | Latent skill dispersion collapses with age (SD ln k at 17: 0.03-0.07 vs data 0.652), so the college-LW gap at 17 is near zero (0.06 vs 3.35) | parent_family / smm | 🟡 |
-| F2 | The transfer at 18 goes to EVERY child and averages 339k USD (86% of parental assets); data: support in 66% of enrolled years, about 6-12k USD a year | parent_family / smm | 🟡 |
+| F1 | **Latent skill dispersion collapses with age** (K = 16 estimate: SD ln k 0.62 at 1, 0.00 from 11; data 0.652 at 17), so college cannot sort on skill (LW gap 0.003 vs 3.35; `kappa_theta` pushed to its bound 0) | parent_family / smm | 🟠 |
+| F2 | The transfer at 18 goes to EVERY child: K = 16 estimate 351k USD on average, 88% of parental assets; data: support in 66% of enrolled years, about 6-12k USD a year | parent_family / smm | 🟡 |
+| F3 | **Inputs barely differ across families**: the SDs of parental time, money and own study are 60-87% below the data and carry 58% of Q at the K = 16 estimate | parent_family / smm | 🟠 |
 | T1 | **The TikTak search is not the authors' algorithm** (Arnoud, Guvenen & Kleineberg); the authors' version is decided as a selectable algorithm, **deferred** (2026-10-02) | src/TikTak, smm/run_smm | 🟡 |
 | P7b | ~~`BothCollege` share hardcoded at `Bernoulli(0.3)`~~ -- **resolved 2026-10-02**: `bc_share_children_skill` = 0.2588 from the target file, required | parent_family | ✅ |
 | P7c | `kappa_ParEd` targeted on *either*-parent college; model means *both* — **open by instruction** | smm/moments | 🟡 |
@@ -65,7 +66,24 @@ both theoretical masks. **One caveat remains — see P5.**
 
 ---
 
-## 🟡 F1 — Latent skill dispersion collapses with age — **measured 2026-10-02 at pilot points; check at the K = 16 estimate**
+## 🟠 F1 — Latent skill dispersion collapses with age — **measured 2026-10-02 at pilot points, confirmed 2026-10-03 at the K = 16 estimate (Q 5,687.3)**
+
+**At the K = 16 estimate** (`output/smm_runs/2026-10-02_223909_k16/report_current_code.txt`): the SD of ln k is
+0.62 at age 1, 0.19 at 3, 0.06 at 5, 0.01 at 8 and **0.00 from age 11 on**. The LW gap at 17 is 0.003 points
+(data 3.35), the regression's LW coefficient 0.0000 (data 0.028), the BothCollege-LW correlation 0.050 at 3-5
+down to 0.002 at 13-17 (data 0.26-0.28). The optimizer responds by dropping skill from the college decision:
+`kappa_theta` = -0.041, ON its upper bound 0 (98.6% of the box), and `kappa_ParEd` = -0.94, near its lower
+bound -1 (4.0%), so BothCollege alone sorts children into college. The LW dispersion and persistence moments
+miss for the same reason: SD of LW at 8-11 and 12-17 -31% and -33%, correlation of LW now and 5 years later
+(base 8-12) 0.38 against 0.72 (t = -16.6).
+
+**The arithmetic.** With sigma_eta = 0 (DFVW's deterministic technology) the only things that carry skill
+differences forward are self-productivity s_3t = exp(sigma_3_0 + sigma_3_1 t) and differences in inputs. At the
+estimate s_3t runs from 0.55 (t = 1) to 0.70 (t = 17), so an initial difference shrinks by roughly 0.55-0.6 a
+year: after ten years it is about 0.005 of what it was. Inputs could replace it, but they hardly differ across
+families (F3). So F1 and F3 are one problem: the model has too little heterogeneity across families.
+
+The pilot-point measurements that first showed it:
 
 At the pilot's best point (arm A, Q 6,784.8) the SD of simulated ln k falls from 0.62 at age 1 to **0.03 at
 17**; at theta0 it is 0.07 at 17. The data's latent SD at 17 is **0.652** (`sd_lnk17` in `[constants]`, used
@@ -80,7 +98,14 @@ arm A); the gap is small because the skill it sorts on hardly varies. The S3 LW 
 partly by the binomial test noise, which does not need latent dispersion. Whether to target the latent SD at
 17 (a specification change, for the advisor) is open.
 
-## 🟡 F2 — The transfer at 18 goes to every child and is most of the parents' wealth — **measured 2026-10-02 at arm A; check at the K = 16 estimate**
+## 🟡 F2 — The transfer at 18 goes to every child and is most of the parents' wealth — **measured 2026-10-02 at arm A, confirmed at the K = 16 estimate**
+
+At the K = 16 estimate: every child receives a transfer, mean 351,337 USD (median 300,437), 88% of parental
+assets at 18; college 385,042, work 331,457, work children of BothCollege parents 571,976; parents keep a
+median 43,125 USD (data 156,230: -72%, t = -8.7); `kappa_terminal` fell from 8.79 (theta0) to 2.23. Parents'
+consumption is 21% below the data (t = -17.1).
+
+At pilot arm A:
 
 Untargeted (`report_fit`, "the transfer at 18"): at arm A every one of 2,000 simulated children receives a
 transfer, mean 338,531 USD (median 282,676), 86% of parental assets at 18 (ratio of means); parents keep a
@@ -90,6 +115,33 @@ By parental-asset tertile (college children): 168,916 / 307,235 / 524,858. Data 
 support per enrolled year 6,110 (recipients 9,919; by wealth tertile 4,189 / 5,540 / 11,524); any support in
 66.3% of enrolled and 38.1% of non-enrolled years. The model's lump sum and the data's yearly flows are not
 comparable in level, but "every child gets a transfer of most of the parents' wealth" is not the data.
+
+---
+
+## 🟠 F3 — Inputs barely differ across families — **measured 2026-10-03 at the K = 16 estimate**
+
+The cross-family SDs of the inputs, model against data (S8, targeted), at Q 5,687.3:
+
+| input | ages | model SD | data SD | gap | share of Q |
+|---|---|---|---|---|---|
+| active parental time / 112 | 6-8 | 0.013 | 0.102 | -87% | 12.8% |
+| | 9-12 | 0.015 | 0.109 | -87% | 15.0% |
+| | 3-5, 13-17 | 0.092, 0.076 | 0.144, 0.122 | -36%, -38% | 2.9%, 0.9% |
+| own study / 112 | 6-8, 9-12, 13-17 | 0.004, 0.008, 0.026 | 0.030, 0.044, 0.066 | -86%, -83%, -61% | 7.9%, 9.6%, 3.9% |
+| money / 10k | 3-5 ... 13-17 | 0.12-0.19 | 0.43-0.96 | -71% to -81% | 5.0% together |
+
+Together the eleven input SDs carry **58% of Q**; the means of the same inputs are within about 20-50%.
+Parents in the model choose almost the same inputs whatever their circumstances: the household states that
+differ (wage shock, assets, BothCollege, skill) move inputs little, and skill stops differing early (F1).
+
+**Not yet known: how much of the data's SD is measurement noise.** The CDS time diaries cover two days per
+child, so measured weekly time has noise the model does not have; the model's LW scores carry binomial test
+noise, its inputs carry none. If part of the data's SD is diary noise, the S8 SD targets ask the model for
+dispersion it should not have. Measuring the diaries' reliability is a data task (Child_Time_Study, on the Mac).
+
+**Specification questions for the advisor** (none decided): heterogeneity that moves inputs (e.g. in tastes
+for investment), skill shocks (sigma_eta > 0, now fixed at 0 after DFVW), targeting the latent SD of ln k at 17
+(0.652, already in `[constants]`), measurement error on the input SD moments.
 
 ---
 

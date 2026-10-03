@@ -1,0 +1,148 @@
+report at the point of output/smm_runs/2026-10-02_223909_k16/estimates.toml; start column: /srv/project/speech/apps/Structural-estimation/temp/2026-10-02_memo19_merge/output/smm_runs/2026-10-02_195733_pilot_A_theta0/estimates.toml
+
+Parameters -- value, the run's start, the search box, and where the value sits in it (search coordinates)
+----------------------------------------------------------------------------------------------------
+  parameter            value       start   box [lo, hi]             in box
+  phi_2               0.4700      0.4428   [     0.01,        20]     50.7%
+  phi_3               0.0650      0.1764   [     0.05,        20]      4.4%   <  near a bound (within 5%)
+  lambda_2           28.1358      5.4451   [     0.05,       100]     83.3%
+  sigma_1_0          -2.8939     -2.4352   [       -4,         1]     22.1%
+  sigma_1_1          -0.0737     -0.0012   [     -0.4,       0.1]     65.3%
+  sigma_2_0          -5.7660     -5.4875   [      -12,        -1]     56.7%
+  sigma_2_1          -0.0298      0.0622   [     -0.3,       0.3]     45.0%
+  sigma_3_0          -0.6207     -0.2758   [       -3,         0]     79.3%
+  sigma_3_1           0.0158      0.0071   [     -0.1,       0.1]     57.9%
+  sigma_4_0          -7.6014     -6.5059   [      -12,        -1]     40.0%
+  sigma_4_1           0.1233      0.1239   [     -0.2,       0.6]     40.4%
+  d_0                 3.6227      3.1575   [     0.01,        10]     36.2%
+  d_1                 9.9857      4.0894   [     0.01,        10]     99.9%   << ON A BOUND (within 2%): review
+  d_2                 3.2604      3.0127   [       -4,         4]     90.8%
+  d_3                 4.2557      3.1157   [      -20,        20]     60.6%
+  kappa_0             0.7226      0.7404   [       -3,         1]     93.1%
+  kappa_theta        -0.0408     -0.2636   [       -3,         0]     98.6%   << ON A BOUND (within 2%): review
+  kappa_ParEd        -0.9403     -0.4670   [       -1,       0.5]      4.0%   <  near a bound (within 5%)
+  kappa_terminal      2.2260      2.6008   [      0.5,        40]     34.1%
+  sigma_eps           1.8823      1.2173   [      0.1,         2]     98.0%   <  near a bound (within 5%)
+
+Targeted moments -- 67 moments, 20 parameters
+----------------------------------------------------------------------------------------------------
+  moment                             model        data     gap %         t  Q share   measure
+  ------------------------------ block P ------------------------------
+  mean_c_p                          3.2532      4.1186    -21.0%     -17.1     5.1%   Consumption incl. housing minus money investme
+  mean_h_p                          0.3205      0.3073     +4.3%       6.0     0.6%   Work hours per parent / 112 - equal-age mean 1
+  ------------------------------ block S ------------------------------
+  S1_mean_LW_age3                   4.1108      5.0909    -19.3%      -2.0     0.1%   Mean raw LW at age 3
+  S1_mean_LW_age4                   5.5892      6.7603    -17.3%      -3.5     0.2%   Mean raw LW at age 4
+  S1_mean_LW_age5                   9.7188     10.2483     -5.2%      -1.2     0.0%   Mean raw LW at age 5
+  S1_mean_LW_age6                  19.7530     17.2917    +14.2%       4.3     0.3%   Mean raw LW at age 6
+  S1_mean_LW_age7                  28.4076     27.7351     +2.4%       1.0     0.0%   Mean raw LW at age 7
+  S1_mean_LW_age8                  34.2800     34.1067     +0.5%       0.3     0.0%   Mean raw LW at age 8
+  S1_mean_LW_age9                  38.2442     38.8243     -1.5%      -1.1     0.0%   Mean raw LW at age 9
+  S1_mean_LW_age10                 41.1014     42.4483     -3.2%      -3.4     0.2%   Mean raw LW at age 10
+  S1_mean_LW_age11                 43.3279     44.5721     -2.8%      -3.0     0.2%   Mean raw LW at age 11
+  S1_mean_LW_age12                 45.1779     45.8342     -1.4%      -1.7     0.1%   Mean raw LW at age 12
+  S1_mean_LW_age13                 46.7835     47.0055     -0.5%      -0.5     0.0%   Mean raw LW at age 13
+  S1_mean_LW_age14                 48.2126     47.9933     +0.5%       0.6     0.0%   Mean raw LW at age 14
+  S1_mean_LW_age15                 49.4967     49.3588     +0.3%       0.4     0.0%   Mean raw LW at age 15
+  S1_mean_LW_age16                 50.6473     49.8944     +1.5%       1.8     0.1%   Mean raw LW at age 16
+  S1_mean_LW_age17                 51.6572     49.9535     +3.4%       4.4     0.3%   Mean raw LW at age 17
+  S3_sd_LW_3_17                    14.7356     15.4734     -4.8%      -3.9     0.3%   SD of raw LW at ages 3-17
+  S3_sd_LW_3_7                      9.5212     10.4126     -8.6%      -2.9     0.1%   SD of raw LW at ages 3-7
+  S3_sd_LW_8_11                     4.9053      7.1633    -31.5%     -11.1     2.2%   SD of raw LW at ages 8-11
+  S3_sd_LW_12_17                    3.5009      5.1927    -32.6%      -8.6     1.3%   SD of raw LW at ages 12-17
+  S4_mean_dLW_base3_7              26.4375     28.0469     -5.7%      -3.5     0.2%   Mean 5-year change in raw LW - base age 3-7
+  S4_mean_dLW_base8_12              9.4368      8.0739    +16.9%       6.3     0.7%   Mean 5-year change in raw LW - base age 8-12
+  S5_corr_LW_LWt5_base3_12          0.7425      0.6490    +14.4%       5.4     0.5%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base3_7           0.5019      0.4733     +6.0%       0.9     0.0%   corr of LW now and 5 years later - base age 3-
+  S5_corr_LW_LWt5_base8_12          0.3779      0.7168    -47.3%     -16.6     4.9%   corr of LW now and 5 years later - base age 8-
+  S6_corr_taup_LW_3_17             -0.6287     -0.3709    -69.5%     -11.7     2.4%   corr of active parental time and LW - ages 3-1
+  S6_corr_tauc_LW_6_17              0.3824      0.2216    +72.6%       9.0     1.4%   corr of own study time and LW - ages 6-17
+  S6_corr_ep_LW_3_17               -0.0147      0.1013   -114.5%      -3.1     0.2%   corr of money and LW - ages 3-17 - one-child f
+  S7_corr_taup_dLW_base3_12         0.3935      0.3372    +16.7%       1.8     0.1%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base3_7          0.1204      0.3168    -62.0%      -4.8     0.4%   corr of parental time and 5-year LW change - b
+  S7_corr_taup_dLW_base8_12         0.2873      0.0732   +292.3%       5.1     0.5%   corr of parental time and 5-year LW change - b
+  S7_corr_tauc_dLW_base6_12        -0.7139     -0.2210   -223.0%     -16.8     5.0%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base6_7         -0.5338     -0.2046   -160.9%      -5.2     0.5%   corr of own study and 5-year LW change - base 
+  S7_corr_tauc_dLW_base8_12        -0.4378     -0.1039   -321.5%      -8.9     1.4%   corr of own study and 5-year LW change - base 
+  S7_corr_ep_dLW_base3_12          -0.4774      0.1388   -444.0%      -8.5     1.3%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base3_7           -0.4343      0.1092   -497.6%      -6.8     0.8%   corr of money and 5-year LW change - base age 
+  S7_corr_ep_dLW_base8_12          -0.0646     -0.0601     -7.5%      -0.1     0.0%   corr of money and 5-year LW change - base age 
+  S8_mean_taup_3_5                  0.2710      0.3420    -20.7%     -10.9     2.1%   Mean active parental time / 112 - ages 3-5
+  S8_sd_taup_3_5                    0.0917      0.1442    -36.4%     -12.9     2.9%   SD of active parental time / 112 - ages 3-5
+  S8_mean_taup_6_8                  0.2762      0.2397    +15.2%       8.7     1.3%   Mean active parental time / 112 - ages 6-8
+  S8_sd_taup_6_8                    0.0129      0.1015    -87.3%     -27.0    12.8%   SD of active parental time / 112 - ages 6-8
+  S8_mean_taup_9_12                 0.2519      0.2152    +17.0%       9.4     1.5%   Mean active parental time / 112 - ages 9-12
+  S8_sd_taup_9_12                   0.0145      0.1094    -86.8%     -29.2    15.0%   SD of active parental time / 112 - ages 9-12
+  S8_mean_taup_13_17                0.1341      0.1619    -17.2%      -6.6     0.8%   Mean active parental time / 112 - ages 13-17
+  S8_sd_taup_13_17                  0.0762      0.1219    -37.5%      -7.3     0.9%   SD of active parental time / 112 - ages 13-17
+  S8_mean_ep_3_5                    0.2186      0.3035    -28.0%      -3.8     0.2%   Mean money / 10000 - ages 3-5 - one-child - PS
+  S8_sd_ep_3_5                      0.1241      0.4258    -70.9%      -9.9     1.7%   SD of money / 10000 - ages 3-5 - one-child - P
+  S8_mean_ep_6_8                    0.3865      0.3000    +28.8%       3.0     0.2%   Mean money / 10000 - ages 6-8 - one-child - PS
+  S8_sd_ep_6_8                      0.1246      0.4842    -74.3%      -7.4     1.0%   SD of money / 10000 - ages 6-8 - one-child - P
+  S8_mean_ep_9_12                   0.4422      0.2908    +52.1%       4.6     0.4%   Mean money / 10000 - ages 9-12 - one-child - P
+  S8_sd_ep_9_12                     0.1463      0.5955    -75.4%      -5.2     0.5%   SD of money / 10000 - ages 9-12 - one-child - 
+  S8_mean_ep_13_17                  0.2528      0.4814    -47.5%      -6.1     0.7%   Mean money / 10000 - ages 13-17 - one-child - 
+  S8_sd_ep_13_17                    0.1865      0.9587    -80.5%     -10.1     1.8%   SD of money / 10000 - ages 13-17 - one-child -
+  S8_mean_tauc_6_8                  0.0331      0.0294    +12.8%       3.1     0.2%   Mean own study time / 112 - ages 6-8
+  S8_sd_tauc_6_8                    0.0040      0.0295    -86.3%     -21.2     7.9%   SD of own study time / 112 - ages 6-8
+  S8_mean_tauc_9_12                 0.0555      0.0453    +22.7%       6.6     0.8%   Mean own study time / 112 - ages 9-12
+  S8_sd_tauc_9_12                   0.0076      0.0444    -82.9%     -23.3     9.6%   SD of own study time / 112 - ages 9-12
+  S8_mean_tauc_13_17                0.0563      0.0557     +1.0%       0.2     0.0%   Mean own study time / 112 - ages 13-17
+  S8_sd_tauc_13_17                  0.0259      0.0662    -60.8%     -14.8     3.9%   SD of own study time / 112 - ages 13-17
+  S9_mean_ep_over_Y_3_17            0.0405      0.0391     +3.6%       0.6     0.0%   Mean money / parents pre-tax labour income - a
+  ------------------------------ block T ------------------------------
+  k0_complete                       0.3710      0.3425     +8.3%       2.2     0.1%   Share with a BA at the first TAS wave at age 2
+  kpe_bc0_c                         0.2168      0.2991    -27.5%      -5.5     0.5%   BA share - BothCollege = 0 - both parents 16+ 
+  kpe_bc1_c                         0.8155      0.7971     +2.3%       0.8     0.0%   BA share - BothCollege = 1
+  kth_lw17_gap                      0.0031      3.3484    -99.9%      -6.0     0.6%   Mean raw LW at 17 - BA minus no BA
+  m_eps                             0.1648      0.1922    -14.2%      -1.8     0.1%   Residual variance RSS/(N-3) of BA on BothColle
+  ------------------------------ block W ------------------------------
+  kterm_med22                       4.3125     15.6230    -72.4%      -8.7     1.3%   Median family net worth incl. home - first-chi
+  Q                                                                       5687.2833
+  Q share of block P: 5.8%
+  Q share of block S: 91.6%
+  Q share of block T: 1.3%
+  Q share of block W: 1.3%
+
+  Q concentration: top 5 moments carry 50.4% of Q  (S8_sd_taup_9_12 15%, S8_sd_taup_6_8 13%, S8_sd_tauc_9_12 10%, S8_sd_tauc_6_8 8%, mean_c_p 5%)
+
+Untargeted -- the college regression, the skill gradient, the handoff
+----------------------------------------------------------------------------
+  LW at 17: college 51.66 / not 51.66   (data 51.98 / 48.63)   [analytic LW17, FLAGGED]
+  m_eps regression: b_BC 0.599  b_LW -0.0000  R2 0.294   (data 0.457 / 0.0283 / 0.225)
+  bc_lw_corr_3_5     model 0.050  data 0.264
+  bc_lw_corr_6_8     model 0.016  data 0.169
+  bc_lw_corr_9_12    model 0.007  data 0.233
+  bc_lw_corr_13_17   model 0.002  data 0.275
+  college 742 of 2000 simulated children; 515 BothCollege
+  mean transfer 35.1337 (351337 USD); median retained 4.3125 (43125 USD) vs data 156230 USD
+  LIMITATION: the data are at first-child ages 21-22; the model's a_term is at 18.
+
+Untargeted -- the transfer at 18 (one lump sum in the model), 2015 USD
+----------------------------------------------------------------------------
+  children                            n        mean      median   share > 0
+  all                              2000      351337      300437      100.0%
+  college                           742      385042      383387      100.0%
+  work                             1258      331457      280628      100.0%
+  college, BothCollege = 1          420      448006      429239      100.0%
+  college, BothCollege = 0          322      302914      258982      100.0%
+  work, BothCollege = 1              95      571976      531322      100.0%
+  work, BothCollege = 0            1163      311810      270377      100.0%
+  college, parental assets T1       209      194996      201676      100.0%
+  college, parental assets T2       225      327445      313329      100.0%
+  college, parental assets T3       308      556077      513575      100.0%
+  transfer / parental assets at 18 (ratio of means): 0.88
+  data (TAS, ages 18-22; support per YEAR, not a lump sum -- context, not comparable in level):
+    support per enrolled year: mean 6110, among recipients 9919; by parental-wealth tertile near 18: 4189 / 5540 / 11524
+    share of years with any support: enrolled 66.3%, not enrolled 38.1%  (closest model figure: share > 0 above)
+  parents' wealth after the transfer (model, at 18): median 43125, mean 48107
+    data at first-child ages 21-22: median 156230 incl. home (targeted), 50000 excl. home; mean 366463 incl., 245592 excl.
+  mean ln k by age   1:0.74 2:1.54 3:2.03 4:2.37 5:3.01 6:3.96 7:4.59 8:5.01 9:5.31 10:5.54 11:5.75 12:5.94 13:6.12 14:6.30 15:6.48 16:6.67 17:6.86 
+  sd ln k by age     1:0.62 2:0.34 3:0.19 4:0.11 5:0.06 6:0.04 7:0.02 8:0.01 9:0.01 10:0.01 11:0.00 12:0.00 13:0.00 14:0.00 15:0.00 16:0.00 17:0.00 
+  (data: latent mean ln k at 17 = 6.687, SD 0.652)
+
+  c_p     32532 USD/yr  vs data 41186
+  h_p      35.9 hrs/wk  vs data 34.4
+  after-tax income 4.8614 (48614 USD/yr); implied saving rate 29.2%
+  invalid sim cells 0
+  assets above a_max=100: 2 households ever; skill outside [0.135, 2.2e+04]: 0 ever above, 0 ever below

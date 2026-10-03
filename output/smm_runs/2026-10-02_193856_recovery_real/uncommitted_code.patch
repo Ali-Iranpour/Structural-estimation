@@ -1,0 +1,224 @@
+diff --git a/code/smm/moments.jl b/code/smm/moments.jl
+index fedf23e..1681180 100644
+--- a/code/smm/moments.jl
++++ b/code/smm/moments.jl
+@@ -377,7 +377,10 @@ const PARENT_CALIB_CONSTANTS = (
+     init_asset_p0 = "init_asset_p0", init_asset_mu = "init_asset_mu", init_asset_sd = "init_asset_sd",
+     β0 = "wage_b0", β_bothcollege = "wage_b_bc", β_age = "wage_b_age", β_age2 = "wage_b_age2",
+     β_age2_capital = "wage_b_age2_bc", β_age_capital = "wage_b_age_bc",
+-    p_ar1 = "wage_rho", sigma_p = "wage_sig_p", wage_var_0 = "wage_var_0")
++    p_ar1 = "wage_rho", sigma_p = "wage_sig_p", wage_var_0 = "wage_var_0",
++    # the household's BothCollege share (Ali, 2026-10-02): the share among the children the skill moments
++    # and m_BC are built on (28 block C `bc_share_children_skill`), REQUIRED, no fallback
++    p_bothcollege = "bc_share_children_skill")
+ 
+ """
+     _parent_calibration(raw, path) -> NamedTuple
+@@ -391,8 +394,8 @@ function _parent_calibration(raw::AbstractDict, path::AbstractString)
+         initial assets are read from it (every row of Child_Time_Study's SMM_Constants.csv, passed
+         through by tools/make_smm_targets.py); regenerate the targets.""")
+     c = raw["constants"]
+-    get_(k) = (haskey(c, k) || error("[constants] in $path has no `$k` (Child_Time_Study block K3: " *
+-                                     "29_initial_assets.do / 30_wage_process.do); regenerate the targets");
++    get_(k) = (haskey(c, k) || error("[constants] in $path has no `$k` (Child_Time_Study 28_smm_moments.do: " *
++                                     "block K3 from 29/30, or block C for the BothCollege share); regenerate the targets");
+                v = Float64(c[k]); isfinite(v) || error("[constants] $k = $v is not finite: $path"); v)
+     cal = NamedTuple{keys(PARENT_CALIB_CONSTANTS)}(map(get_, values(PARENT_CALIB_CONSTANTS)))
+     0 <= cal.init_asset_p0 < 1 || error("init_asset_p0 = $(cal.init_asset_p0) is not a share in [0, 1): $path")
+@@ -400,6 +403,7 @@ function _parent_calibration(raw::AbstractDict, path::AbstractString)
+     0 <= cal.p_ar1 < 1 || error("wage_rho = $(cal.p_ar1) must lie in [0, 1): $path")
+     cal.sigma_p > 0 || error("wage_sig_p = $(cal.sigma_p) must be positive: $path")
+     cal.wage_var_0 >= 0 || error("wage_var_0 = $(cal.wage_var_0) must be non-negative: $path")
++    0 < cal.p_bothcollege < 1 || error("bc_share_children_skill = $(cal.p_bothcollege) is not a share in (0, 1): $path")
+     # the stationary SD the two imply must be Stata's own (sigma_p is the INNOVATION SD, not the stationary one)
+     sd_z = get_("wage_sd_z")
+     isapprox(cal.sigma_p / sqrt(1 - cal.p_ar1^2), sd_z; rtol = 1e-6) || error(
+@@ -451,12 +455,6 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
+ 
+     # ---- the parent's wage process and initial assets (Ali, 2026-10-02) -----------
+     parent_calib = _parent_calibration(raw, path)
+-    # the BothCollege share (Ali, 2026-10-02): `bc_share_children_all` from 28 block C when the target
+-    # file carries a finite value; nothing (the model's 0.3) while block C is not yet exported
+-    p_bc = let v = get(raw, "bc_share_children_all", NaN)
+-        v isa Real && isfinite(v) ? (0 < v < 1 ? Float64(v) :
+-            error("bc_share_children_all = $v is not a share in (0, 1): $path")) : nothing
+-    end
+ 
+     # ---- the child's bargaining weight ---------------------------------------
+     Int.(_req(raw, "mu_ages", path)) == collect(T_CHILD_VOICE:SMM_AGE_HI) ||
+@@ -521,7 +519,7 @@ function load_targets(path::AbstractString; require_composition::Bool = true)
+     end
+ 
+     out["_spec"] = (school_time = school, m_psychic = m_psychic, L0 = L0, sd_lnk17 = sd_lnk17,
+-                    init = init, mu_by_age = mu_by_age, mu_half = mu_half, parent_calib = parent_calib, p_bothcollege = p_bc,
++                    init = init, mu_by_age = mu_by_age, mu_half = mu_half, parent_calib = parent_calib,
+                     se = se, Sigma = Sigma, cov_names = cov_names,
+                     n_clusters = Int.(get(mc, "n_clusters_by_moment", zeros(Int, length(se)))),
+                     composition = comp,
+@@ -553,12 +551,10 @@ target_school_time(targets) = targets["_spec"].school_time
+ """
+     parent_calibration(targets) -> NamedTuple
+ 
+-The parent constructor's REQUIRED wage-process and initial-asset keywords, from the target file's
++The parent constructor's REQUIRED wage-process, initial-asset and BothCollege-share keywords, from the target file's
+ [constants] (see `_parent_calibration`). Splat it into `Parent_child_interaction_age_specific_AR1`.
+ """
+ parent_calibration(targets) = targets["_spec"].parent_calib
+-"The BothCollege share from the target file, or `nothing` (the model's default 0.3) before 28 block C."
+-target_bc_share(targets) = targets["_spec"].p_bothcollege
+ target_m_psychic(targets)   = targets["_spec"].m_psychic
+ target_L0(targets)          = targets["_spec"].L0
+ target_init(targets)        = targets["_spec"].init
+@@ -1631,9 +1627,7 @@ function run_pipeline(kw::NamedTuple, targets;
+                                                          init_m0 = ini.m0, init_mBC = ini.mBC,
+                                                          init_s0 = ini.s0,
+                                                          mu_child_by_age = target_mu_by_age(targets),
+-                                                         parent_calibration(targets)...,   # wage process, initial assets
+-                                                         (target_bc_share(targets) === nothing ? (;) :
+-                                                          (p_bothcollege = target_bc_share(targets),))...,
++                                                         parent_calibration(targets)...,   # wage process, initial assets, BC share
+                                                          pk..., parent_extra...)   # no `w` -- see smm_objective
+     parent.V_child_interp = V_child
+     redirect_stdout(devnull) do
+diff --git a/code/src/parent_family.jl b/code/src/parent_family.jl
+index db1edd1..d99bc67 100644
+--- a/code/src/parent_family.jl
++++ b/code/src/parent_family.jl
+@@ -19,7 +19,7 @@
+ #
+ # THINGS THAT BREAK SILENTLY IF YOU GET THEM WRONG
+ #   * `k` here is the parent's BINARY BothCollege indicator -- [0.0, 1.0], drawn
+-#     once from Bernoulli(p_bothcollege) (the target file's share; 0.3 before 28 block C),
++#     once from Bernoulli(p_bothcollege) (the target file's bc_share_children_skill; was 0.3),
+ #     constant in t. Nk = 2 is exact, not a
+ #     discretisation. `k_grid` in child_lifecycle.jl is a DIFFERENT object (the
+ #     child's human capital). The child's HC in THIS file is `hc_grid`.
+@@ -510,8 +510,9 @@ function Parent_child_interaction_age_specific_AR1(;
+         β_age2_capital::Float64, β_age_capital::Float64,
+         wage_var_0::Float64,
+         init_asset_p0::Float64, init_asset_mu::Float64, init_asset_sd::Float64,
+-        # the household's BothCollege share; run_pipeline passes the target file's value when it has one
+-        p_bothcollege::Float64 = 0.3,
++        # the household's BothCollege share: REQUIRED, no default (Ali, 2026-10-02) -- the target file's
++        # bc_share_children_skill, through parent_calibration(targets)
++        p_bothcollege::Float64,
+         )  
+ 
+ 
+@@ -646,8 +647,8 @@ function Parent_child_interaction_age_specific_AR1(;
+             sim_a_init[i] = x
+         end
+     end
+-    # BothCollege share (Ali, 2026-10-02): the data's share from the target file
+-    # (`bc_share_children_all`, Child_Time_Study 28 block C) once it is exported; until then 0.3.
++    # BothCollege share (Ali, 2026-10-02): `bc_share_children_skill` from the target file (Child_Time_Study 28
++    # block C: the children the skill moments and m_BC are built on); was a hard-coded 0.3.
+     0.0 < p_bothcollege < 1.0 || throw(ArgumentError("p_bothcollege must lie in (0, 1), got $p_bothcollege"))
+     sim_k_init = Float64.(rand(rng_k, Bernoulli(p_bothcollege), simN))
+     # Initial child skill at AGE 1 (column 1), DFVW latent units (memo 18 section 7):
+@@ -1517,7 +1518,7 @@ function continuation_selftest(; n::Int = 2000, seed::Int = 20260906, verbose::B
+     p = Parent_child_interaction_age_specific_AR1(; Na = 10, Nk = 2, Nhc = 10, simN = 10, seed = 1234,
+             p_ar1 = 0.5, sigma_p = 0.1, β0 = 2.0, β_bothcollege = 0.0, β_age = 0.0, β_age2 = 0.0,
+             β_age2_capital = 0.0, β_age_capital = 0.0, wage_var_0 = 0.0,
+-            init_asset_p0 = 0.0, init_asset_mu = 0.0, init_asset_sd = 1.0)
++            init_asset_p0 = 0.0, init_asset_mu = 0.0, init_asset_sd = 1.0, p_bothcollege = 0.5)
+     for i in eachindex(p.sol_v); p.sol_v[i] = randn(rng); end
+     interp = create_interp(p, p.sol_v, 5)
+     E      = expected_interp(p, interp)
+diff --git a/tools/make_smm_targets.py b/tools/make_smm_targets.py
+index f9dc4f2..c07dd83 100644
+--- a/tools/make_smm_targets.py
++++ b/tools/make_smm_targets.py
+@@ -89,7 +89,7 @@ MU_AGES = list(range(6, 18))
+ # The SMM_Constants rows the parent model reads from [constants] (moments.jl PARENT_CALIB_CONSTANTS, 2026-10-02).
+ PARENT_CALIB_CONSTANTS = ("init_asset_p0", "init_asset_mu", "init_asset_sd",
+                           "wage_b0", "wage_b_bc", "wage_b_age", "wage_b_age2", "wage_b_age2_bc", "wage_b_age_bc",
+-                          "wage_rho", "wage_sig_p", "wage_sd_z", "wage_var_0")
++                          "wage_rho", "wage_sig_p", "wage_sd_z", "wage_var_0", "bc_share_children_skill")
+ 
+ 
+ def git_sha():
+diff --git a/tools/test_param_recovery.jl b/tools/test_param_recovery.jl
+index 828272c..a360f57 100644
+--- a/tools/test_param_recovery.jl
++++ b/tools/test_param_recovery.jl
+@@ -31,6 +31,9 @@
+ # Recovery asks whether the estimator inverts the model at SOME fixed specification; it
+ # does not need those inputs to be right, only to be held fixed. Its result does not carry
+ # over automatically to the real composition and wage loading -- rerun it once they exist.
++# Since 2026-10-02 the script uses each when it exists: the target file's [composition] (from
++# the 19:32 targets on) and the anchored wage loading once sd(log AFQT) is set (0.20,
++# provisional); the log and the result file name which inputs a run used.
+ #
+ # theta0 is a pilot point, NOT an estimate: the DFVW Table-7 starts, with TFP, persistence
+ # sigma_3_0, phi_3, lambda_2 and kappa_0 moved by 315 Sobplx steps toward the real data means
+@@ -57,6 +60,12 @@ include(joinpath(REPO, "tools", "smm_test_fixtures.jl"))
+ length(ARGS) == 3 && ARGS[2] in ("tech", "all") ||
+     error("usage: test_param_recovery.jl TARGETS.toml (tech|all) OUTDIR")
+ const TARGET_PATH, MODE, OUTDIR = abspath(ARGS[1]), ARGS[2], abspath(ARGS[3])
++# the code's own wage loading once sd(log AFQT) is set (provisional 0.20 since 2026-10-02), the placeholder
++# otherwise; and the commit read at START, the code this process loaded (it used to be read at the end)
++const CHILD_WAGE, CHILD_WAGE_LABEL = isfinite(CHILD_DEFAULTS.sd_log_afqt) ?
++    (child_wage_config(), "ANCHORED (sd(log AFQT) = $(CHILD_DEFAULTS.sd_log_afqt), provisional; lnw0 = $(LNW0_ANCHORED))") :
++    (PLACEHOLDER_CHILD_WAGE, "PLACEHOLDER (alpha_theta = 0.2/sd_lnk17)")
++const GIT_AT_START = git_sha()
+ mkpath(OUTDIR)
+ const LOG = open(joinpath(OUTDIR, "recovery_$(MODE).log"), "w")
+ logln(s...) = (println(stdout, s...); println(LOG, s...); flush(LOG); flush(stdout))
+@@ -74,7 +83,9 @@ const THETA0 = Dict{Symbol,Float64}(
+ const TECH = [:sigma_1_0, :sigma_1_1, :sigma_2_0, :sigma_2_1, :sigma_3_0, :sigma_3_1, :sigma_4_0, :sigma_4_1, :d_0, :d_1, :d_2, :d_3]
+ 
+ T0 = load_targets(TARGET_PATH; require_composition = false)
+-TF = with_composition(T0, fixture_composition(T0))
++# the data's composition when the target file carries it (from 2026-10-02 19:32 on), the fixture otherwise
++const COMP_LABEL = T0["_spec"].composition === nothing ? "FIXTURE (tools/smm_test_fixtures.jl)" : "DATA (target file)"
++TF = T0["_spec"].composition === nothing ? with_composition(T0, fixture_composition(T0)) : T0
+ names_ = [q.name for q in SMM_PARAMS]
+ z_true = [to_search(THETA0[q.name], q) for q in SMM_PARAMS]
+ lb, ub = search_bounds()
+@@ -82,14 +93,14 @@ free = MODE == "tech" ? [findfirst(==(n), names_) for n in TECH] : collect(1:len
+ 
+ obj_full(z) = smm_objective(z, TP; Na = GRID.Na, Nk = GRID.Nk, Nhc = GRID.Nhc, simN = GRID.simN,
+                             seed = GRID.seed, child_grid = GRID.child_grid, demo_sim = false,
+-                            child_wage = PLACEHOLDER_CHILD_WAGE)
++                            child_wage = CHILD_WAGE)
+ 
+ # ---- the pseudo-data: the model's own moments at theta0 -----------------------
+ logln("recovery test ($MODE): $(length(free)) free parameters, started ", now())
+-logln("targets: $TARGET_PATH  (composition: FIXTURE; wage loading: PLACEHOLDER)")
++logln("targets: $TARGET_PATH  (composition: $COMP_LABEL; wage loading: $CHILD_WAGE_LABEL; code $GIT_AT_START)")
+ r0 = run_pipeline(unpack(z_true), TF; Na = GRID.Na, Nk = GRID.Nk, Nhc = GRID.Nhc, simN = GRID.simN,
+                   seed = GRID.seed, child_grid = GRID.child_grid, demo_sim = false,
+-                  child_wage = PLACEHOLDER_CHILD_WAGE)
++                  child_wage = CHILD_WAGE)
+ m0 = model_moments(r0, TF)
+ m0.n_nonfinite == 0 && simulation_violations(r0.parent).total == 0 ||
+     error("theta0 does not produce a valid simulation")
+@@ -167,9 +178,9 @@ logln(@sprintf("\nQ: start %.6g -> end %.6g after %d evaluations, %.1f min. Wors
+ logln(pass ? "RESULT: RECOVERED (Q < 1e-2 and every parameter within 2% of its box)" :
+              "RESULT: NOT RECOVERED by that criterion -- read the table above")
+ open(joinpath(OUTDIR, "recovery_$(MODE).toml"), "w") do io
+-    TOML.print(io, Dict("mode" => MODE, "targets" => TARGET_PATH, "git_commit" => git_sha(),
+-                        "composition" => "FIXTURE (tools/smm_test_fixtures.jl)",
+-                        "child_wage" => "PLACEHOLDER (alpha_theta = 0.2/sd_lnk17)",
++    TOML.print(io, Dict("mode" => MODE, "targets" => TARGET_PATH, "git_commit" => GIT_AT_START,
++                        "composition" => COMP_LABEL,
++                        "child_wage" => CHILD_WAGE_LABEL,
+                         "grid" => "parent 20/2/20, child 20/20/5, simN 1000, seed 1234",
+                         "q_start" => q_start, "q_end" => q_hat, "evaluations" => n_eval[],
+                         "worst_error_pct_of_box" => worst, "recovered" => pass,
+diff --git a/tools/test_tiktak_integration.jl b/tools/test_tiktak_integration.jl
+index b729967..5e10c16 100644
+--- a/tools/test_tiktak_integration.jl
++++ b/tools/test_tiktak_integration.jl
+@@ -34,7 +34,9 @@ const OUT = mkpath(argstr("--out", mktempdir(; prefix = "tiktak_integration_", c
+ const ONLY = let o = argstr("--only", ""); isempty(o) ? nothing : Set(split(o, ',')) end
+ want(n) = ONLY === nothing || n in ONLY
+ const RUNNER = joinpath(REPO, "code", "smm", "run_smm.jl")
+-const SMOKE = ["--quick", "--sobol", "64", "--restarts", "5", "--local-evals", "60", "--skip-polish", "--targets", TFILE]
++# memo 19 (Ali, 2026-10-02): most draws are penalised at the --quick grids (3 valid of 64), so the smoke fixture draws
++# until it has 5 VALID Sobol' points (--sobol-valid 5, at most 400 attempts) instead of 64 plain draws; checks unchanged.
++const SMOKE = ["--quick", "--sobol", "400", "--sobol-valid", "5", "--restarts", "5", "--local-evals", "60", "--skip-polish", "--targets", TFILE]
+ # v1 (2026-10-02): --sobol-valid 4 (at most 200 attempts) -- most random draws are penalised at the --quick grids,
+ # and 16 plain draws gave too few seeds for 4 restarts. The checks are unchanged.
+ const SMALL = ["--quick", "--sobol", "200", "--sobol-valid", "4", "--restarts", "4", "--local-evals", "15", "--skip-polish", "--targets", TFILE]

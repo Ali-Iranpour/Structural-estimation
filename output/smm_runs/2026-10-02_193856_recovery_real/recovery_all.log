@@ -1,0 +1,72 @@
+recovery test (all): 20 free parameters, started 2026-10-02T19:39:05.977
+targets: /srv/project/speech/apps/Structural-estimation/temp/2026-10-02_memo19_merge/output/smm_runs/2026-10-02_193217_281837_targets/targets.toml  (composition: DATA (target file); wage loading: ANCHORED (sd(log AFQT) = 0.2, provisional; lnw0 = 1.755929725341381); code 5b5e361-dirty)
+Q at the truth = 0.000e+00  (must be 0: common random numbers)
+Q at the displaced start = 22239.5
+  eval    50  best Q 10832.4  (4.0 min)
+  eval   100  best Q 8597.79  (8.6 min)
+  eval   150  best Q 5676.73  (12.7 min)
+  eval   200  best Q 4829.06  (16.9 min)
+  eval   250  best Q 4139.94  (21.3 min)
+  eval   300  best Q 2664.28  (25.9 min)
+  eval   350  best Q 2560.45  (30.6 min)
+  eval   400  best Q 2547.92  (35.3 min)
+  eval   450  best Q 2547.1  (39.7 min)
+  eval   500  best Q 2547.02  (44.1 min)
+  eval   550  best Q 2547.01  (48.7 min)
+stage LN_BOBYQA: SUCCESS, Q 2547.01 after 595 evaluations in total
+  eval   600  best Q 2547.01  (53.2 min)
+  eval   650  best Q 1005.33  (57.0 min)
+  eval   700  best Q 760.318  (61.4 min)
+  eval   750  best Q 482.948  (66.0 min)
+  eval   800  best Q 413.005  (70.6 min)
+  eval   850  best Q 362.346  (75.3 min)
+  eval   900  best Q 270.169  (79.9 min)
+  eval   950  best Q 187.13  (84.5 min)
+  eval  1000  best Q 140.873  (89.1 min)
+  eval  1050  best Q 101.573  (93.7 min)
+  eval  1100  best Q 80.6963  (98.2 min)
+  eval  1150  best Q 66.5  (102.8 min)
+  eval  1200  best Q 59.0995  (107.3 min)
+  eval  1250  best Q 51.2984  (111.8 min)
+  eval  1300  best Q 44.867  (116.4 min)
+  eval  1350  best Q 39.6174  (121.0 min)
+  eval  1400  best Q 34.5725  (125.5 min)
+  eval  1450  best Q 30.8299  (130.1 min)
+  eval  1500  best Q 27.9708  (134.7 min)
+  eval  1550  best Q 26.2464  (139.2 min)
+  eval  1600  best Q 24.0711  (143.8 min)
+  eval  1650  best Q 21.9086  (148.3 min)
+  eval  1700  best Q 18.0861  (152.9 min)
+  eval  1750  best Q 16.8501  (157.5 min)
+  eval  1800  best Q 15.4293  (161.9 min)
+  eval  1850  best Q 14.4437  (166.1 min)
+  eval  1900  best Q 13.3464  (170.2 min)
+  eval  1950  best Q 12.236  (174.3 min)
+  eval  2000  best Q 11.9582  (178.4 min)
+  eval  2050  best Q 11.6728  (182.7 min)
+stage LN_NELDERMEAD: MAXEVAL_REACHED, Q 11.5396 after 2095 evaluations in total
+
+parameter        truth      start   estimate   |error| % of box
+phi_2             0.1963     0.1342     0.1939     0.16
+phi_3             0.1000     0.1349     0.0892     1.90
+lambda_2          1.5772     1.0785     1.2830     2.72
+sigma_1_0        -0.6309    -0.8809    -0.5787     1.04
+sigma_1_1        -0.1153    -0.0903    -0.1082     1.42
+sigma_2_0        -7.1540    -7.7040    -6.7605     3.58
+sigma_2_1         0.0720     0.1020     0.0698     0.37
+sigma_3_0        -0.2448    -0.0948    -0.2107     1.14
+sigma_3_1         0.0050    -0.0050     0.0038     0.60
+sigma_4_0        -6.5980    -7.1480    -6.4446     1.39
+sigma_4_1         0.2710     0.3110     0.2678     0.39
+d_0               4.1095     3.6100     4.1877     0.78
+d_1               4.5320     5.0315     4.3322     2.00
+d_2               2.0000     2.4000     1.1270    10.91
+d_3               2.8784     0.8784     6.3899     8.78
+kappa_0           0.4137     0.6137     0.3725     1.03
+kappa_theta      -0.1826    -0.3326    -0.2016     0.63
+kappa_ParEd      -0.1081    -0.1831     0.3213    28.63
+kappa_terminal    8.7868    10.9392     8.6150     0.45
+sigma_eps         1.1422     0.9833     1.9930    18.58
+
+Q: start 22239.5 -> end 11.5396 after 2095 evaluations, 186.7 min. Worst parameter error 28.63% of its box.
+RESULT: NOT RECOVERED by that criterion -- read the table above

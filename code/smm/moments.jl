@@ -1831,7 +1831,9 @@ function report_fit(z::AbstractVector{Float64}, targets;
 
     @printf(out, "\nTargeted moments -- %d moments, %d parameters\n", length(SMM_MOMENTS), length(SMM_PARAMS))
     println(out, "-"^100)
-    @printf(out, "  %-28s %11s %11s %9s %8s   %s\n", "moment", "model", "data", "t", "Q share", "measure")
+    # gap % = 100 (model - data) / |data| (2026-10-02, Ali); "n/a" where |data| < 0.01, where a percentage of
+    # a near-zero target means nothing. t, in standard errors, is the scale the objective weighs.
+    @printf(out, "  %-28s %11s %11s %9s %9s %8s   %s\n", "moment", "model", "data", "gap %", "t", "Q share", "measure")
     qk = [w[j] * (getfield(m, Symbol(k)) - targets[k].mean)^2 for (j, k) in enumerate(SMM_MOMENTS)]
     q_tot = sum(qk)
     block = ""
@@ -1842,10 +1844,11 @@ function report_fit(z::AbstractVector{Float64}, targets;
         end
         mj, mhat = getfield(m, Symbol(k)), targets[k].mean
         # t is the miss in STANDARD ERRORS of the data moment -- the scale the weighting uses.
-        @printf(out, "  %-28s %11.4f %11.4f %9.1f %7.1f%%   %s\n", k, mj, mhat, (mj - mhat) / se[j],
+        gap = abs(mhat) >= 0.01 ? @sprintf("%+8.1f%%", 100 * (mj - mhat) / abs(mhat)) : "      n/a"
+        @printf(out, "  %-28s %11.4f %11.4f %9s %9.1f %7.1f%%   %s\n", k, mj, mhat, gap, (mj - mhat) / se[j],
                 100 * qk[j] / max(q_tot, eps()), first(targets[k].source, 46))
     end
-    @printf(out, "  %-28s %11s %11s %18.4f\n", "Q", "", "", q_tot)
+    @printf(out, "  %-28s %11s %11s %9s %18.4f\n", "Q", "", "", "", q_tot)
     for b in ("P", "S", "T", "W")
         @printf(out, "  Q share of block %s: %.1f%%\n", b,
                 100 * sum(qk[j] for (j, k) in enumerate(SMM_MOMENTS) if targets[k].block == b) / max(q_tot, eps()))

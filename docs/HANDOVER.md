@@ -30,7 +30,15 @@ starting a new file. Paths are relative to the repository root
 
 ## Running (each writes STATUS and DONE or FAILED; how to watch: `CLAUDE.md` "Watching a run")
 
-- **tmux `v1_run_k16`: the K = 16 run, launched 22:39** (Ali: held at 22:29 to consider the authors'
+- **FINISHED 2026-10-03 05:25 (exit 0, 6.7 h): the K = 16 run.** Q 6,784.8 -> **5,687.3** (-16%); 14 of 16
+  restarts hit the 450 cap, 2 met FTOL; the polish hit its 300 cap (it supplied the point); restarts 2 and 4
+  used the seed fallback (none lost). NOT ACCEPTED: no convergence evidence; `d_1` (99.9%) and `kappa_theta`
+  (98.6%) on a bound, `phi_3`, `kappa_ParEd`, `sigma_eps` within 5%. Full report with the current code:
+  `output/smm_runs/2026-10-02_223909_k16/report_current_code.txt`. Findings: `docs/ERRORS.md` F1 (skill
+  dispersion collapses: SD ln k 0.00 from age 11), F2 (every child gets 88% of parental assets), F3 (input SDs
+  60-87% too low, 58% of Q). The real-inputs recovery: both modes NOT RECOVERED (tech worst `d_2` 13.7%; all
+  worst `kappa_ParEd` 28.6%, `sigma_eps` 18.6%).
+- (was running) **tmux `v1_run_k16`: the K = 16 run, launched 22:39** (Ali: held at 22:29 to consider the authors'
   algorithm, released at 22:39 to run on the CURRENT algorithm with the previous settings). `--preset pilot
   --procs 36 --sobol 10000 --restarts 16 --local-evals 450 --polish-evals 300`, local width the automatic
   floor(sqrt(16)) = 4 (no `--local-procs`), started from pilot arm A's exact end point. Checked at start:
@@ -150,7 +158,10 @@ decisions and the licence notes are in **`docs/ERRORS.md` T1**. Nothing of it is
 
 ## Next actions
 
-1. Read the K = 16 run (about 05:00-05:30) and the recovery's "all" mode when they finish; report.
+1. With Ali, then the advisor: F1/F3 (and F2) are specification questions; more search on this specification
+   mostly refines a point that misses the same moments. Possible diagnostics for that meeting (not approved):
+   a converged polish from the K = 16 point; a self-productivity profile (sigma_3 fixed higher, the rest
+   re-optimised with `tools/reopt.jl --fix`); the diaries' reliability (data side).
 2. With Ali: the authors' TikTak (`docs/ERRORS.md` T1), when he returns to it.
 3. Rewrite the stale tests and tools for memo 19 (including `test_penalties.jl`'s base point, which
    assumes the default start is valid).

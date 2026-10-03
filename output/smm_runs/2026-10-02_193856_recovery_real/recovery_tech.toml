@@ -1,0 +1,57 @@
+mode = "tech"
+targets = "/srv/project/speech/apps/Structural-estimation/temp/2026-10-02_memo19_merge/output/smm_runs/2026-10-02_193217_281837_targets/targets.toml"
+recovered = false
+q_start = 19458.626143679983
+q_end = 3.6401911830065883
+composition = "DATA (target file)"
+evaluations = 1330
+grid = "parent 20/2/20, child 20/20/5, simN 1000, seed 1234"
+git_commit = "5b5e361-dirty"
+worst_error_pct_of_box = 13.730213711502543
+child_wage = "ANCHORED (sd(log AFQT) = 0.2, provisional; lnw0 = 1.755929725341381)"
+
+[estimate]
+sigma_2_0 = -7.312423187914449
+sigma_3_1 = 0.004150007588610849
+sigma_2_1 = 0.08231977424495111
+sigma_3_0 = -0.21003677353923034
+sigma_4_0 = -6.757668411712009
+d_2 = 3.0984170969202034
+sigma_1_1 = -0.10586165154180138
+sigma_1_0 = -0.7937566776905856
+d_0 = 3.6547296127862605
+d_3 = 1.807380390645191
+d_1 = 3.9664414978248486
+sigma_4_1 = 0.2802595072768416
+
+[truth]
+sigma_2_0 = -7.154
+sigma_3_1 = 0.005
+sigma_2_1 = 0.072
+sigma_3_0 = -0.244781
+sigma_4_0 = -6.598
+d_2 = 2.0
+sigma_1_1 = -0.115329
+sigma_1_0 = -0.630853
+d_0 = 4.109547
+d_3 = 2.878411
+d_1 = 4.532005
+sigma_4_1 = 0.271
+
+[penalties]
+infeasible_elasticity = 10
+invalid_sim_child_nonfinite = 35
+
+[start]
+sigma_2_0 = -7.704
+sigma_3_1 = -0.005000000000000002
+sigma_2_1 = 0.041999999999999996
+sigma_3_0 = -0.09478099999999998
+sigma_4_0 = -6.048
+d_2 = 2.4
+sigma_1_1 = -0.09032899999999999
+sigma_1_0 = -0.880853
+d_0 = 3.610047
+d_3 = 0.8784109999999998
+d_1 = 4.032505
+sigma_4_1 = 0.31100000000000005
