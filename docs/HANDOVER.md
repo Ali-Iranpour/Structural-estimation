@@ -5,28 +5,26 @@ when a phase ends, move the superseded state into **History** below (newest firs
 starting a new file. Paths are relative to the repository root
 (`/srv/project/speech/apps/Structural-estimation`) unless absolute.
 
-# Current state (2026-10-02, 22:50)
+# Current state (2026-10-03, morning)
 
 ## Branches and working copies
 
-- **`merge/port-memo19`**, worktree `temp/2026-10-02_memo19_merge/`: everything of 2026-10-02 is committed
-  here; the main checkout's `fix/estimation-consistency` is fast-forwarded to it after each commit.
-  **Pushed (Ali, 22:55): `fix/estimation-consistency` to GitHub** after merging the remote's `9ca0273`
-  (an earlier version of the [constants] writer; both conflicts kept this branch's files, Ali; the merged
-  generator reproduces the 193217 targets exactly). `merge/port-memo19` stays local (same commits).
-  Finished run outputs are committed; the K = 16 run and the real-inputs recovery are to be committed
-  when they finish. (In the main checkout two uncommitted deletions, `docs/REVIEW_BRIEF_14PARAM.md` and
-  `docs/REVIEW_TRIAGE.md`, are not from these sessions: left alone.)
-- Frozen code for runs (detached worktrees, do not edit): `temp/2026-10-02_run_k16_code` (`cf0a53a`, the
-  K = 16 run), `temp/2026-10-02_pilot_code` (`9e2d760`, the pilot), `temp/2026-10-02_tiktak23_check`
-  (`63bd2ac`, the integration test), `temp/2026-10-02_integration_snapshot` (`5b5e361` + patch, the
-  real-inputs suite). All can be removed once their runs are reviewed.
+- **One working copy: `apps/Structural-estimation` itself**, branch `fix/estimation-consistency`, pushed to
+  GitHub after each commit (Ali, 2026-10-03: work in the main folder). GitHub's `main` branch is left as it
+  is (it is 74 commits behind and has one old commit, `dc9b80b`, whose feature exists here in a later form).
+- **The 2026-10-02 worktrees were removed on 2026-10-03** (Ali): `temp/2026-10-02_memo19_merge` (branch
+  `merge/port-memo19`, deleted: identical to `fix/estimation-consistency`) and the frozen run copies
+  `temp/2026-10-02_run_k16_code` (`cf0a53a`), `_pilot_code` (`9e2d760`), `_tiktak23_check` (`63bd2ac`),
+  `_integration_snapshot` (`5b5e361` + the patch committed as `9e2d760`) and `_mac_ref` (`c735165`). Every
+  file they held is committed; the paths in run records and driver scripts that name them are history.
+  Run outputs are in `output/smm_runs/` and `output/diagnostics/` here. Scratch kept in `temp/`:
+  `2026-10-02_merge_checks`, `2026-10-02_k3_checks`, `2026-10-02_tiktak_port`, the Input and docs archives.
+- In this folder two uncommitted deletions, `docs/REVIEW_BRIEF_14PARAM.md` and `docs/REVIEW_TRIAGE.md`, are
+  not from these sessions: left alone.
 - Child_Time_Study: pulled to `a4448b2` (block C exported: composition tables, p99 caps, BC shares).
 - **Targets**: `output/smm_runs/2026-10-02_193217_281837_targets/targets.toml`: the 12 composition
   frames (check_composition passes), 327 `[constants]`; moments and covariance identical to
   `2026-10-02_152454_254208`.
-- `temp/2026-10-02_mac_ref/` (the Mac branch, for the equivalence check) can be removed;
-  `temp/2026-10-02_tiktak_port/` is the copy where the port was built.
 
 ## Running (each writes STATUS and DONE or FAILED; how to watch: `CLAUDE.md` "Watching a run")
 
@@ -45,7 +43,7 @@ starting a new file. Paths are relative to the repository root
   start Q = 6784.794690649624, bit-identical to arm A's `Q_final` (same objective, exact point); the two
   timing evaluations agree; 16 restarts, 4 at a time, 4 rounds of about 79 min; projection 6.9 h (the
   draw stage is overstated: about half the draws are rejected without a solve), so expect about 05:00-05:30.
-  Code frozen in `temp/2026-10-02_run_k16_code` (`cf0a53a`, module 2.3.0-dev). Run folder
+  Code was frozen in `temp/2026-10-02_run_k16_code` (`cf0a53a`, module 2.3.0-dev; removed 2026-10-03). Run folder
   `output/smm_runs/2026-10-02_223909_k16/`; driver `output/diagnostics/2026-10-02_run_k16/` (STATUS,
   run.console.log); timeout 9 h; a killed run resumes with its full command plus `--resume <run folder>`.
 - tmux `v1_recovery_real` (started 19:38): the recovery test on the real inputs. **tech** (12 free)
