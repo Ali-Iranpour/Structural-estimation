@@ -144,6 +144,18 @@ decisions and the licence notes are in **`docs/ERRORS.md` T1**. Nothing of it is
   are computed correctly -- their misfit is `docs/ERRORS.md` F1 (skill dispersion collapses); the transfers
   are F2.
 
+## The notebook on the K = 16 estimate (2026-10-03, Ali)
+
+- `code/transfer_CRRA_wage.ipynb` now builds its baseline as the SMM does (`build_child_solution`, the
+  target file's calibration, the run's exact search vector) from `output/smm_runs/2026-10-02_223909_k16`;
+  until now it used `CHILD_DEFAULTS` / `PARENT_DEFAULTS`, and its parent cell no longer ran under memo 19.
+  A check cell asserts that its Q equals the run's `Q_final` (it does: 5,687.283294).
+- Executed up to "## Counterfactuals on Parameters." only (cells 0-25; the counterfactual cells have no
+  outputs and still use the defaults). Headless execution on the server: IJulia is not in v1's environment,
+  so a scratch kernel ran v1's project with v2's IJulia on the load path and a stand-in for
+  `IJulia.stdio_bytes` (v1's ProgressMeter expects it; v2's newer IJulia dropped it). Nothing in either
+  project changed for this; VS Code's own Julia notebook kernel needs none of it.
+
 ## Open decisions and waiting items
 
 - The authors' TikTak (`docs/ERRORS.md` T1): decided, deferred.
